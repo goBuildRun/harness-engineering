@@ -2,7 +2,7 @@
 
 面向软件产品研发团队的独立式 AI engineering harness。它把产品意图、任务身份、Agent 执行、风险匹配验证和知识沉淀连接成可审计闭环，并由一套 harness-engineering 服务多个产品仓库。
 
-> 当前可执行命令以 [docs/USAGE.md](./docs/USAGE.md) 为准。`harness start/status/finish`、单一 `result.json` 和 `lite/standard/strict` 是 [精简强制执行目标](./docs/design-docs/lean-enforcement.md)，尚未全部实现；目标入口落地后替代当前手工命令链，不与其长期并存。
+> 当前可执行命令以 [docs/USAGE.md](./docs/USAGE.md) 为准。`harness start/status/finish`、单一 `result.json` 和 `lite/standard/strict` 已进入可执行阶段；旧脚本只保留作兼容和诊断入口，不与统一门面形成第二套完成态。
 
 ## 核心原则
 
@@ -66,13 +66,15 @@ harness-engineering 不保存产品 PRD、任务实例、测试报告或产品�
 - Intake、产品知识、任务契约、DAG、结构与计划同步。
 - 受控命令、Docker 后端、QA 签章、浏览器 QA 和 CI gate。
 - 历史 workspace、Planning Gate、QA 与 evidence 的兼容读取基础。
+- `harness start/status/finish` 统一门面、原子 `result.json` 和 execution tier 分类。
+- 成本遥测、确定性 gate fingerprint 缓存、GC 判定与活动任务迁移审计。
+- commit 绑定共享判定器、GitHub required/release eligibility/provider completion workflow 模板和 enforced live probe。
 
-尚未落地：
+尚未完成：
 
-- `harness start/status/finish` 统一门面和原子 `result.json`。
-- execution tier 分类器、成本遥测和确定性 gate fingerprint 缓存。
-- commit 绑定 required check 与合并/发布后 Work Item 自动关闭。
-- `workspace audit` / `migrate-task` 和 `local → guarded → enforced` 接入保障验收。
+- 结构化 `assurance.level: local|guarded|enforced` 结果字段及版本化 guarded Git guards。
+- GitHub required check、受保护分支、release eligibility 和 provider completion 的真实环境端到端验收。
+- 非 GitHub 平台的等价受保护接受点 live probe，以及更多 provider usage/lifecycle 实测。
 
 任务风险使用 `lite|standard|strict`，部署保障使用 `local|guarded|enforced`，两者互不替代。当前兼容 schema 仍将 `local`/`guarded` 映射为 `shadow`；仅安装 workspace 不代表流程不可绕过。成熟度与实施顺序见 [Harness_成熟度评估.md](./docs/Harness_成熟度评估.md)。
 
@@ -111,7 +113,7 @@ bash "$BIN/harness_intake.sh" apply-review
 
 ## 使用模型
 
-目标正常路径只有：
+正常路径只有：
 
 ```bash
 harness start [<task-id>] [--work-item <provider-id>]
@@ -119,7 +121,7 @@ harness status [<task-id>]
 harness finish [<task-id>]
 ```
 
-这些目标命令尚未全部实现。过渡期不得照抄固定全链；应从 [USAGE.md](./docs/USAGE.md) 进入当前 planning level、角色和风险对应章节。所有任务都满足共同不变式，独立 QA、TEST/REVIEW、浏览器验证、GC 和人工 Gate 只在当前工序或实际风险要求时启用。
+入口脚本为 `.harness/scripts/harness`。旧命令链仅用于兼容和诊断，不应被照抄成每个任务的固定全链。所有任务都满足共同不变式，独立 QA、TEST/REVIEW、浏览器验证、GC 和人工 Gate 只在当前工序或实际风险要求时启用。
 
 ## 自检
 

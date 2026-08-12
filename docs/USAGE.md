@@ -7,7 +7,7 @@
 > **精简强制执行目标**：[design-docs/lean-enforcement.md](./design-docs/lean-enforcement.md) — 一个入口面、一个权威结果、风险分层与成本约束  
 > 本文档是 **Team Product R&D Harness 的 canonical 使用说明**。不可跳过的是“先形成与风险匹配的计划，再实施并验证”的合规语义，不是让人或 Agent 手工执行固定数量的命令。目标正常路径只暴露 `start / status / finish`；BMAD Planning、TDD、QA、安全、知识和协同能力由统一入口按 planning level 与 execution tier 编排。
 
-`AGENTS.md` 为最小地图，本文件说明公开使用方式，并保留目标入口落地前仍需使用的兼容命令参考。
+`AGENTS.md` 为最小地图，本文件说明公开使用方式，并保留统一入口尚未覆盖的兼容命令和诊断参考。
 
 **实现状态说明**：`harness start/status/finish`、`harness workspace audit`、`harness migrate-task` 与 `runs/tasks/<id>/result.json` 已进入可执行阶段，入口为 `.harness/scripts/harness`。当前任务执行能力可用于 `local` 接入；`guarded` guards 与结构化 `assurance` 字段仍待实现，平台 required、发布依赖和 provider 生命周期未全部验证，所以兼容字段继续显示 `shadow`，不得标记 `enforced`。旧命令暂保留用于兼容和诊断。
 
@@ -19,11 +19,11 @@
 
 | 场景 | 使用方式 |
 |------|----------|
-| 目标正常路径（尚未实现） | `harness start [task-id]` → `harness status [task-id]` → `harness finish [task-id]` |
-| 当前过渡期 | 按任务角色读取对应章节；不要把第 2–8 节串成每个任务都要人工执行的总清单 |
+| 当前正常路径 | `harness start [task-id]` → `harness status [task-id]` → `harness finish [task-id]` |
+| 兼容能力或特殊排障 | 按任务角色读取对应章节；不要把第 2–8 节串成每个任务都要人工执行的总清单 |
 | runtime 开发/排障 | 才直接调用 `.harness/scripts/` 中的内部命令 |
 
-统一入口落地后，以下能力继续存在，但不再增加使用者步骤：
+统一入口内部承载以下能力，并按风险触发；兼容脚本暂保留，但不增加正常路径的使用者步骤：
 
 | 保留能力 | 来源 | 目标触发方式 | 当前说明 |
 |----------|------|--------------|----------|
@@ -652,6 +652,8 @@ Harness-Tier: lite|standard|strict
 ```
 
 缺失、重复、路径穿越或非法 tier 会直接 block。required workflow 在 PR 阶段判定分支保护所见 commit；PR 合并后再对真实 merge commit 使用同一判定器生成 `harness-result.json` artifact，不读取开发者本地结果。关闭但未合并的 PR 会生成明确失败的 Required run，不能通过跳过 job 触发含糊的下游成功链。`harness init` 只在目标文件缺失时安装 required、release 和 provider-complete workflows，不覆盖产品已有 workflow。
+
+`Harness Release Eligibility` 在成功 Required run 确认属于默认分支唯一 merge commit 后，生成并上传绑定 repository、commit SHA 和 required run ID 的 `release-eligibility.json`。该 receipt 是发布自动化或人工发布流程可消费的准入凭证；workflow 本身不创建 GitHub Release，也不能阻止拥有仓库管理权限的人手工发布。要声明 `enforced`，权威发布入口必须实际要求该凭证，并由 live audit 验证成功运行绑定当前目标 commit。
 
 ---
 

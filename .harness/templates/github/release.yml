@@ -1,4 +1,4 @@
-name: Harness Release Gate
+name: Harness Release Eligibility
 
 on:
   workflow_run:
@@ -33,8 +33,18 @@ jobs:
       - name: Reject non-target or non-merge run
         if: steps.lifecycle.outputs.eligible != 'true'
         run: exit 1
-      - name: Publish release eligibility
+      - name: Write subject-bound release eligibility receipt
         if: steps.lifecycle.outputs.eligible == 'true'
         env:
           VERIFIED_COMMIT: ${{ github.event.workflow_run.head_sha }}
-        run: echo "release eligibility verified for $VERIFIED_COMMIT"
+          REQUIRED_RUN_ID: ${{ github.event.workflow_run.id }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          python3 -c 'import json, os; print(json.dumps({"schema_version": 1, "decision": "pass", "kind": "release-eligibility", "repository": os.environ["REPOSITORY"], "commit_sha": os.environ["VERIFIED_COMMIT"], "required_run_id": os.environ["REQUIRED_RUN_ID"]}, indent=2))' > release-eligibility.json
+      - name: Upload release eligibility receipt
+        if: steps.lifecycle.outputs.eligible == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-eligibility-${{ github.event.workflow_run.head_sha }}
+          path: release-eligibility.json
+          if-no-files-found: error
