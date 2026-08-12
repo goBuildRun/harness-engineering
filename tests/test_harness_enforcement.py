@@ -206,6 +206,50 @@ class EnforcementTest(unittest.TestCase):
             self.assertEqual(remote_file.call_count, 3)
             self.assertTrue(all(call.args[2] == "a" * 40 for call in remote_file.call_args_list))
 
+    def test_probe_rejects_release_workflow_without_bound_receipt_contract(self) -> None:
+        class Response:
+            def __init__(self, payload):
+                self.payload = payload
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self):
+                return json.dumps(self.payload).encode()
+
+        required = (ROOT / ".github/workflows/harness-required.yml").read_text()
+        release = (ROOT / ".harness/templates/github/release.yml").read_text()
+        provider = (ROOT / ".harness/templates/github/harness-provider-complete.yml").read_text()
+        regressions = {
+            "missing receipt kind": release.replace('"kind": "release-eligibility"', '"kind": "status"'),
+            "missing repository binding": release.replace(
+                '"repository": os.environ["REPOSITORY"]', '"repository": "org/repo"'),
+            "missing commit binding": release.replace(
+                '"commit_sha": os.environ["VERIFIED_COMMIT"]', '"commit_sha": "unknown"'),
+            "missing run binding": release.replace(
+                '"required_run_id": os.environ["REQUIRED_RUN_ID"]', '"required_run_id": "unknown"'),
+            "missing artifact upload": release.replace("actions/upload-artifact@v4", "actions/checkout@v4"),
+            "non-failing missing artifact": release.replace("if-no-files-found: error", "if-no-files-found: warn"),
+        }
+        for name, degraded_release in regressions.items():
+            responses = [Response({"contexts": ["harness-commit-acceptance"]}),
+                         Response({"sha": "a" * 40}),
+                         Response({"workflow_runs": []})]
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp, \
+                    patch("urllib.request.urlopen", side_effect=responses), \
+                    patch("harness_enforcement._remote_file", side_effect=[
+                        required, degraded_release, provider,
+                    ]):
+                snapshot = probe_github(
+                    Path(tmp), repository="org/repo", branch="main",
+                    required_check="harness-commit-acceptance", token="token",
+                )
+            self.assertEqual(snapshot["release_dependencies"], [])
+            self.assertEqual(snapshot["release_dependency_run"], {})
+
     def test_all_live_probes_are_required_for_enforced(self) -> None:
         result = evaluate_enforcement(
             live_snapshot(), repository="goBuildRun/product", branch="main",
