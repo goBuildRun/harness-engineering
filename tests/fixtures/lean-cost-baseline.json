@@ -1,0 +1,17 @@
+{
+  "captured_at": "2026-08-11T00:00:00Z",
+  "source": "pre-upgrade compatibility chain",
+  "implementation": {
+    "input_tokens": "unknown",
+    "output_tokens": "unknown",
+    "context_chars": "unknown",
+    "agent_calls": "unknown"
+  },
+  "harness": {
+    "public_commands": 8,
+    "default_evidence_types": 5,
+    "gate_duration_ms": "unknown",
+    "reruns": "unknown"
+  },
+  "notes": "Unknown measurements remain unknown; this fixture prevents false zero baselines."
+}

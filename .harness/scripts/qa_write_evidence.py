@@ -1,0 +1,38 @@
+#!/usr/bin/env python3
+"""qa_write_evidence.py — 写入 QA 签章 JSON 凭证。"""
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+
+def main() -> int:
+    if len(sys.argv) < 7:
+        print("USAGE: qa_write_evidence.py <path> <task_id> <decision> <ts> <summary> <paths_json>", file=sys.stderr)
+        return 1
+
+    path, task_id, decision, ts, summary, paths_json = sys.argv[1:7]
+    try:
+        paths = json.loads(paths_json)
+    except json.JSONDecodeError:
+        paths = []
+
+    payload = {
+        "task_id": task_id,
+        "decision": decision,
+        "reviewer": "qa-evaluator",
+        "timestamp": ts,
+        "summary": summary or "",
+        "paths_reviewed": paths,
+        "structure_gate": "pass" if decision == "pass" else "n/a",
+        "findings": [],
+    }
+    out = Path(path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

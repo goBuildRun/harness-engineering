@@ -1,0 +1,371 @@
+#!/usr/bin/env python3
+"""Generate Harness self-growth reports from task evidence."""
+from __future__ import annotations
+
+import argparse
+import re
+import hashlib
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+from harness_knowledge import ensure
+from harness_growth_review import apply_review, resolve_report
+from harness_output import dump_json
+from workspace_paths import Phase0Layout, load_layout
+
+SIGNAL = re.compile(
+    r"(经验沉淀|沉淀候选|LESSONS|CONTEXT|已排除|失败|Critical|Major|风险|技术债|重复|越界|架构沉淀|安全|性能)",
+    re.IGNORECASE,
+)
+PENDING_RE = re.compile(r"人工决定\*\*[：:]\s*待定|处理结果\*\*[：:]\s*待处理")
+SECRET_PATTERNS = (
+    (
+        re.compile(r"(?i)(authorization\s*:\s*bearer\s+)[^\s`]+"),
+        r"\1<REDACTED>",
+    ),
+    (
+        re.compile(
+            r"(?i)\b((?:tenant_access_token|user_access_token|app_access_token|refresh_token|access_token|app_secret|client_secret|FEISHU_APP_SECRET)\s*[:=]\s*)[^\s,;`]+"
+        ),
+        r"\1<REDACTED>",
+    ),
+    (
+        re.compile(r"\b[ut]-[A-Za-z0-9_-]{20,}\b"),
+        "<REDACTED_FEISHU_TOKEN>",
+    ),
+)
+
+
+def emit(decision: str, reason: str, **extra) -> None:
+    dump_json({"decision": decision, "reason": reason, **extra})
+
+
+def evidence_files(layout: Phase0Layout) -> list[Path]:
+    roots = (
+        layout.summaries_dir,
+        layout.progress_dir,
+        layout.test_reports_dir,
+        layout.review_reports_dir,
+    )
+    files: list[Path] = []
+    for root in roots:
+        if root.is_dir():
+            files.extend(sorted(p for p in root.rglob("*.md") if p.is_file()))
+    return files
+
+
+def clean_line(line: str) -> str:
+    return re.sub(r"\s+", " ", line.strip()).strip("| ")
+
+
+def md_escape(text: Any) -> str:
+    return (
+        str(text or "")
+        .replace("\\", "\\\\")
+        .replace("|", "\\|")
+        .replace("[", "\\[")
+        .replace("]", "\\]")
+        .replace("\n", " ")
+    )
+
+
+def slugify(text: str, fallback: str = "growth-capture") -> str:
+    raw = re.sub(r"[^A-Za-z0-9_.-]+", "-", text.strip().lower()).strip("-")
+    if raw:
+        return raw[:64]
+    digest = hashlib.sha1(text.encode("utf-8")).hexdigest()[:10] if text else fallback
+    return digest[:64]
+
+
+def sanitize_capture_text(text: str) -> str:
+    sanitized = str(text or "")
+    for pattern, replacement in SECRET_PATTERNS:
+        sanitized = pattern.sub(replacement, sanitized)
+    return re.sub(r"\s+", " ", sanitized).strip()
+
+
+def code_span(text: str) -> str:
+    return sanitize_capture_text(text).replace("`", "'")
+
+
+def collect(layout: Phase0Layout) -> list[tuple[Path, str]]:
+    candidates: list[tuple[Path, str]] = []
+    seen: set[str] = set()
+    for path in evidence_files(layout):
+        try:
+            lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            cleaned = clean_line(line)
+            if not cleaned or len(cleaned) < 8:
+                continue
+            if SIGNAL.search(cleaned):
+                key = f"{path}:{cleaned[:180]}"
+                if key not in seen:
+                    seen.add(key)
+                    candidates.append((path, cleaned[:260]))
+    return candidates
+
+
+def capture_evidence(
+    layout: Phase0Layout,
+    title: str,
+    summary: str,
+    category: str = "lesson",
+    trigger: str = "",
+    failed: str = "",
+    cause: str = "",
+    next_action: str = "",
+    source: str = "",
+    command: str = "",
+) -> Path:
+    now = datetime.now(timezone.utc)
+    safe_title = slugify(sanitize_capture_text(title) or sanitize_capture_text(summary) or "growth-capture")
+    out = layout.progress_dir / f"{now.strftime('%Y-%m-%dT%H%M%SZ')}-{safe_title}-GROWTH-CAPTURE.md"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    clean_title = sanitize_capture_text(title) or safe_title
+    clean_summary = sanitize_capture_text(summary)
+    clean_category = sanitize_capture_text(category) or "lesson"
+    clean_trigger = sanitize_capture_text(trigger)
+    clean_failed = sanitize_capture_text(failed)
+    clean_cause = sanitize_capture_text(cause)
+    clean_next_action = sanitize_capture_text(next_action)
+    clean_source = sanitize_capture_text(source) or "agent-observed"
+    clean_command = code_span(command)
+    lines = [
+        "# GROWTH CAPTURE — 自我成长候选证据",
+        "",
+        f"- **生成时间**：{now.strftime('%Y-%m-%dT%H:%M:%SZ')}",
+        f"- **产品**：{layout.product_name}",
+        f"- **标题**：{clean_title}",
+        f"- **建议分类**：{clean_category}",
+        f"- **来源**：{clean_source}",
+        "",
+        "## 经验沉淀候选",
+        "",
+        f"- **原文摘要**：{clean_summary}",
+        *([f"- **触发条件**：{clean_trigger}"] if clean_trigger else []),
+        *([f"- **失败方案**：{clean_failed}"] if clean_failed else []),
+        *([f"- **失败原因**：{clean_cause}"] if clean_cause else []),
+        *([f"- **下次正确做法**：{clean_next_action}"] if clean_next_action else []),
+        *([f"- **经验沉淀相关命令/入口**：`{clean_command}`"] if clean_command else []),
+        "",
+        "## Review 建议",
+        "",
+        "- **人工决定**：待定",
+        "- **处理结果**：待处理",
+        "",
+    ]
+    out.write_text("\n".join(lines), encoding="utf-8")
+    return out
+
+
+def render(layout: Phase0Layout, candidates: list[tuple[Path, str]]) -> str:
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    lines = [
+        "# GROWTH — Harness 自我成长报告",
+        "",
+        f"- 生成时间：{ts}",
+        f"- 产品：{layout.product_name}",
+        f"- Profile：{layout.harness_profile}",
+        f"- 候选数量：{len(candidates)}",
+        "",
+        "## 1. 候选沉淀项",
+        "",
+        "> 人工 review 后，运行 `harness_growth.sh apply-review` 把长期有效项写入 `CONTEXT.md` / `LESSONS.md`；架构文档和技术债 Work Item 由负责人单独确认。",
+        "",
+    ]
+    if not candidates:
+        lines.extend(["暂无候选。", ""])
+    for idx, (path, text) in enumerate(candidates, start=1):
+        lines.extend(
+            [
+                f"### G-{idx:03d}",
+                "",
+                f"- **来源**：`{layout.rel(path)}`",
+                f"- **原文摘要**：{text}",
+                "- **建议分类**：lesson / context / architecture / tech-debt / ignore",
+                "- **人工决定**：待定",
+                "- **处理结果**：待处理",
+                "",
+            ]
+        )
+
+    lines.extend(
+        [
+            "## 2. Review 指引",
+            "",
+            "- 进入 `LESSONS.md`：跨任务会重复踩坑，且未来 6 个月有复现概率。",
+            "- 进入 `CONTEXT.md`：会影响后续实现默认行为、既有抽象复用、禁动清单。",
+            "- 进入架构文档：涉及模块边界、ADR、跨模块契约、容量边界。",
+            "- 忽略：只对本次任务有效、证据不足、或已经被现有条目覆盖。",
+            "- `人工决定` 建议填写：`context`、`lesson`、`architecture`、`tech-debt`、`ignore`，可组合如 `lesson / tech-debt`。",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def review_status(layout: Phase0Layout) -> dict[str, object]:
+    reports = sorted(layout.growth_reports_dir.glob("*-GROWTH.md")) if layout.growth_reports_dir.is_dir() else []
+    pending: list[str] = []
+    reviewed: list[str] = []
+    for report in reports:
+        text = report.read_text(encoding="utf-8", errors="ignore")
+        pending_count = len(PENDING_RE.findall(text))
+        if pending_count:
+            pending.append(f"{layout.rel(report)}:{pending_count}")
+        else:
+            reviewed.append(layout.rel(report))
+    return {"reports": len(reports), "pending": pending, "reviewed": reviewed}
+
+
+def latest_report(layout: Phase0Layout) -> Path | None:
+    reports = sorted(layout.growth_reports_dir.glob("*-GROWTH.md")) if layout.growth_reports_dir.is_dir() else []
+    return reports[-1] if reports else None
+
+
+def newest_mtime(paths: list[Path]) -> float:
+    mtimes: list[float] = []
+    for path in paths:
+        try:
+            mtimes.append(path.stat().st_mtime)
+        except OSError:
+            continue
+    return max(mtimes) if mtimes else 0.0
+
+
+def freshness_status(layout: Phase0Layout) -> dict[str, object]:
+    candidates = collect(layout)
+    evidence = evidence_files(layout)
+    report = latest_report(layout)
+    if not candidates:
+        return {
+            "ok": True,
+            "reason": "GROWTH_FRESHNESS_OK_NO_CANDIDATES",
+            "candidates": 0,
+            "evidence_files": len(evidence),
+            "latest_report": "",
+        }
+    if report is None:
+        return {
+            "ok": False,
+            "reason": "GROWTH_REPORT_MISSING",
+            "candidates": len(candidates),
+            "evidence_files": len(evidence),
+            "latest_report": "",
+        }
+    evidence_mtime = newest_mtime(evidence)
+    try:
+        report_mtime = report.stat().st_mtime
+    except OSError:
+        report_mtime = 0.0
+    if report_mtime + 1e-6 < evidence_mtime:
+        return {
+            "ok": False,
+            "reason": "GROWTH_REPORT_STALE",
+            "candidates": len(candidates),
+            "evidence_files": len(evidence),
+            "latest_report": layout.rel(report),
+        }
+    status = review_status(layout)
+    if status["pending"]:
+        return {
+            "ok": False,
+            "reason": "GROWTH_REVIEW_PENDING",
+            "candidates": len(candidates),
+            "evidence_files": len(evidence),
+            "latest_report": layout.rel(report),
+            **status,
+        }
+    return {
+        "ok": True,
+        "reason": "GROWTH_FRESHNESS_OK",
+        "candidates": len(candidates),
+        "evidence_files": len(evidence),
+        "latest_report": layout.rel(report),
+        **status,
+    }
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--harness-root", default=".")
+    parser.add_argument("--product-root", default="")
+    parser.add_argument("--output", default="")
+    parser.add_argument("--report", default="")
+    parser.add_argument("--allow-pending", action="store_true")
+    parser.add_argument("--title", default="")
+    parser.add_argument("--summary", default="")
+    parser.add_argument("--category", default="lesson")
+    parser.add_argument("--trigger", default="")
+    parser.add_argument("--failed", default="")
+    parser.add_argument("--cause", default="")
+    parser.add_argument("--next-action", default="")
+    parser.add_argument("--source", default="")
+    parser.add_argument("--command", default="")
+    parser.add_argument("cmd", choices=("scan", "status", "review-status", "freshness", "apply-review", "capture"))
+    args = parser.parse_args()
+
+    layout = load_layout(
+        Path(args.harness_root).resolve(),
+        Path(args.product_root).resolve() if args.product_root else None,
+    )
+    if args.cmd in {"scan", "apply-review", "capture"}:
+        ensure(layout)
+
+    candidates = collect(layout)
+    if args.cmd == "capture":
+        summary = args.summary.strip()
+        if not summary:
+            emit("block", "GROWTH_CAPTURE_SUMMARY_REQUIRED")
+            return 0
+        out = capture_evidence(
+            layout,
+            title=args.title.strip(),
+            summary=summary,
+            category=args.category.strip(),
+            trigger=args.trigger.strip(),
+            failed=args.failed.strip(),
+            cause=args.cause.strip(),
+            next_action=args.next_action.strip(),
+            source=args.source.strip(),
+            command=args.command.strip(),
+        )
+        emit("pass", f"GROWTH_CAPTURE_READY: {layout.rel(out)}", evidence=layout.rel(out))
+        return 0
+
+    if args.cmd == "status":
+        emit("pass", "GROWTH_STATUS", candidates=len(candidates), evidence_files=len(evidence_files(layout)))
+        return 0
+
+    if args.cmd == "review-status":
+        status = review_status(layout)
+        decision = "block" if status["pending"] else "pass"
+        reason = "GROWTH_REVIEW_PENDING" if status["pending"] else "GROWTH_REVIEW_OK"
+        emit(decision, reason, **status)
+        return 0
+
+    if args.cmd == "freshness":
+        result = freshness_status(layout)
+        emit("pass" if result.pop("ok") else "block", str(result.pop("reason")), **result)
+        return 0
+
+    if args.cmd == "apply-review":
+        result = apply_review(layout, resolve_report(layout, args.report), args.allow_pending)
+        emit("pass" if result.pop("ok") else "block", str(result.pop("reason")), **result)
+        return 0
+
+    out = Path(args.output).resolve() if args.output else (
+        layout.growth_reports_dir / f"{datetime.now(timezone.utc).strftime('%Y-%m-%d')}-GROWTH.md"
+    )
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(render(layout, candidates), encoding="utf-8")
+    emit("pass", f"GROWTH_REPORT_READY: {layout.rel(out)}", candidates=len(candidates), report=layout.rel(out))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

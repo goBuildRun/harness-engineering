@@ -1,0 +1,211 @@
+# Team Product R&D Harness Architecture
+
+本文是 harness-engineering 的架构入口。它描述系统边界、状态流、配置分工和质量门禁；当前操作见 [docs/USAGE.md](docs/USAGE.md)，精简执行目标见 [docs/design-docs/lean-enforcement.md](docs/design-docs/lean-enforcement.md)。
+
+## 1. Architecture Intent
+
+Team Product R&D Harness 是独立于具体产品仓库的研发 Harness。它不属于任意单一产品业务代码，也不应该被复制到每个产品里。
+
+核心目标：
+
+- 用一套 harness-engineering 服务多个产品研发团队。
+- 让每个产品仓库保留自己的配置、规格、任务、证据和长期知识。
+- 把产品前导、Agent 执行、风险匹配验证、熵减和知识沉淀连成可审计闭环。
+- 把关键约束固化为脚本和 CI 门禁，而不是只写在提示词里。
+- 在统一执行面后保留参考项目中已验证的能力，不保留其命令数量和固定仪式；完整契约见 [docs/design-docs/lean-enforcement.md §1.1](docs/design-docs/lean-enforcement.md#11-能力保留契约)。
+
+## 2. System Boundary
+
+```mermaid
+flowchart LR
+  H["harness-engineering"]
+  R["product registry"]
+  C["product context"]
+  S["scripts / rules / agents / templates"]
+  P["product repository"]
+  W["harness-workspace"]
+  B["business code"]
+  D["architecture / db / tests"]
+
+  H --> R
+  H --> C
+  H --> S
+  C --> P
+  R --> P
+  P --> W
+  P --> B
+  P --> D
+  S --> W
+```
+
+harness-engineering owns:
+
+- Agent role definitions.
+- Quality gates and scripts.
+- Task templates and workflow definitions.
+- Work Item provider adapters.
+- Product registry, session product context, and active-product fallback.
+- Cross-product rules after human review.
+
+Product repository owns:
+
+- Business source code and tests.
+- Product architecture documents.
+- Product workspace configuration.
+- Planning artifacts, task packages, runtime state, QA evidence, project knowledge.
+
+## 3. Product Workspace
+
+每个产品仓库通过 `harness-workspace/project.yaml` 声明自己的 workspace。默认结构：
+
+```text
+harness-workspace/
+├── project.yaml
+├── planning/
+│   ├── product-specs/
+│   ├── exec-plans/
+│   └── tasks/
+├── runs/
+├── knowledge/
+│   ├── CONTEXT.md
+│   └── LESSONS.md
+└── evidence/
+    ├── summaries/
+    ├── progress/
+    ├── test-reports/
+    ├── review-reports/
+    ├── intake-reports/
+    └── growth-reports/
+```
+
+`planning/` 是产品设计和任务前导资产目录，不是研发阶段目录。产品目录使用稳定资产语义：planning、runs、knowledge、evidence；历史文档中的 `Phase 0` 对应现在的 **BMAD Planning**。
+
+## 4. State And Truth Sources
+
+| 状态/配置 | 真相源 | 说明 |
+|-----------|--------|------|
+| harness-engineering 管理哪些产品 | `.harness/products/registry.yaml` | 本机产品台账，本地生成且 gitignored |
+| 当前命令作用于哪个产品 | `--product-root/--product-id`、`HARNESS_PRODUCT_ROOT/HARNESS_PRODUCT_ID`、cwd discovery、`.harness/products/active-product.json` | active product 只是本机默认兜底 |
+| 产品 workspace 如何组织 | `<product-root>/harness-workspace/project.yaml` | 产品侧配置 |
+| Harness 必备文件 | `.harness/harness-manifest.yaml` | 自检清单 |
+| 任务规格与计划 | `<product-root>/harness-workspace/planning/` | 产品记录系统 |
+| 运行凭证与 active task | `<product-root>/harness-workspace/runs/` | 本地运行状态 |
+| 目标任务状态 | `<product-root>/harness-workspace/runs/tasks/<task-id>/result.json` | 本地物化快照，不作为 CI 可盲信凭证 |
+| 目标合并/发布准入 | 绑定 commit SHA 与 policy digest 的 CI required check | 服务端接受真相；使用与本地相同的 result schema 和判定器 |
+| 接入/测试/审查/成长证据 | `<product-root>/harness-workspace/evidence/` | 可回放证据 |
+| 长期产品知识 | `<product-root>/harness-workspace/knowledge/` | 不依赖聊天记忆 |
+
+harness-engineering `.harness/config.yaml` 只提供默认值和兼容字段，不是产品接入真相源。开源源码只保留 `.harness/products/*.example.*`，不提交带本机绝对路径的产品台账。
+
+任务结果在读取和原子写入时执行同一 schema 校验。`status` 会重算 worktree subject 与 policy digest；任一变化都会把 `validated` 退回 `active`、标记旧 checks 为 stale，并要求下一次 `finish` 重新判定，不能靠复制旧 `result.json` 保持有效完成态。
+
+## 5. Brownfield Intake Flow
+
+已有项目接入是 BMAD Planning 之前的事实建档步骤。它读取产品仓库既有代码、文档、测试、CI 与技术栈信号，生成产品侧 INTAKE 报告，再由人类 review 后迁入产品知识系统。
+
+```mermaid
+flowchart TD
+  P["Existing product repository"]
+  I["harness_intake status/scan"]
+  R["evidence/intake-reports"]
+  H["Human review"]
+  K["knowledge/CONTEXT + LESSONS"]
+  A["architecture docs / tech-debt Work Item"]
+  BP["BMAD Planning"]
+
+  P --> I --> R --> H
+  H --> K
+  H --> A
+  H --> BP
+```
+
+不变式：
+
+- INTAKE 报告属于产品侧证据，不属于 harness-engineering runtime。
+- INTAKE 报告不是长期知识，不能自动进入 `CONTEXT.md` / `LESSONS.md`。
+- 老项目事实必须经过人工 review 后，再进入 BMAD Planning 和后续 Agent 执行上下文。
+
+完整说明见 [docs/Brownfield_Intake.md](docs/Brownfield_Intake.md)。
+
+## 6. Execution Flow
+
+```mermaid
+flowchart TD
+  BI["Brownfield intake"]
+  I["Product intent"]
+  BP["BMAD Planning: Method + task package"]
+  G0["Planning Gate"]
+  A1["Agent start"]
+  D1["DAG + task contract"]
+  T1["TDD implementation"]
+  Q1["Risk-matched validation"]
+  E1["Harness result + required evidence"]
+  GC["GC sweep"]
+  CH["Final check"]
+  GR["Growth candidate"]
+
+  BI --> I --> BP --> G0 --> A1 --> D1 --> T1 --> Q1 --> E1 --> GC --> CH
+  CH -->|"long-term candidate"| GR
+  GR --> BP
+```
+
+主要不变式：
+
+- 没有产品前导凭证，不启动执行闭环。
+- 已有项目接入报告未经 review，不能当成长期知识。
+- 没有任务契约，不调度实现 Agent。
+- 没有与 execution tier 匹配的验证和有效 Harness 结果，不允许任务完成；独立 QA 与 TEST/REVIEW 证据由 `standard` / `strict` 要求触发。
+- 没有结构守门和计划同步，不允许合并。
+- 没有人工 review 和 `harness_growth.sh apply-review`，成长候选不能进入产品知识；没有跨产品 review，不能升级成全局规则。
+
+Harness 使用两个正交分层：`lite|standard|strict` 决定任务验证深度，`local|guarded|enforced` 决定部署环境的接受保障。`local` 提供完整的任务级结果与审计；`guarded` 再用 Git guards/CI 阻断正常工作流，但承认本机管理员或 `--no-verify` 可绕过；`enforced` 要求受保护的权威接受点、commit-bound check、发布依赖和 provider 完成态写权限全部接线。GitHub live probe 是一种平台实现，不是 core 前提；其他 Git 服务、受控 bare repository 或发布 gate 可提供等价证据。仅初始化 workspace 的产品属于 `local`，旧 schema 仍显示 `shadow`，不能承诺不可绕过。
+
+## 7. Gate Chain
+
+| 门禁 | 保护的问题 |
+|------|------------|
+| Harness validate | runtime 文件和 manifest 完整 |
+| Intake scan | 已有项目事实形成可 review 证据 |
+| Planning Gate | BMAD Planning 产物和任务包真实存在 |
+| Task contract check | 实现任务有 read/write/action/verify/done |
+| DAG sync check | `tasks-dag.md` 与实施方案一致 |
+| Structure guard | 变更路径符合 profile 边界 |
+| Plan sync check | diff 中的路径已进入实施方案 |
+| QA sign-off | execution tier 要求独立 QA 时，保证 QA 与实现者职责隔离 |
+| QA evidence check | execution tier 要求时，校验签章、TEST 和 REVIEW 证据 |
+| Growth review check | 存在长期候选时，保证 GROWTH 报告经过 review 后才可 apply |
+| Quality commands | 产品侧 lint/test 命令真实执行，严格模式下缺配置即 block |
+| Doc gardening | 文档链接、旧路径和信息架构约束 |
+| Final check | 发布前完整链路 |
+| Code health | `finish` 始终执行 diff 机械扫描，并按 tier/信号要求独立 gc-sweeper 结果 |
+| Commit acceptance | `ci-check` 对 commit SHA 与 policy digest 生成同 schema shadow artifact；平台 required 接线后才可 enforced |
+| Enforcement audit | live probe 同时验证 shared judger、branch required check、release dependency 和 provider done guard；snapshot/过期证据不能升级状态 |
+| Provider lifecycle | 本地最多 ready/review；终态要求绑定成功 check 的 merge/release CI receipt |
+
+## 8. Progressive Disclosure
+
+入口职责必须保持分层：
+
+- `README.md`：开源读者入口，讲价值、快速开始和核心概念。
+- `AGENTS.md`：Agent 地图，只指路不展开流程。
+- `ARCHITECTURE.md`：架构入口，讲边界、状态和门禁。
+- `CLAUDE.md`：Claude 适配层，只写工具差异和硬约束。
+- `docs/USAGE.md`：公开使用模型与当前兼容命令参考。
+- `docs/Brownfield_Intake.md`：已有项目接入的定位、流程、报告与 review 规则。
+- `.harness/README.md`：runtime 内部脚本索引。
+
+这条分层本身由 doc-gardening 维护，避免入口文档重新长成百科。
+
+## 9. Extension Model
+
+迁移到新产品时，不修改 harness-engineering 闭环主体，只替换：
+
+- product registry entry。
+- 产品 `harness-workspace/project.yaml`。
+- profile 参考资料和 `.harness/profiles/<profile>/package-allowlist.yaml`。
+- 必要的领域 prompt 或规则。
+- Work Item provider 配置。
+
+产品经验先落在产品 workspace。只有在多个产品中重复成立，并经人工 review，才迁入 harness-engineering rules、templates 或 docs。
+
+参考项目能力也遵循同一扩展原则：优先复用现有 gate、目录语义和 adapter；新增公开入口前必须证明现有 `start/status/finish` 无法承载。

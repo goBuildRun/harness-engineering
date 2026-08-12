@@ -1,0 +1,1 @@
+"""Harness self-test package."""

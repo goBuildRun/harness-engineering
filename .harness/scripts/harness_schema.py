@@ -1,0 +1,77 @@
+#!/usr/bin/env python3
+"""Mechanical schema validation for the shared task result protocol."""
+from __future__ import annotations
+
+from typing import Any
+
+
+RESULT_STATES = {"active", "blocked", "validated"}
+DECISIONS = {"pass", "block"}
+TIERS = {"lite", "standard", "strict"}
+SOURCES = {"executed", "cache"}
+INVARIANTS = {"task_identity", "scope", "risk_validation", "final_result"}
+COST_FIELDS = {"input_tokens", "output_tokens", "context_chars", "agent_calls"}
+
+
+def validate_result(data: dict[str, Any]) -> list[str]:
+    issues: list[str] = []
+    if data.get("schema_version") != 1:
+        issues.append("schema_version")
+    if not isinstance(data.get("task_id"), str) or not data.get("task_id"):
+        issues.append("task_id")
+    if data.get("state") not in RESULT_STATES:
+        issues.append("state")
+    if data.get("enforcement") not in {"shadow", "enforced"}:
+        issues.append("enforcement")
+    if data.get("decision") not in DECISIONS:
+        issues.append("decision")
+    tier = data.get("tier") or {}
+    if tier.get("initial") not in TIERS or tier.get("effective") not in TIERS:
+        issues.append("tier")
+    if not isinstance(data.get("baseline"), dict) or not isinstance(data.get("subject"), dict):
+        issues.append("subject_or_baseline")
+    invariants = data.get("invariants") or {}
+    if set(invariants) != INVARIANTS or any(
+        value not in {"pending", "pass", "block"} for value in invariants.values()
+    ):
+        issues.append("invariants")
+    for name, check in (data.get("checks") or {}).items():
+        if not isinstance(check, dict) or check.get("decision") not in DECISIONS:
+            issues.append(f"checks.{name}.decision")
+            continue
+        for field in ("fingerprint", "subject_digest"):
+            if not isinstance(check.get(field), str):
+                issues.append(f"checks.{name}.{field}")
+        if check.get("source") not in SOURCES:
+            issues.append(f"checks.{name}.source")
+    cost = data.get("cost") or {}
+    for group in ("implementation", "harness"):
+        values = cost.get(group) or {}
+        fields = COST_FIELDS | ({"gate_duration_ms", "reruns"} if group == "harness" else set())
+        for field in fields:
+            value = values.get(field)
+            if value != "unknown" and (not isinstance(value, int) or isinstance(value, bool) or value < 0):
+                issues.append(f"cost.{group}.{field}")
+        if group == "harness" and "cache_hits" in values:
+            cache_hits = values["cache_hits"]
+            if not isinstance(cache_hits, int) or isinstance(cache_hits, bool) or cache_hits < 0:
+                issues.append("cost.harness.cache_hits")
+    if cost.get("telemetry_complete") not in {True, False}:
+        issues.append("cost.telemetry_complete")
+    if cost.get("telemetry_complete") and _contains_unknown(cost):
+        issues.append("cost.telemetry_complete_unknown")
+    return issues
+
+
+def assert_result(data: dict[str, Any]) -> None:
+    issues = validate_result(data)
+    if issues:
+        raise ValueError(f"RESULT_SCHEMA_INVALID: {','.join(sorted(set(issues)))}")
+
+
+def _contains_unknown(value: Any) -> bool:
+    if isinstance(value, dict):
+        return any(_contains_unknown(item) for item in value.values())
+    if isinstance(value, list):
+        return any(_contains_unknown(item) for item in value)
+    return value == "unknown"

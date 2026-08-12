@@ -1,0 +1,44 @@
+# Compatibility fallback path allowlist.
+# This file is used only for the generic compatibility path. An explicitly
+# selected unknown profile blocks instead of silently falling back.
+
+allow_all: true
+allowed_roots: []
+
+forbidden_globs:
+  - ".env"
+  - ".env.*"
+  - "**/.env"
+  - "**/.env.*"
+  - "*key*.json"
+  - "*secret*.json"
+  - "**/*key*.json"
+  - "**/*secret*.json"
+  - "**/node_modules/**"
+  - "**/.pnpm-store/**"
+  - "**/.venv/**"
+  - "**/site-packages/**"
+  - "**/__pycache__/**"
+
+forbid_root_py: false
+
+protected_prefixes:
+  - node_modules/
+  - .pnpm-store/
+  - .venv/
+  - site-packages/
+
+protected_exceptions: []
+
+service_layers:
+  - app/
+  - src/
+  - packages/
+  - services/
+  - backend/
+  - frontend/
+  - web/
+  - tests/
+
+api_file_globs: []
+max_api_file_lines: 200

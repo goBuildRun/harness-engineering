@@ -1,0 +1,6 @@
+{
+  "product_id": "example-product",
+  "root": "/absolute/path/to/example-product",
+  "workspace": "harness-workspace",
+  "config": "harness-workspace/project.yaml"
+}

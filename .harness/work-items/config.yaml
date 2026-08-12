@@ -1,0 +1,108 @@
+# Work Item 协同系统配置（可替换 Teambition / 飞书 / Jira；其它系统通过新增 provider 扩展）
+# 环境变量 WORK_ITEM_PROVIDER 可覆盖 provider
+
+provider: noop  # noop | teambition | feishu | jira
+
+# Fallback pattern. Provider-specific id_pattern is preferred.
+id_pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{1,127}$"
+
+# L1 豁免绑定（单文件修补无需协同系统）；L2/L3 强制
+requirements:
+  L1: false
+  L2: true
+  L3: true
+
+providers:
+  noop:
+    description: 离线/本地开发，使用语义化本地 ID，不调用外部 API
+  teambition:
+    description: 钉钉 Teambition（钉钉开放平台项目管理 API）
+    id_pattern: "^[0-9a-f]{24}$"
+    api_host: https://api.dingtalk.com
+    # 凭证从环境变量读取，勿写入仓库：
+    #   DINGTALK_APP_KEY, DINGTALK_APP_SECRET
+    #   DINGTALK_OPERATOR_USER_ID  （调用 API 的操作者 userId）
+    #   TEAMBITION_PROJECT_ID        （项目 ID，从 Teambition 项目链接获取）
+    #   TEAMBITION_ASSIGNEE_ID       （可选覆盖：本次/本机默认负责人）
+    #   TEAMBITION_OPEN_API_AUTHORIZATION （可选：open.teambition.com v3 appAccessToken，
+    #                                      格式 Bearer <access_token>，用于只读查询
+    #                                      scenariofieldconfig/search）
+    #   TEAMBITION_OPEN_APP_ID / TEAMBITION_OPEN_APP_SECRET
+    #                                      （可选：未提供 Authorization 时，
+    #                                      Harness 按官方 JWT 规则本地签发 appAccessToken）
+    #   TEAMBITION_TENANT_ID 或 TEAMBITION_ORG_ID （可选：企业 ID，用于 v3 查询）
+    # 产品侧 providers.teambition.assignee_id 可保存长期默认负责人；命令行
+    # sync-spec --assignee <id> 优先级最高。
+    open_api_host: https://open.teambition.com
+    open_app_id: "6a39f494dc7ffc1066f16b15"
+    tenant_id: "63be7ff37be95dd587703d2a"
+    tenant_type: organization
+    # 如果 Teambition 项目区分“需求 / 任务 / 缺陷”等类型，产品侧应配置
+    # scenariofieldconfig_id，让 sync-spec/create 创建到正确类型，避免落入错误工作流。
+    scenariofieldconfig_id: ""
+    # 状态流转默认 skip；产品侧配置 status_update_mode: stage 后，
+    # close/update_status 会调用 /tasks/{taskId}/stages 移动看板阶段。
+    status_update_mode: skip
+    # 状态回写模式：
+    #   skip        本地通过，不改飞书状态
+    #   completed   close --status done 时 PATCH completed_at=<当前毫秒时间戳>；in_progress/todo 时清为 "0"
+    #   description 只 PATCH description 记录 Harness 状态，不改变完成态
+    # stage_id_map 的 key 使用 Harness 标准阶段名；也支持中文阶段名作为输入。
+    # 可用环境变量临时覆盖：TEAMBITION_STAGE_ID_DONE 或 TEAMBITION_DONE_STAGE_ID。
+    stage_id_map: {}
+    # 推荐 key:
+    #   pending: "<待处理 stageId>"
+    #   design: "<设计中 stageId>"
+    #   in_progress: "<开发中 stageId>"
+    #   testing: "<测试中 stageId>"
+    #   ready_to_release: "<待发布 stageId>"
+    #   done: "<已完成 stageId>"
+    #   implemented: "<已实现 stageId>"
+    #   cancelled: "<已取消 stageId>"
+  feishu:
+    description: 飞书任务（Feishu/Lark Tasks API）
+    id_pattern: "^[A-Za-z0-9_-]{8,128}$"
+    api_host: https://open.feishu.cn
+    tenant_token_path: /open-apis/auth/v3/tenant_access_token/internal
+    tasks_path: /open-apis/task/v2/tasks
+    list_tasks_path: /open-apis/task/v2/tasks
+    list_query: {}
+    status_update_mode: skip
+    # 密钥从环境变量读取，勿写入仓库；tasklist_guid / assignee_id / list_query 可在产品侧
+    # project.yaml 设置长期默认值，也可用环境变量临时覆盖：
+    #   FEISHU_APP_ID, FEISHU_APP_SECRET
+    #   FEISHU_TASKLIST_GUID         （可选覆盖：任务清单 / 项目任务容器）
+    #   FEISHU_ASSIGNEE_ID           （可选覆盖：默认负责人 open_id/union_id，按租户配置）
+    # list-mine 会使用 tasklist_guid 或 list_query 调用 list_tasks_path，并在本地按 assignee 过滤。
+  jira:
+    description: Jira Issue（Atlassian Jira REST API）
+    id_pattern: "^[A-Z][A-Z0-9]+-[0-9]+$"
+    api_version: "3"
+    status_update_mode: skip
+    issue_type: Task
+    # 凭证从环境变量读取，勿写入仓库：
+    #   JIRA_BASE_URL, JIRA_EMAIL, JIRA_API_TOKEN
+    #   JIRA_PROJECT_KEY             （sync-spec 创建 issue 时需要）
+    #   JIRA_ASSIGNEE_ID             （可选覆盖：默认负责人 accountId）
+    #   JIRA_ISSUE_TYPE              （可选，默认 Task）
+    #   JIRA_DONE_TRANSITION_ID      （可选，启用真实状态流转时使用）
+    # 产品侧 providers.jira.assignee_id 可保存长期默认负责人；命令行
+    # sync-spec --assignee <accountId> 优先级最高。
+
+status_map:
+  # Harness 阶段 → 建议在协同系统中更新的状态标签（provider 自行映射）
+  bmad_planning: bmad_planning
+  planning_gate_ready: planning_gate_ready
+  harness_execution_started: in_progress
+  qa_passed: qa
+  mr_merged: done
+
+sync_contract:
+  name: bmad-work-item-v1
+  source_of_truth: product_workspace
+  work_item_role: collaboration_index
+  required_links:
+    - product_spec
+    - exec_plan
+    - task_package
+    - context

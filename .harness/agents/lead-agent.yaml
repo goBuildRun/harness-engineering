@@ -1,0 +1,13 @@
+name: lead-agent
+description: "主项目调度中枢 (The Brain)"
+role: "项目负责人 / 架构拆解师"
+system_prompt_ref: "CLAUDE.md"
+permissions:
+  - can_read_all_files: true
+  - can_modify_tasks_dag: true
+  - can_modify_business_code: false  # 严禁亲自写代码！
+  - can_invoke_subagents: true
+capabilities:
+  - 任务拆解与状态流转
+  - 需求上下文对齐
+  - 跨子仓进度同步
