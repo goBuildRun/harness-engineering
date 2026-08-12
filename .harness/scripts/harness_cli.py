@@ -45,6 +45,7 @@ def build_parser() -> argparse.ArgumentParser:
     enforcement = sub.add_parser("enforcement")
     enforcement.add_argument("action", choices=("audit",))
     enforcement.add_argument("--snapshot", default="")
+    enforcement.add_argument("--authority-url", default=os.environ.get("HARNESS_AUTHORITY_URL", ""))
     enforcement.add_argument("--repository", default="")
     enforcement.add_argument("--branch", default="")
     enforcement.add_argument("--required-check", default="")

@@ -189,10 +189,10 @@ def _remote_file(repository: str, path: str, ref: str, token: str) -> str:
 
 
 def probe_github(product: Path, *, repository: str, branch: str,
-                 required_check: str, token: str) -> dict[str, Any]:
+                 required_check: str, credential: str) -> dict[str, Any]:
     url = f"https://api.github.com/repos/{repository}/branches/{branch}/protection/required_status_checks"
     request = urllib.request.Request(
-        url, headers={"Accept": "application/vnd.github+json", "Authorization": f"Bearer {token}",
+        url, headers={"Accept": "application/vnd.github+json", "Authorization": f"Bearer {credential}",
                       "X-GitHub-Api-Version": "2022-11-28"},
     )
     with urllib.request.urlopen(request, timeout=20) as response:
@@ -202,16 +202,16 @@ def probe_github(product: Path, *, repository: str, branch: str,
                   f"{urllib.parse.quote(branch, safe='')}")
     commit_request = urllib.request.Request(
         commit_url, headers={"Accept": "application/vnd.github+json",
-                             "Authorization": f"Bearer {token}",
+                             "Authorization": f"Bearer {credential}",
                              "X-GitHub-Api-Version": "2022-11-28"},
     )
     with urllib.request.urlopen(commit_request, timeout=20) as response:
         target_commit = str(json.loads(response.read().decode("utf-8")).get("sha") or "")
     workflow_text = _remote_file(
-        repository, ".github/workflows/harness-required.yml", target_commit, token)
-    release_text = _remote_file(repository, ".github/workflows/release.yml", target_commit, token)
+        repository, ".github/workflows/harness-required.yml", target_commit, credential)
+    release_text = _remote_file(repository, ".github/workflows/release.yml", target_commit, credential)
     provider_text = _remote_file(
-        repository, ".github/workflows/harness-provider-complete.yml", target_commit, token)
+        repository, ".github/workflows/harness-provider-complete.yml", target_commit, credential)
     now = datetime.now(timezone.utc)
     release_guard = (
         "workflow_run:" in release_text and 'workflows: ["Harness Required"]' in release_text
@@ -241,8 +241,8 @@ def probe_github(product: Path, *, repository: str, branch: str,
         and "required_run_id', String(run.id)" in provider_text
         and "d['decision']=='pass'" in provider_text
     )
-    release_run = _latest_workflow_run(repository, "release.yml", token) if release_guard else {}
-    provider_run = (_latest_workflow_run(repository, "harness-provider-complete.yml", token)
+    release_run = _latest_workflow_run(repository, "release.yml", credential) if release_guard else {}
+    provider_run = (_latest_workflow_run(repository, "harness-provider-complete.yml", credential)
                     if provider_guard else {})
     return {
         "schema_version": 1, "source": "live", "repository": repository,
@@ -262,6 +262,59 @@ def probe_github(product: Path, *, repository: str, branch: str,
         "probed_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "expires_at": (now + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
+
+
+def probe_authority(*, url: str, token: str, repository: str,
+                    branch: str, required_check: str) -> dict[str, Any]:
+    """Request a live snapshot from a platform-independent acceptance authority."""
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme != "https" or not parsed.netloc or parsed.username or parsed.password:
+        raise ValueError("AUTHORITY_PROBE_HTTPS_REQUIRED")
+    if not token:
+        raise ValueError("AUTHORITY_PROBE_TOKEN_REQUIRED")
+    request = urllib.request.Request(
+        url,
+        data=json.dumps({
+            "schema_version": 1,
+            "repository": repository,
+            "target_branch": branch,
+            "required_check": required_check,
+        }, separators=(",", ":")).encode("utf-8"),
+        method="POST",
+        headers={
+            "Accept": "application/json",
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
+    )
+    with urllib.request.urlopen(request, timeout=20) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("AUTHORITY_PROBE_RESPONSE_INVALID")
+    snapshot = payload.get("snapshot", payload)
+    if not isinstance(snapshot, dict):
+        raise ValueError("AUTHORITY_PROBE_RESPONSE_INVALID")
+    snapshot = dict(snapshot)
+    snapshot["source"] = "live"
+    snapshot["probe_transport"] = "https-authority"
+    return snapshot
+
+
+def probe_live(product: Path, *, authority_url: str, credentials: Mapping[str, str],
+               repository: str, branch: str,
+               required_check: str) -> dict[str, Any]:
+    if authority_url:
+        return probe_authority(
+            url=authority_url, token=str(credentials.get("authority") or ""), repository=repository,
+            branch=branch, required_check=required_check,
+        )
+    github_token = str(credentials.get("github") or "")
+    if not github_token or not repository:
+        raise ValueError("GITHUB_LIVE_PROBE_CREDENTIALS_MISSING")
+    return probe_github(
+        product, repository=repository, branch=branch,
+        required_check=required_check, credential=github_token,
+    )
 
 
 def _digest(value: Any) -> str:

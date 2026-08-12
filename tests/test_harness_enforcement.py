@@ -17,7 +17,7 @@ SCRIPTS = ROOT / ".harness" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 from harness_enforcement import (  # noqa: E402
-    evaluate_enforcement, git_identity, probe_github, trusted_ci_context,
+    evaluate_enforcement, git_identity, probe_authority, probe_github, trusted_ci_context,
     validate_lifecycle_receipt,
 )
 
@@ -50,6 +50,73 @@ def live_snapshot(**overrides):
 
 
 class EnforcementTest(unittest.TestCase):
+    def test_platform_authority_probe_uses_bound_https_request(self) -> None:
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self):
+                return json.dumps({"snapshot": live_snapshot(source="forged")}).encode()
+
+        with patch("urllib.request.urlopen", return_value=Response()) as opened:
+            snapshot = probe_authority(
+                url="https://acceptance.example.test/harness/probe", token="secret",
+                repository="goBuildRun/product", branch="main",
+                required_check="harness-commit-acceptance",
+            )
+        request = opened.call_args.args[0]
+        body = json.loads(request.data)
+        self.assertEqual(request.get_method(), "POST")
+        self.assertEqual(request.get_header("Authorization"), "Bearer secret")
+        self.assertEqual(body["repository"], "goBuildRun/product")
+        self.assertEqual(body["target_branch"], "main")
+        self.assertEqual(snapshot["source"], "live")
+        self.assertEqual(snapshot["probe_transport"], "https-authority")
+        evaluated = evaluate_enforcement(
+            snapshot, repository="goBuildRun/product", branch="main",
+            required_check="harness-commit-acceptance",
+        )
+        self.assertEqual(evaluated["enforcement"], "enforced")
+
+    def test_platform_authority_probe_rejects_unsafe_transport_and_bad_payload(self) -> None:
+        for url in ("http://acceptance.example.test/probe", "file:///tmp/probe",
+                    "https://u:p@example.test/probe"):
+            with self.subTest(url=url), self.assertRaisesRegex(ValueError, "HTTPS_REQUIRED"):
+                probe_authority(
+                    url=url, token="secret", repository="org/repo", branch="main",
+                    required_check="check",
+                )
+        with self.assertRaisesRegex(ValueError, "TOKEN_REQUIRED"):
+            probe_authority(
+                url="https://acceptance.example.test/probe", token="",
+                repository="org/repo", branch="main", required_check="check",
+            )
+        with patch("urllib.request.urlopen") as opened:
+            opened.return_value.__enter__.return_value.read.return_value = b"[]"
+            with self.assertRaisesRegex(ValueError, "RESPONSE_INVALID"):
+                probe_authority(
+                    url="https://acceptance.example.test/probe", token="secret",
+                    repository="org/repo", branch="main", required_check="check",
+                )
+
+    def test_enforcement_cli_routes_platform_authority_and_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {
+                **os.environ,
+                "HARNESS_AUTHORITY_URL": "http://acceptance.example.test/probe",
+                "HARNESS_AUTHORITY_TOKEN": "secret",
+            }
+            output = subprocess.check_output([
+                "bash", str(SCRIPTS / "harness"), "--product-root", tmp,
+                "enforcement", "audit", "--repository", "org/repo",
+            ], env=env, text=True)
+        result = json.loads(output)
+        self.assertEqual(result["decision"], "block")
+        self.assertIn("AUTHORITY_PROBE_HTTPS_REQUIRED", result["reason"])
+
     def test_git_identity_parses_supported_github_remotes_without_port_leakage(self) -> None:
         cases = {
             "https://github.com/org/repo.git": "org/repo",
@@ -148,7 +215,7 @@ class EnforcementTest(unittest.TestCase):
                 ]):
             snapshot = probe_github(
                 Path(tmp), repository="org/repo", branch="main",
-                required_check="harness-commit-acceptance", token="token",
+                required_check="harness-commit-acceptance", credential="token",
             )
         self.assertEqual(snapshot["release_dependencies"], [])
         self.assertFalse(snapshot["provider_done_guard"])
@@ -196,7 +263,7 @@ class EnforcementTest(unittest.TestCase):
                     patch("harness_enforcement._remote_file", side_effect=remote_workflows) as remote_file:
                 snapshot = probe_github(
                     product, repository="org/repo", branch="main",
-                    required_check="harness-commit-acceptance", token="token",
+                    required_check="harness-commit-acceptance", credential="token",
                 )
             self.assertEqual(snapshot["release_dependencies"], ["harness-commit-acceptance"])
             self.assertEqual(snapshot["target_commit_sha"], "a" * 40)
@@ -245,7 +312,7 @@ class EnforcementTest(unittest.TestCase):
                     ]):
                 snapshot = probe_github(
                     Path(tmp), repository="org/repo", branch="main",
-                    required_check="harness-commit-acceptance", token="token",
+                    required_check="harness-commit-acceptance", credential="token",
                 )
             self.assertEqual(snapshot["release_dependencies"], [])
             self.assertEqual(snapshot["release_dependency_run"], {})

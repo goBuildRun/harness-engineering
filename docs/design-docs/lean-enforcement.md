@@ -156,7 +156,7 @@ CI 必须对目标 commit 独立运行同一结果 schema，并把 `commit SHA +
 | `guarded` | `local` + 版本化 Git guards 和/或 CI commit check | 正常 Git 工作流 + CI | 对常规 commit/push/PR 机械阻断并暴露显式绕过；hook 可被 `--no-verify` 或本机管理员绕过，因此不等于 enforced |
 | `enforced` | `guarded` + 受保护的权威接受点和发布/provider 门禁 | protected branch、受控 bare repository、发布/制品 gate 等 | 缺少绑定目标 commit 的有效 Harness 结果不能成为正式交付；管理员应急 bypass 必须独立审计 |
 
-轻量推广路径是“先完整执行，再逐级增强接受保障”：五分钟进入 `local`，启用低成本 guards 后进入 `guarded`，只有确有不可绕过合规需求的团队才接入 `enforced`。默认采用不要求自建 Git 服务、数据库或常驻编排器；GitHub、GitLab、Gitea 都只是可选的 enforced 承载平台，不是 Harness core 依赖。
+轻量推广路径是“先完整执行，再逐级增强接受保障”：五分钟进入 `local`，启用低成本 guards 后进入 `guarded`，只有确有不可绕过合规需求的团队才接入 `enforced`。默认采用不要求自建 Git 服务、数据库或常驻编排器；GitHub、GitLab、Gitea 都只是可选的 enforced 承载平台，不是 Harness core 依赖。平台无关的 HTTPS authority probe 使用同一 snapshot evaluator 验证目标 commit、shared judger、发布依赖和 provider 完成态，让受控 bare repository 或发布 gate 能接入而不复制 Harness 状态机。
 
 目标 `result.json` 在现有字段之外增加结构化保障快照：
 

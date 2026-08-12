@@ -13,7 +13,7 @@ from pathlib import Path
 
 from harness_output import dump_json
 from harness_enforcement import (evaluate_enforcement, git_identity, load_snapshot,
-                                 probe_github, save_snapshot)
+                                 probe_live, save_snapshot)
 from harness_assurance import audit_report, finalize, refresh_result
 from harness_cache import executed_check, reuse_check, tool_digest
 from harness_gates import committed_work_item, run_gate_plan
@@ -375,17 +375,16 @@ def cmd_enforcement(args: argparse.Namespace) -> int:
             return 0
         snapshot["source"] = "snapshot"
     else:
-        token = os.environ.get("GITHUB_TOKEN", "")
-        if not token or not repository:
-            dump_json({"decision": "block", "reason": "GITHUB_LIVE_PROBE_CREDENTIALS_MISSING"})
-            return 0
         try:
-            snapshot = probe_github(
-                product, repository=repository, branch=branch,
-                required_check=required_check, token=token,
+            snapshot = probe_live(
+                product, authority_url=args.authority_url,
+                credentials={"authority": os.environ.get("HARNESS_AUTHORITY_TOKEN", ""),
+                             "github": os.environ.get("GITHUB_TOKEN", "")},
+                repository=repository,
+                branch=branch, required_check=required_check,
             )
         except Exception as exc:
-            dump_json({"decision": "block", "reason": f"GITHUB_LIVE_PROBE_FAILED: {exc}"})
+            dump_json({"decision": "block", "reason": f"ENFORCEMENT_LIVE_PROBE_FAILED: {exc}"})
             return 0
     save_snapshot(product, snapshot)
     evaluated = evaluate_enforcement(
