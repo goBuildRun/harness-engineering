@@ -65,7 +65,7 @@ def audit_report(product: Path, enforcement: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def guard_script() -> str:
+def guard_prelude() -> str:
     return """#!/usr/bin/env bash
 set -euo pipefail
 PRODUCT_ROOT="$(git rev-parse --show-toplevel)"
@@ -78,11 +78,43 @@ if [[ -z "$HARNESS_BIN" || ! -x "$HARNESS_BIN" ]]; then
   echo 'HARNESS_GUARD_RUNTIME_MISSING: set HARNESS_ENGINEERING_ROOT or install harness on PATH' >&2
   exit 1
 fi
-OUTPUT="$($HARNESS_BIN --product-root "$PRODUCT_ROOT" status 2>&1)" || {
+"""
+
+
+def pre_commit_script() -> str:
+    return guard_prelude() + """\
+OUTPUT="$("$HARNESS_BIN" --product-root "$PRODUCT_ROOT" status 2>&1)" || {
   echo "$OUTPUT" >&2
   exit 1
 }
 python3 -c 'import json,sys; d=json.loads(sys.argv[1]); r=d.get("result",{}); ok=d.get("decision")=="pass" and r.get("decision")=="pass" and r.get("state")=="validated"; print("HARNESS_GUARD_PASS" if ok else "HARNESS_GUARD_BLOCKED", file=sys.stderr); raise SystemExit(0 if ok else 1)' "$OUTPUT"
+"""
+
+
+def pre_push_script() -> str:
+    return guard_prelude() + """\
+ACTIVE="$PRODUCT_ROOT/harness-workspace/runs/active_task.json"
+if [[ ! -f "$ACTIVE" ]]; then
+  echo 'HARNESS_GUARD_ACTIVE_TASK_MISSING' >&2
+  exit 1
+fi
+OUTPUT="$(HARNESS_BIN="$HARNESS_BIN" PRODUCT_ROOT="$PRODUCT_ROOT" python3 - <<'PY'
+import json, os, subprocess
+product = os.environ["PRODUCT_ROOT"]
+active = json.load(open(f"{product}/harness-workspace/runs/active_task.json"))
+task_id = active.get("task_id", "")
+result = json.load(open(f"{product}/harness-workspace/runs/tasks/{task_id}/result.json"))
+task, tier = result.get("task", {}), result.get("tier", {}).get("effective", "standard")
+argv = [os.environ["HARNESS_BIN"], "--product-root", product, "ci-check",
+        "--task-id", task_id, "--commit", "HEAD", "--tier", tier]
+for scope in task.get("scope", []):
+    argv.extend(["--scope", scope])
+completed = subprocess.run(argv, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+print(completed.stdout, end="")
+raise SystemExit(completed.returncode)
+PY
+)" || { echo "$OUTPUT" >&2; exit 1; }
+python3 -c 'import json,sys; d=json.loads(sys.argv[1]); ok=d.get("decision")=="pass"; print("HARNESS_PUSH_GUARD_PASS" if ok else "HARNESS_PUSH_GUARD_BLOCKED", file=sys.stderr); raise SystemExit(0 if ok else 1)' "$OUTPUT"
 """
 
 
@@ -93,9 +125,10 @@ def install_guards(product: Path) -> dict[str, Any]:
     hooks = product / ".githooks"
     hooks.mkdir(parents=True, exist_ok=True)
     created: list[str] = []
-    for name in ("pre-commit", "pre-push"):
+    scripts = {"pre-commit": pre_commit_script(), "pre-push": pre_push_script()}
+    for name, text in scripts.items():
         path = hooks / name
-        path.write_text(guard_script(), encoding="utf-8")
+        path.write_text(text, encoding="utf-8")
         path.chmod(path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
         created.append(str(path.relative_to(product)))
     try:

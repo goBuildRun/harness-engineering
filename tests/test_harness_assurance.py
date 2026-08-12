@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -67,6 +68,40 @@ class HarnessAssuranceTest(unittest.TestCase):
             )
             self.assertNotEqual(blocked.returncode, 0)
             self.assertNotIn("HARNESS_GUARD_RUNTIME_MISSING", blocked.stderr)
+
+    def test_guarded_finish_commit_push_lifecycle_does_not_stale_deadlock(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            (product / "docs").mkdir()
+            (product / "docs/note.md").write_text("base\n")
+            (product / ".gitignore").write_text("harness-workspace/runs/\n")
+            subprocess.run(["git", "init", "-q"], cwd=product, check=True)
+            subprocess.run(["git", "config", "user.email", "harness@example.invalid"], cwd=product, check=True)
+            subprocess.run(["git", "config", "user.name", "Harness Test"], cwd=product, check=True)
+            subprocess.run(["git", "add", "."], cwd=product, check=True)
+            subprocess.run(["git", "commit", "-qm", "base"], cwd=product, check=True)
+            install_guards(product)
+            subprocess.run(["git", "add", ".githooks"], cwd=product, check=True)
+            subprocess.run(["git", "commit", "-qm", "guarded onboarding", "--no-verify"], cwd=product, check=True)
+            command = [str(SCRIPTS / "harness"), "--product-root", str(product)]
+            subprocess.check_output([*command, "start", "guarded-task", "--tier", "lite", "--scope", "docs"])
+            subprocess.run(["git", "add", "."], cwd=product, check=True)
+            subprocess.run(["git", "commit", "-qm", "binding", "--no-verify"], cwd=product, check=True)
+            (product / "docs/note.md").write_text("changed\n")
+            finished = json.loads(subprocess.check_output(
+                [*command, "finish", "--skip-legacy-gates"], text=True,
+                env={**dict(os.environ), "HARNESS_PRODUCT_ROOT": str(product)},
+            ))
+            self.assertEqual(finished["decision"], "pass")
+            subprocess.run([str(product / ".githooks/pre-commit")], cwd=product, check=True)
+            subprocess.run(["git", "add", "docs/note.md"], cwd=product, check=True)
+            subprocess.run(["git", "commit", "-qm", "change"], cwd=product, check=True)
+            pushed = subprocess.run(
+                [str(product / ".githooks/pre-push")], cwd=product,
+                text=True, capture_output=True,
+            )
+            self.assertEqual(pushed.returncode, 0, pushed.stderr)
+            self.assertIn("HARNESS_PUSH_GUARD_PASS", pushed.stderr)
 
     def test_guarded_never_maps_to_enforced_without_live_probe(self) -> None:
         result = default_result("guarded")

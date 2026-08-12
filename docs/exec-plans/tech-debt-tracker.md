@@ -29,7 +29,7 @@
 | TD-025 | 清理其余 runtime 超大 Python 模块并机械防止重新增长 | — | **已偿还** 2026-08-11 · growth review、knowledge parse、doc policy、workspace config、product registry、BMAD init 已按职责拆分；全局测试强制 `.harness/scripts/*.py` 单文件不超过 400 行 |
 | TD-026 | Scope-change / hotfix 使用显式风险升级且不能绕过共同不变式 | — | **已偿还** 2026-08-11 · 复用 `harness start --kind ... --reason ...`；scope-change 最低 standard、hotfix 强制 strict，kind floor 有 CLI 与分类器测试 |
 | TD-027 | Agent Review 生成结构化 checklist 并与 MR diff 绑定 | — | **已偿还** 2026-08-11 · `mr_ready` 输出四视角 checklist；required 模式校验 runs 内 subject-bound 独立 reviewer receipt，旧 diff 或实现角色自签均阻断 |
-| TD-028 | 将部署保障从二态兼容字段演进为 `local|guarded|enforced`，并实现轻量 guarded guards | 中 | partially done：结构化 assurance schema、历史兼容、repo-local pre-commit/pre-push 安装与审计已落地；待真实团队试运行、显式绕过审计和跨平台安装验证 |
+| TD-028 | 将部署保障从二态兼容字段演进为 `local|guarded|enforced`，并实现轻量 guarded guards | 中 | partially done：结构化 assurance、历史兼容、repo-local hooks 与审计已落地；临时仓库已跑通 finish → pre-commit → commit → pre-push commit check，并覆盖含空格安装路径；待真实团队试运行、显式绕过审计和更多平台验证 |
 
 ## 已偿还（Harness 强化）
 
