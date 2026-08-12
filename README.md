@@ -72,11 +72,11 @@ harness-engineering 不保存产品 PRD、任务实例、测试报告或产品�
 
 尚未完成：
 
-- 结构化 `assurance.level: local|guarded|enforced` 结果字段及版本化 guarded Git guards。
+- guarded hooks 的真实团队试运行、显式绕过审计与跨平台安装验证。
 - GitHub required check、受保护分支、release eligibility 和 provider completion 的真实环境端到端验收。
 - 非 GitHub 平台的等价受保护接受点 live probe，以及更多 provider usage/lifecycle 实测。
 
-任务风险使用 `lite|standard|strict`，部署保障使用 `local|guarded|enforced`，两者互不替代。当前兼容 schema 仍将 `local`/`guarded` 映射为 `shadow`；仅安装 workspace 不代表流程不可绕过。成熟度与实施顺序见 [Harness_成熟度评估.md](./docs/Harness_成熟度评估.md)。
+任务风险使用 `lite|standard|strict`，部署保障使用 `local|guarded|enforced`，两者互不替代。结果已提供结构化 `assurance`；兼容字段仍将 `local`/`guarded` 映射为 `shadow`。仅安装 workspace 不代表流程不可绕过。成熟度与实施顺序见 [Harness_成熟度评估.md](./docs/Harness_成熟度评估.md)。
 
 ## 最小接入
 

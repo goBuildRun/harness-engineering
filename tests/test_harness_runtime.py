@@ -161,6 +161,7 @@ class HarnessRuntimeTest(unittest.TestCase):
                 env={**os.environ, "HARNESS_PRODUCT_ROOT": str(product)},
             ))
             self.assertEqual(finished["decision"], "pass")
+            self.assertEqual(finished["result"]["assurance"]["task_execution"], "complete")
             self.assertEqual(finished["result"]["checks"]["code_health"]["mode"], "mechanical")
             cached = json.loads(subprocess.check_output(
                 [*command, "finish", "--skip-legacy-gates"], text=True,

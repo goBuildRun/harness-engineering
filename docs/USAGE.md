@@ -9,7 +9,7 @@
 
 `AGENTS.md` 为最小地图，本文件说明公开使用方式，并保留统一入口尚未覆盖的兼容命令和诊断参考。
 
-**实现状态说明**：`harness start/status/finish`、`harness workspace audit`、`harness migrate-task` 与 `runs/tasks/<id>/result.json` 已进入可执行阶段，入口为 `.harness/scripts/harness`。当前任务执行能力可用于 `local` 接入；`guarded` guards 与结构化 `assurance` 字段仍待实现，平台 required、发布依赖和 provider 生命周期未全部验证，所以兼容字段继续显示 `shadow`，不得标记 `enforced`。旧命令暂保留用于兼容和诊断。
+**实现状态说明**：`harness start/status/finish`、workspace audit/migrate、结构化 `assurance` 和可选 guarded Git hooks 已可执行。平台 required、发布依赖和 provider 生命周期未全部验证时，兼容字段继续显示 `shadow`，不得标记 `enforced`。旧命令暂保留用于兼容和诊断。
 
 **升级兼容说明**：已有产品不做全量 workspace 迁移。planning、knowledge 和历史 evidence 原位保留；新任务写新结果；只有进行中或重开的任务补最小运行状态。详细矩阵见 [精简执行设计 §10](./design-docs/lean-enforcement.md#10-历史数据与兼容升级)。
 
@@ -664,7 +664,7 @@ execution tier 与 assurance level 必须分开理解：前者决定任务需要
 | 接入等级 | 使用场景 | 日常入口 | 当前状态 |
 |----------|----------|----------|----------|
 | `local` | 个人、本地 Git、快速试用 | `start/status/finish` | 已可用；结果可审计但可被显式绕过 |
-| `guarded` | 小团队、希望低成本阻止误提交/误推送 | 日常入口不变，初始化时安装版本化 guards/CI | 目标设计；尚未实现并验证 |
+| `guarded` | 小团队、希望低成本阻止误提交/误推送 | `harness_init.sh init --assurance guarded ...` 安装版本化 `.githooks` | 已实现；hooks 可被 `--no-verify` 或管理员绕过，不等于 enforced |
 | `enforced` | 合规、发布或组织级不可绕过准入 | 日常入口不变，平台或受控接受点执行 required check | GitHub live probe 已实现；需按实际平台完成接线验收 |
 
 `guarded` 是轻量推广的默认目标，不要求自建 Gitea/GitLab 或购买 GitHub 套餐；它不能因方便而伪称不可绕过。需要绝对准入时，再选择 protected branch、受控 bare repository、发布 gate 等 `enforced` 承载方式。

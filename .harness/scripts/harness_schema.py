@@ -8,6 +8,7 @@ from typing import Any
 RESULT_STATES = {"active", "blocked", "validated"}
 DECISIONS = {"pass", "block"}
 TIERS = {"lite", "standard", "strict"}
+ASSURANCE_LEVELS = {"local", "guarded", "enforced"}
 SOURCES = {"executed", "cache"}
 INVARIANTS = {"task_identity", "scope", "risk_validation", "final_result"}
 COST_FIELDS = {"input_tokens", "output_tokens", "context_chars", "agent_calls"}
@@ -23,6 +24,25 @@ def validate_result(data: dict[str, Any]) -> list[str]:
         issues.append("state")
     if data.get("enforcement") not in {"shadow", "enforced"}:
         issues.append("enforcement")
+    assurance = data.get("assurance") or {}
+    if assurance.get("level") not in ASSURANCE_LEVELS:
+        issues.append("assurance.level")
+    if assurance.get("task_execution") not in {"complete", "incomplete"}:
+        issues.append("assurance.task_execution")
+    if assurance.get("acceptance_authority") not in {
+        "worktree", "git-guards+ci", "protected-authority",
+    }:
+        issues.append("assurance.acceptance_authority")
+    if not isinstance(assurance.get("bypassable"), bool):
+        issues.append("assurance.bypassable")
+    if not isinstance(assurance.get("verified_at"), str):
+        issues.append("assurance.verified_at")
+    if not isinstance(assurance.get("blockers"), list):
+        issues.append("assurance.blockers")
+    if assurance.get("level") == "enforced" and data.get("enforcement") != "enforced":
+        issues.append("assurance.enforcement_mismatch")
+    if data.get("enforcement") == "enforced" and assurance.get("level") != "enforced":
+        issues.append("enforcement.assurance_mismatch")
     if data.get("decision") not in DECISIONS:
         issues.append("decision")
     tier = data.get("tier") or {}

@@ -47,6 +47,10 @@ enforcement:
   target_branch: main
   required_check: harness-commit-acceptance
 
+assurance:
+  # local 默认不修改 Git；guarded 由 init 安装 repo-local .githooks，仍可被 --no-verify 绕过。
+  level: {{assurance_level}}
+
 intake:
   # Brownfield intake needs ownership boundaries. By default everything is
   # treated as product-owned. Add scopes when the repo contains upstream,

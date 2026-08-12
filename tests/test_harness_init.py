@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import sys
+import subprocess
 import tempfile
 import unittest
 from argparse import Namespace
@@ -19,9 +20,42 @@ sys.path.insert(0, str(SCRIPT_DIR))
 
 import harness_init  # noqa: E402
 from harness_init import ensure_product_workspace, render_bmad_config_block  # noqa: E402
+from harness_assurance import install_guards  # noqa: E402
 
 
 class HarnessInitTest(unittest.TestCase):
+    def test_guarded_configuration_fails_before_workspace_write_without_git(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product_root = Path(tmp)
+            result = install_guards(product_root)
+            self.assertEqual(result["reason"], "GUARDED_GIT_REPOSITORY_REQUIRED")
+            self.assertFalse((product_root / "harness-workspace").exists())
+            self.assertFalse((product_root / ".githooks").exists())
+
+    def test_guarded_init_installs_hooks_and_declares_guarded_assurance(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product_root = Path(tmp)
+            subprocess.run(["git", "init", "-q"], cwd=product_root, check=True)
+            product = {
+                "id": "guarded-demo", "name": "Guarded Demo", "profile": "generic",
+                "root": str(product_root), "workspace": "harness-workspace",
+                "config": "harness-workspace/project.yaml", "work_item_provider": "noop",
+                "work_item_id_pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{1,127}$",
+                "assurance": "guarded",
+            }
+            ensure_product_workspace(product)
+            result = install_guards(product_root)
+            self.assertEqual(result["decision"], "pass")
+            config = yaml.safe_load((product_root / "harness-workspace/project.yaml").read_text())
+            self.assertEqual(config["assurance"]["level"], "guarded")
+            self.assertEqual(
+                subprocess.check_output(
+                    ["git", "config", "--local", "--get", "core.hooksPath"],
+                    cwd=product_root, text=True,
+                ).strip(),
+                ".githooks",
+            )
+
     def test_workspace_contains_design_artifacts_dir(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product_root = Path(tmp)

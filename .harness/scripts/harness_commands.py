@@ -12,9 +12,9 @@ import uuid
 from pathlib import Path
 
 from harness_output import dump_json
-from harness_enforcement import (
-    evaluate_enforcement, git_identity, load_snapshot, probe_github, save_snapshot,
-)
+from harness_enforcement import (evaluate_enforcement, git_identity, load_snapshot,
+                                 probe_github, save_snapshot)
+from harness_assurance import audit_report, finalize, refresh_result
 from harness_cache import executed_check, reuse_check, tool_digest
 from harness_gates import committed_work_item, run_gate_plan
 from harness_telemetry import apply_gc_telemetry, apply_usage_receipt, enforce_budget
@@ -30,7 +30,6 @@ from harness_scope import paths_within_scope
 from harness_state import invalidate_if_stale
 from product_context import product_config
 from worktree_baseline import capture_baseline, changed_since_baseline
-
 
 def commit_sha(repo: Path, value: str) -> str:
     try:
@@ -108,9 +107,8 @@ def cmd_status(args: argparse.Namespace) -> int:
         load_snapshot(product), repository=repository, branch=branch,
         required_check=required_check,
     )
-    result["enforcement"] = enforcement["enforcement"]
-    result["enforcement_notice"] = enforcement["notice"]
-    result["enforcement_probe"] = enforcement
+    refresh_result(result, product, enforcement)
+    atomic_write_result(path, result)
     dump_json({"decision": "pass", "reason": "TASK_STATUS", "result": result})
     return 0
 
@@ -246,7 +244,7 @@ def cmd_finish(args: argparse.Namespace) -> int:
     result["cost"]["harness"]["gate_duration_ms"] += int((time.monotonic() - started) * 1000)
     apply_usage_receipt(result, subject_digest=subject)
     enforce_budget(result)
-    finish_decision(result)
+    finalize(result, finish_decision)
     atomic_write_result(path, result)
     reason = result["blockers"][0] if result["blockers"] else "FINISH_OK"
     dump_json({"decision": result["decision"], "reason": reason, "result": result})
@@ -321,12 +319,12 @@ def cmd_ci_check(args: argparse.Namespace) -> int:
     result["cost"]["harness"]["gate_duration_ms"] += int((time.monotonic() - started) * 1000)
     apply_usage_receipt(result, subject_digest=sha)
     enforce_budget(result)
-    finish_decision(result)
-    result["enforcement"] = "shadow"
+    finalize(result, finish_decision, local=True)
     if args.output:
         atomic_write_result(Path(args.output), result)
     dump_json({"decision": result["decision"], "reason": "CI_SHADOW_RESULT", "result": result})
     return 0
+
 def cmd_audit(args: argparse.Namespace) -> int:
     product = Path(args.product_root).resolve()
     report = audit_workspace(product)
@@ -396,5 +394,6 @@ def cmd_enforcement(args: argparse.Namespace) -> int:
     dump_json({
         "decision": "pass" if evaluated["enforcement"] == "enforced" else "block",
         "reason": evaluated["notice"], "enforcement": evaluated,
+        "assurance": audit_report(product, evaluated),
     })
     return 0

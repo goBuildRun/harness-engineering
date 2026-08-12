@@ -12,6 +12,7 @@ from typing import Any
 from harness_init_bmad import (bmad_output_root, ensure_bmad_output_config,
                                maybe_install_bmad, render_bmad_config_block)
 from harness_output import dump_json
+from harness_assurance import configure as configure_assurance
 
 try:
     import yaml
@@ -25,20 +26,12 @@ def emit(decision: str, reason: str, **extra: Any) -> None:
 
 def harness_root() -> Path:
     return Path(__file__).resolve().parents[2]
-
-
 def products_dir() -> Path:
     return harness_root() / ".harness" / "products"
-
-
 def registry_path() -> Path:
     return products_dir() / "registry.yaml"
-
-
 def active_path() -> Path:
     return products_dir() / "active-product.json"
-
-
 def workspace_templates_dir() -> Path:
     return harness_root() / ".harness" / "templates" / "product-workspace"
 
@@ -118,6 +111,7 @@ def render_template(name: str, product: dict[str, Any]) -> str:
         "{{workspace}}": str(workspace),
         "{{work_item_provider}}": str(product.get("work_item_provider") or "noop"),
         "{{work_item_id_pattern}}": str(product.get("work_item_id_pattern") or WORK_ITEM_ID_PATTERNS["noop"]),
+        "{{assurance_level}}": str(product.get("assurance") or "local"),
     }
     for key, value in replacements.items():
         text = text.replace(key, value)
@@ -219,11 +213,15 @@ def cmd_init(args: argparse.Namespace) -> int:
         "workspace": args.workspace,
         "config": f"{args.workspace}/project.yaml",
         "work_item_provider": work_item_provider,
-        "work_item_id_pattern": work_item_id_pattern,
+        "work_item_id_pattern": work_item_id_pattern, "assurance": args.assurance,
         "bmad_install_root": ".",
         "bmad_output_root": bmad_output_root({"workspace": args.workspace}),
         "created_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
+    assurance = configure_assurance(root, args.assurance)
+    if assurance["decision"] != "pass":
+        emit("block", assurance["reason"], product=product, created=[])
+        return 0
     product = upsert_product(product)
     created = ensure_product_workspace(product, overwrite=args.overwrite_config)
     write_active(product)
@@ -235,7 +233,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     if "BLOCK" in bmad_config or "CONFLICT" in bmad_config:
         emit("block", "PRODUCT_INITIALIZED_BMAD_CONFIG_BLOCKED", product=product, created=created, bmad=bmad, bmad_config=bmad_config)
         return 0
-    emit("pass", "PRODUCT_INITIALIZED", product=product, created=created, bmad=bmad, bmad_config=bmad_config)
+    emit("pass", "PRODUCT_INITIALIZED", product=product, created=created, bmad=bmad, bmad_config=bmad_config, assurance=assurance)
     return 0
 
 
@@ -374,6 +372,7 @@ def main() -> int:
     p_init.add_argument("--work-item-id-pattern", default="")
     p_init.add_argument("--overwrite-config", action="store_true")
     p_init.add_argument("--install-bmad", action="store_true")
+    p_init.add_argument("--assurance", choices=("local", "guarded"), default="local")
     p_init.set_defaults(func=cmd_init)
 
     p_use = sub.add_parser("use")

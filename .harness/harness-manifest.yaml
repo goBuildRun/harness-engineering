@@ -58,6 +58,7 @@ required_files:
   - .harness/scripts/harness_tier.py
   - .harness/scripts/harness_commands.py
   - .harness/scripts/harness_enforcement.py
+  - .harness/scripts/harness_assurance.py
   - .harness/scripts/harness_scope.py
   - .harness/scripts/harness_state.py
   - .harness/scripts/harness_schema.py
@@ -146,6 +147,7 @@ required_files:
   - tests/test_harness_gc_context.py
   - tests/test_harness_runtime.py
   - tests/test_harness_enforcement.py
+  - tests/test_harness_assurance.py
   - tests/test_harness_schema.py
   - tests/test_harness_cache.py
   - tests/test_harness_gates.py

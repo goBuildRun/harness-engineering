@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from harness_schema import assert_result
+from harness_assurance import snapshot as assurance_snapshot
 from harness_tier import TIERS, classify_tier, task_kind_tier
 from harness_gc_context import build_gc_context
 
@@ -54,6 +55,7 @@ def default_result(task_id: str, *, initial_tier: str = "standard", work_item: A
         "work_item": work_item,
         "state": "active",
         "enforcement": "shadow",
+        "assurance": assurance_snapshot("local"),
         "tier": {"initial": initial_tier, "effective": initial_tier},
         "binding_digest": "",
         "baseline": {"digest": "", "source": "start"},
@@ -106,6 +108,10 @@ def atomic_write_result(path: Path, result: dict[str, Any]) -> None:
 
 def load_result(path: Path) -> dict[str, Any]:
     data = json.loads(path.read_text(encoding="utf-8"))
+    if "assurance" not in data:
+        data["assurance"] = assurance_snapshot(
+            "enforced" if data.get("enforcement") == "enforced" else "local"
+        )
     assert_result(data)
     return data
 
