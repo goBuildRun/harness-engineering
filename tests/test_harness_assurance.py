@@ -55,7 +55,22 @@ class HarnessAssuranceTest(unittest.TestCase):
                 self.assertTrue(hook.is_file())
                 self.assertTrue(hook.stat().st_mode & 0o111)
                 self.assertIn("HARNESS_GUARD_RUNTIME_MISSING", hook.read_text())
+            subprocess.run(["git", "add", ".githooks"], cwd=product, check=True)
             self.assertEqual(audit_guards(product)["level"], "guarded")
+
+    def test_guard_audit_rejects_untracked_or_modified_hooks(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            subprocess.run(["git", "init", "-q"], cwd=product, check=True)
+            install_guards(product)
+            untracked = audit_guards(product)
+            self.assertEqual(untracked["level"], "local")
+            self.assertIn("GUARDED_GIT_GUARDS_UNTRACKED", untracked["blockers"])
+            subprocess.run(["git", "add", ".githooks"], cwd=product, check=True)
+            (product / ".githooks/pre-push").write_text("#!/bin/sh\nexit 0\n")
+            modified = audit_guards(product)
+            self.assertEqual(modified["level"], "local")
+            self.assertIn("GUARDED_GIT_GUARDS_MODIFIED", modified["blockers"])
 
     def test_guard_blocks_without_validated_task_and_finds_configured_runtime(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -669,7 +669,7 @@ execution tier 与 assurance level 必须分开理解：前者决定任务需要
 
 `guarded` 是轻量推广的默认目标，不要求自建 Gitea/GitLab 或购买 GitHub 套餐；它不能因方便而伪称不可绕过。需要绝对准入时，再选择 protected branch、受控 bare repository、发布 gate 等 `enforced` 承载方式。
 
-Guarded 接入会把 `pre-commit` / `pre-push` 写入产品 `.githooks/`，并在 repo-local `.git/config` 中设置 `core.hooksPath` 和 Harness 安装根；本机绝对路径不会进入提交内容。`pre-commit` 校验当前 worktree 的有效 `finish` 结果，`pre-push` 针对 `HEAD` 使用任务绑定重新执行共享 `ci-check`，不会在 commit 后复用旧 worktree fingerprint。首次提交 `.githooks` 和任务绑定属于 bootstrap，可显式使用 `--no-verify`；这类绕过由 Git 历史可见，但不能生成有效 Harness pass，也是 guarded 明确保持 `bypassable: true` 的原因。
+Guarded 接入会把 `pre-commit` / `pre-push` 写入产品 `.githooks/`，并在 repo-local `.git/config` 中设置 `core.hooksPath` 和 Harness 安装根；本机绝对路径不会进入提交内容。`pre-commit` 校验当前 worktree 的有效 `finish` 结果，`pre-push` 针对 `HEAD` 使用任务绑定重新执行共享 `ci-check`，不会在 commit 后复用旧 worktree fingerprint。Guard audit 要求两个 hooks 已纳入 Git、内容与当前 Harness 模板一致且本机配置未偏移。首次提交 `.githooks` 和任务绑定属于 bootstrap，可显式使用 `--no-verify`；Git 不记录该参数本身，因此 guarded 不能证明所有绕过，只能由后续 CI/权威接受点判定 commit 是否有效，这也是它保持 `bypassable: true` 的原因。
 
 目标公开路径只有三步；当前 `local` 接入入口如下（旧结果字段仍显示 `shadow`）：
 

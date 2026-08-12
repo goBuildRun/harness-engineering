@@ -187,14 +187,36 @@ def audit_guards(product: Path) -> dict[str, Any]:
         ).strip()
     except (FileNotFoundError, subprocess.CalledProcessError):
         runtime_root = ""
-    missing = [name for name in ("pre-commit", "pre-push") if not os.access(product / ".githooks" / name, os.X_OK)]
+    expected = {"pre-commit": pre_commit_script(), "pre-push": pre_push_script()}
+    missing = [name for name in expected if not os.access(product / ".githooks" / name, os.X_OK)]
+    mismatched = [name for name, text in expected.items()
+                  if (product / ".githooks" / name).is_file()
+                  and (product / ".githooks" / name).read_text(encoding="utf-8") != text]
+    try:
+        tracked_output = subprocess.check_output(
+            ["git", "ls-files", "--", ".githooks/pre-commit", ".githooks/pre-push"],
+            cwd=product, text=True, stderr=subprocess.DEVNULL,
+        ).splitlines()
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        tracked_output = []
+    untracked_hooks = sorted(set(f".githooks/{name}" for name in expected) - set(tracked_output))
     runtime = Path(runtime_root) / ".harness" / "scripts" / "harness"
-    valid = configured == ".githooks" and not missing and runtime.is_file()
+    valid = (configured == ".githooks" and not missing and not mismatched
+             and not untracked_hooks and runtime.is_file())
+    blockers = []
+    if configured != ".githooks" or missing or not runtime.is_file():
+        blockers.append("GUARDED_GIT_GUARDS_MISSING")
+    if mismatched:
+        blockers.append("GUARDED_GIT_GUARDS_MODIFIED")
+    if untracked_hooks:
+        blockers.append("GUARDED_GIT_GUARDS_UNTRACKED")
     return {
         "level": "guarded" if valid else "local",
         "configured_hooks_path": configured,
         "runtime_configured": bool(runtime_root),
         "missing_hooks": missing,
+        "mismatched_hooks": mismatched,
+        "untracked_hooks": untracked_hooks,
         "bypassable": True,
-        "blockers": [] if valid else ["GUARDED_GIT_GUARDS_MISSING"],
+        "blockers": blockers,
     }
