@@ -690,9 +690,12 @@ workspace 兼容命令：
 ```bash
 bash .harness/scripts/harness workspace audit
 bash .harness/scripts/harness migrate-task <task-id> --reason '<复核原因>'
+bash .harness/scripts/harness amend-task <task-id> --scope <path> --reason '<修订原因>'
 ```
 
 `migrate-task` 只接受 audit 已归入 `needs_migration` 的进行中、且拥有 Planning Gate 凭证的任务。已完成 legacy、缺凭证或不存在的任务分别返回 `COMPLETED_LEGACY_MIGRATION_FORBIDDEN`、`MIGRATION_CREDENTIAL_MISSING`、`MIGRATION_TASK_NOT_FOUND`，且不得创建 runs 或 baseline；已有 `result.json` 仅允许兼容身份修复，不批量重写历史 workspace。
+
+迁移结果缺少结构化 scope 时使用 `amend-task`。该命令要求显式 scope 和 reason，保留旧 binding digest、前后 scope 与时间戳，重算 binding/policy，并将所有旧 checks 标记 stale；它不能修改历史任务卡、baseline 或 QA evidence，也不能直接把任务变为通过。
 
 `status` 同时重算当前 worktree subject 与 policy digest。任一输入变化都会把 `validated` 退回 `active`，标记旧 checks 为 stale、增加 rerun 计数并返回 `INPUT_CHANGED`；下一次 `finish` 重新执行当前 tier 所需检查并重算派生 blockers。`result.json` 在原子写入和读取时都执行共享 schema 校验，非法 state/tier/check/cost 或伪造的完整遥测会返回 `RESULT_SCHEMA_INVALID`。
 

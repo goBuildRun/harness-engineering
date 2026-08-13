@@ -6,7 +6,7 @@ import argparse
 import os
 from pathlib import Path
 
-from harness_commands import cmd_ci_check, cmd_finish, cmd_start, cmd_status
+from harness_commands import cmd_amend, cmd_ci_check, cmd_finish, cmd_start, cmd_status
 from harness_migration_commands import cmd_audit, cmd_migrate
 from harness_runtime import TIERS
 
@@ -34,6 +34,10 @@ def build_parser() -> argparse.ArgumentParser:
     migrate = sub.add_parser("migrate-task")
     migrate.add_argument("task_id")
     migrate.add_argument("--reason", required=True)
+    amend = sub.add_parser("amend-task")
+    amend.add_argument("task_id")
+    amend.add_argument("--scope", action="append", required=True)
+    amend.add_argument("--reason", required=True)
     ci = sub.add_parser("ci-check")
     ci.add_argument("--task-id", required=True)
     ci.add_argument("--commit", required=True)
@@ -48,6 +52,7 @@ def main() -> int:
     args = build_parser().parse_args()
     handlers = {
         "start": cmd_start, "status": cmd_status, "finish": cmd_finish,
-        "workspace": cmd_audit, "migrate-task": cmd_migrate, "ci-check": cmd_ci_check,
+        "workspace": cmd_audit, "migrate-task": cmd_migrate, "amend-task": cmd_amend,
+        "ci-check": cmd_ci_check,
     }
     return handlers[args.command](args)

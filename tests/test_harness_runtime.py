@@ -134,6 +134,52 @@ class HarnessRuntimeTest(unittest.TestCase):
             self.assertEqual(repaired["work_item"], {"id": "WI-42", "provider": "jira"})
             self.assertEqual(repaired["invariants"]["task_identity"], "pass")
 
+    def test_amend_migrated_task_adds_audited_scope_and_invalidates_checks(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            subprocess.run(["git", "init", "-q"], cwd=product, check=True)
+            task_id = "migrated-task"
+            path = product / "harness-workspace/runs/tasks" / task_id / "result.json"
+            result = default_result(task_id, initial_tier="standard", work_item={"id": "WI-42"})
+            result["baseline"]["source"] = "migration"
+            result["binding_digest"] = "old-binding"
+            result["checks"]["planning"] = {
+                "decision": "pass", "fingerprint": "old", "subject_digest": "old",
+                "source": "executed",
+            }
+            atomic_write_result(path, result)
+            captured = []
+            with mock.patch.object(harness_commands, "dump_json", side_effect=captured.append):
+                harness_commands.cmd_amend(SimpleNamespace(
+                    product_root=str(product), harness_root=str(ROOT), task_id=task_id,
+                    scope=["harness-workspace/", ".githooks", ".githooks"],
+                    reason="recover committed adoption scope",
+                ))
+            amended = captured[-1]["result"]
+            self.assertEqual(captured[-1]["reason"], "TASK_BINDING_AMENDED")
+            self.assertEqual(amended["task"]["scope"], [".githooks", "harness-workspace"])
+            self.assertEqual(amended["binding_revisions"][0]["previous_binding_digest"], "old-binding")
+            self.assertEqual(amended["binding_revisions"][0]["reason"], "recover committed adoption scope")
+            self.assertTrue(amended["checks"]["planning"]["stale"])
+            self.assertIn("TASK_BINDING_CHANGED", amended["blockers"])
+            self.assertNotEqual(amended["binding_digest"], "old-binding")
+
+    def test_amend_task_rejects_unsafe_scope_without_writing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            task_id = "task-unsafe"
+            path = product / "harness-workspace/runs/tasks" / task_id / "result.json"
+            atomic_write_result(path, default_result(task_id))
+            before = path.read_text()
+            captured = []
+            with mock.patch.object(harness_commands, "dump_json", side_effect=captured.append):
+                harness_commands.cmd_amend(SimpleNamespace(
+                    product_root=str(product), harness_root=str(ROOT), task_id=task_id,
+                    scope=["../outside"], reason="bad scope",
+                ))
+            self.assertEqual(captured[-1]["reason"], "TASK_AMEND_SCOPE_INVALID")
+            self.assertEqual(path.read_text(), before)
+
     def test_cli_lite_start_status_finish_flow(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product = Path(tmp)

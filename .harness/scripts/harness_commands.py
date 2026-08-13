@@ -86,6 +86,54 @@ def cmd_start(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_amend(args: argparse.Namespace) -> int:
+    product, harness = Path(args.product_root).resolve(), Path(args.harness_root).resolve()
+    path = result_path(product, args.task_id)
+    if not path.is_file():
+        dump_json({"decision": "block", "reason": "TASK_NOT_FOUND"})
+        return 0
+    reason = str(args.reason or "").strip()
+    scope = sorted({str(item).strip().rstrip("/") for item in args.scope if str(item).strip()})
+    if not reason:
+        dump_json({"decision": "block", "reason": "TASK_AMEND_REASON_REQUIRED"})
+        return 0
+    if not scope or any(Path(item).is_absolute() or ".." in Path(item).parts for item in scope):
+        dump_json({"decision": "block", "reason": "TASK_AMEND_SCOPE_INVALID"})
+        return 0
+
+    result = load_result(path)
+    previous = dict(result.get("task") or {})
+    binding = {
+        **previous,
+        "task_id": args.task_id,
+        "scope": scope,
+        "tier_floor": result["tier"]["initial"],
+        "work_item": (result.get("work_item") or {}).get("id"),
+        "source": previous.get("source") or result.get("baseline", {}).get("source") or "amendment",
+    }
+    revisions = list(result.get("binding_revisions") or [])
+    revisions.append({
+        "amended_at": now(), "reason": reason,
+        "previous_binding_digest": result.get("binding_digest") or "",
+        "previous_scope": list(previous.get("scope") or []), "scope": scope,
+    })
+    result["task"] = binding
+    result["binding_revisions"] = revisions
+    result["binding_digest"] = canonical_digest(binding)
+    result["policy_digest"] = policy_for(harness, product)
+    result["state"] = "active"
+    result["decision"] = "block"
+    result["blockers"] = sorted(set(result.get("blockers") or []) | {"TASK_BINDING_CHANGED"})
+    result["invariants"]["scope"] = "pending"
+    result["invariants"]["risk_validation"] = "pending"
+    result["invariants"]["final_result"] = "pending"
+    for check in result.get("checks", {}).values():
+        check["stale"] = True
+    atomic_write_result(path, result)
+    dump_json({"decision": "pass", "reason": "TASK_BINDING_AMENDED", "result": result})
+    return 0
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     product = Path(args.product_root).resolve()
     task_id, candidates = resolve_task_id(product, args.task_id)
