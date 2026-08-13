@@ -54,6 +54,9 @@ def _commands(harness: Path) -> dict[str, list[str]]:
         "growth_freshness": ["bash", str(scripts / "harness_growth.sh"), "freshness"],
         "quality_lint": ["bash", str(scripts / "quality_commands.sh"), "lint"],
         "quality_test": ["bash", str(scripts / "quality_commands.sh"), "test"],
+        "self_test": ["python3", "-m", "unittest", "discover", "-s", "tests"],
+        "doc_gardening": ["bash", str(scripts / "doc-gardening.sh")],
+        "release_preflight": ["bash", str(scripts / "release_preflight.sh")],
     }
 
 
@@ -144,11 +147,19 @@ def committed_work_item(harness: Path, product: Path, task_id: str) -> dict[str,
 def run_gate_plan(harness: Path, product: Path, *, tier: str,
                   subject_digest: str, policy_digest: str,
                   ci_task_id: str = "", changed_files: list[str] | None = None,
-                  read_only: bool = False) -> dict[str, Any]:
+                  read_only: bool = False, self_maintenance: bool = False) -> dict[str, Any]:
     if ci_task_id and tier != "lite":
         prepare_ci_task(harness, product, ci_task_id)
     commands = _commands(harness)
-    required_gates = list(TIER_GATES[tier])
+    if self_maintenance and tier != "lite":
+        required_gates = [
+            "harness", "structure", "self_test", "doc_gardening",
+            "release_preflight", "quality_lint", "quality_test",
+        ]
+        if tier == "strict":
+            required_gates.append("strict_evidence")
+    else:
+        required_gates = list(TIER_GATES[tier])
     if tier == "standard" and browser_required(changed_files or []):
         required_gates.append("browser_qa")
     env = {**os.environ, "HARNESS_PRODUCT_ROOT": str(product)}

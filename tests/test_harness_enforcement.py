@@ -140,6 +140,9 @@ class EnforcementTest(unittest.TestCase):
         self.assertIn("ci_gc_review.py", required)
         self.assertIn("HARNESS_GC_REVIEW_URL", required)
         self.assertIn("--gc-result gc-result.json", required)
+        self.assertIn("name: gc-review-result-${{ github.sha }}", required)
+        self.assertIn("path: gc-result.json", required)
+        self.assertIn("if-no-files-found: error", required)
         for workflow in (release, provider):
             self.assertIn("workflow_run.conclusion == 'success'", workflow)
             self.assertIn("workflow_run.conclusion != 'success'", workflow)

@@ -280,16 +280,21 @@ def git_changed(repo: Path, commit: str = "") -> list[str]:
                 ["git", "rev-parse", f"{commit}^1"], cwd=repo, text=True,
                 stderr=subprocess.DEVNULL,
             ).strip()
-            commands.append(["git", "diff", "--name-only", parent, commit])
+            commands.append(["git", "diff", "--name-only", "-z", parent, commit])
         except (FileNotFoundError, subprocess.CalledProcessError):
-            commands.append(["git", "diff-tree", "--root", "--no-commit-id", "--name-only", "-r", commit])
+            commands.append([
+                "git", "diff-tree", "--root", "--no-commit-id", "--name-only", "-r", "-z", commit,
+            ])
     else:
-        commands.extend((["git", "diff", "--name-only", "HEAD"], ["git", "ls-files", "--others", "--exclude-standard"]))
+        commands.extend((
+            ["git", "diff", "--name-only", "-z", "HEAD"],
+            ["git", "ls-files", "--others", "--exclude-standard", "-z"],
+        ))
     found: list[str] = []
     for command in commands:
         try:
             output = subprocess.check_output(command, cwd=repo, text=True, stderr=subprocess.DEVNULL)
-            found.extend(line for line in output.splitlines() if line)
+            found.extend(path for path in output.split("\0") if path)
         except (FileNotFoundError, subprocess.CalledProcessError):
             pass
     return list(dict.fromkeys(found))

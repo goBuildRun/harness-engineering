@@ -35,6 +35,7 @@ from harness_scope import paths_within_scope  # noqa: E402
 from harness_state import invalidate_if_stale  # noqa: E402
 import harness_commands  # noqa: E402
 import harness_migration_commands  # noqa: E402
+from harness_gates import run_gate_plan  # noqa: E402
 
 
 class HarnessRuntimeTest(unittest.TestCase):
@@ -400,6 +401,58 @@ class HarnessRuntimeTest(unittest.TestCase):
             check = mechanical_code_health(repo, git_changed(repo, merge_sha), tier="standard")
             self.assertTrue(check["agent_required"])
             self.assertIn("dead_code", check["triggers"])
+
+    def test_commit_changes_preserve_unicode_paths_for_tier_and_scope(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.email", "harness@example.invalid"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.name", "Harness Test"], cwd=repo, check=True)
+            docs = repo / "docs"
+            docs.mkdir()
+            path = docs / "成熟度.md"
+            path.write_text("baseline\n")
+            subprocess.run(["git", "add", "."], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-qm", "base"], cwd=repo, check=True)
+            path.write_text("updated\n")
+            subprocess.run(["git", "add", "."], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-qm", "docs"], cwd=repo, check=True)
+            changed = git_changed(repo, "HEAD")
+            self.assertEqual(changed, ["docs/成熟度.md"])
+            self.assertEqual(classify_tier(changed, floor="lite"), "lite")
+            self.assertTrue(paths_within_scope(changed, ["docs"]))
+
+    def test_standard_self_maintenance_uses_mechanical_repository_gates(self) -> None:
+        with mock.patch("harness_gates.subprocess.run") as run:
+            run.return_value = SimpleNamespace(
+                returncode=0, stdout='{"decision":"pass","reason":"ok"}',
+            )
+            result = run_gate_plan(
+                ROOT, ROOT, tier="standard", subject_digest="subject",
+                policy_digest="policy", changed_files=[".harness/scripts/runtime.py"],
+                read_only=True, self_maintenance=True,
+            )
+        self.assertEqual(result["decision"], "pass")
+        self.assertEqual(
+            set(result["checks"]),
+            {"harness", "structure", "self_test", "doc_gardening", "release_preflight",
+             "quality_lint", "quality_test"},
+        )
+        self.assertNotIn("planning", result["checks"])
+        self.assertNotIn("qa_evidence", result["checks"])
+
+    def test_strict_self_maintenance_keeps_strict_evidence(self) -> None:
+        with mock.patch("harness_gates.subprocess.run") as run:
+            run.return_value = SimpleNamespace(
+                returncode=0, stdout='{"decision":"pass","reason":"ok"}',
+            )
+            result = run_gate_plan(
+                ROOT, ROOT, tier="strict", subject_digest="subject",
+                policy_digest="policy", changed_files=[".harness/scripts/runtime.py"],
+                read_only=True, self_maintenance=True,
+            )
+        self.assertIn("strict_evidence", result["checks"])
+        self.assertEqual(result["checks"]["strict_evidence"]["decision"], "block")
 
     def test_gc_telemetry_records_calls_context_and_duration(self) -> None:
         result = default_result("cost-task")
