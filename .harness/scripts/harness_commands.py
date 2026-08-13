@@ -130,6 +130,7 @@ def cmd_amend(args: argparse.Namespace) -> int:
     result["binding_revisions"] = revisions
     result["binding_digest"] = canonical_digest(binding)
     result["policy_digest"] = policy_for(harness, product)
+    result["tier"]["effective"] = result["tier"]["initial"]
     result["state"] = "active"
     result["decision"] = "block"
     result["blockers"] = sorted(set(result.get("blockers") or []) | {"TASK_BINDING_CHANGED"})

@@ -142,6 +142,7 @@ class HarnessRuntimeTest(unittest.TestCase):
             path = product / "harness-workspace/runs/tasks" / task_id / "result.json"
             result = default_result(task_id, initial_tier="standard", work_item={"id": "WI-42"})
             result["baseline"]["source"] = "migration"
+            result["tier"]["effective"] = "strict"
             result["binding_digest"] = "old-binding"
             result["checks"]["planning"] = {
                 "decision": "pass", "fingerprint": "old", "subject_digest": "old",
@@ -163,6 +164,7 @@ class HarnessRuntimeTest(unittest.TestCase):
             self.assertTrue(amended["checks"]["planning"]["stale"])
             self.assertIn("TASK_BINDING_CHANGED", amended["blockers"])
             self.assertNotEqual(amended["binding_digest"], "old-binding")
+            self.assertEqual(amended["tier"]["effective"], "standard")
 
     def test_amend_task_rejects_unsafe_scope_without_writing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
