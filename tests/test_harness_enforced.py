@@ -117,6 +117,20 @@ class HarnessEnforcedTest(unittest.TestCase):
             self.assertEqual(outcome["decision"], "block")
             self.assertFalse(outcome["assurance"]["signing_key_permissions_valid"])
 
+    def test_audit_rejects_untrusted_signing_key(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _, remote, _ = self.setup_repositories(root)
+            key, allowed = self.keys(root)
+            other = root / "other-authority"
+            subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(other)], check=True)
+            allowed.write_text(f"harness {other.with_suffix('.pub').read_text()}", encoding="utf-8")
+            install(remote, ROOT, protected_refs=("refs/heads/main",), signing_key=key,
+                    allowed_signers=allowed, receipt_dir=root / "receipts")
+            outcome = audit(remote)
+            self.assertEqual(outcome["decision"], "block")
+            self.assertFalse(outcome["assurance"]["signing_key_trusted"])
+
 
 if __name__ == "__main__":
     unittest.main()

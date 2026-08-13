@@ -82,7 +82,7 @@ flowchart LR
 | 产品 workspace 如何组织 | 产品 `harness-workspace/project.yaml` |
 | 产品规格和任务范围 | 产品 `harness-workspace/planning/` |
 | 本地任务状态 | 目标 `runs/tasks/<task-id>/result.json` |
-| 某个 commit 是否允许接收/发布 | `refs/harness/attestations/<commit>` 指向的 canonical Git attestation |
+| 某个 commit 是否允许接收/发布 | 受控 Git authority 对 attestation/result refs 和目标 commit 的重验结果；客户端 attestation 不能单独决定接受 |
 | 产品长期知识 | 产品 `harness-workspace/knowledge/` |
 
 本地 `finish pass` 只代表可以进入 review，不能直接关闭外部 Work Item。

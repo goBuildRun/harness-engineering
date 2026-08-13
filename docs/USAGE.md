@@ -681,7 +681,7 @@ bash .harness/scripts/harness finish demo-login-task
 
 范围变更和紧急修复仍通过 `start` 建档，不增加公共命令。使用 `--kind scope-change|hotfix --reason '<原因>'`；`scope-change` 最低为 standard，`hotfix` 强制提升到 strict，不能用显式 `--tier lite` 降级，也不豁免 planning、scope、测试、GC 或最终结果不变式。
 
-`standard` / `strict` 命中 GC 要求而没有有效独立结果时，`finish` 返回 `GC_REQUIRED`。`gc_result.json` 必须包含 `role: gc-sweeper`、`independent: true`，并绑定当前 `task_id`、`subject_digest`、`policy_digest`；任一不匹配都不可复用。配置 `HARNESS_GC_AGENT_ARGV`（JSON argv 数组）后可自动调用一次 runner；runner 只接收任务 scope、`changed_since_baseline` 文件的真实 patch/新增文件内容、变更文件列表、一层直接依赖、触发信号、限制和结果契约。上下文超过 `HARNESS_GC_CONTEXT_MAX_CHARS`（默认 200000）或超过一次 Agent 调用预算都返回 `BUDGET_APPROVAL_REQUIRED`，不会静默截断或扩读全仓。
+`standard` / `strict` 命中 GC 要求而没有有效独立结果时，`finish` 返回 `GC_REQUIRED`。`gc_result.json` 必须包含 `role: gc-sweeper`、`independent: true`，并绑定当前 `task_id`、`subject_digest`、`policy_digest`；任一不匹配都不可复用。配置 `HARNESS_GC_AGENT_ARGV`（JSON argv 数组）后可自动调用一次 runner；runner 只接收任务 scope、`changed_since_baseline` 文件的真实 patch/新增文件内容、变更文件列表、一层直接依赖、触发信号、限制和结果契约。上下文超过 `HARNESS_GC_CONTEXT_MAX_CHARS`（默认 200000）或超过一次 Agent 调用预算都返回 `BUDGET_APPROVAL_REQUIRED`，不会静默截断或扩读全仓。受控 receive authority 不信任客户端自报的 GC Agent 结论；机械扫描触发独立 GC 时返回 `RECEIVE_GC_AUTHORITY_REQUIRED`，在独立 GC receipt 纳入同一 authority 信任链前不得进入正式 ref。
 
 workspace 兼容命令：
 

@@ -27,7 +27,7 @@ class ProviderLifecycleTest(unittest.TestCase):
     def test_receipt_binds_git_acceptance_without_platform_run(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
-            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
             subprocess.run(["git", "config", "user.email", "harness@example.invalid"], cwd=repo, check=True)
             subprocess.run(["git", "config", "user.name", "Harness Test"], cwd=repo, check=True)
             (repo / "a").write_text("a")
@@ -54,10 +54,20 @@ class ProviderLifecycleTest(unittest.TestCase):
                 "ACCEPTANCE_SIGNATURE_INVALID",
             )
 
+            valid_receipt = build_receipt(
+                repo, commit=commit, work_item_id="WI-42", provider="jira",
+                authority="git-receive", accepted_ref="refs/heads/main", signing_key=key,
+            )
+            subprocess.run(["git", "update-ref", "-d", "refs/heads/main"], cwd=repo, check=True)
+            self.assertEqual(validate_receipt(
+                valid_receipt, work_item_id="WI-42", repo=repo, allowed_signers=allowed)[1],
+                "ACCEPTANCE_REF_MISMATCH",
+            )
+
     def test_terminal_receipt_rejects_expired_signature(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
-            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
             subprocess.run(["git", "config", "user.email", "harness@example.invalid"], cwd=repo, check=True)
             subprocess.run(["git", "config", "user.name", "Harness Test"], cwd=repo, check=True)
             (repo / "a").write_text("a")

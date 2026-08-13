@@ -88,13 +88,20 @@ def audit(repo: Path) -> dict[str, Any]:
             line for line in allowed.read_text(encoding="utf-8").splitlines()
             if line.strip() and not line.lstrip().startswith("#")
         ]
-    except OSError:
+        public_key = subprocess.check_output(
+            ["ssh-keygen", "-y", "-f", str(signing_key)], text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+        signing_key_trusted = any(public_key in line for line in trusted_signers)
+    except (OSError, FileNotFoundError, subprocess.CalledProcessError):
         key_permissions_valid = False
         trusted_signers = []
+        signing_key_trusted = False
     valid = bool(
         _config(repo, "core.bare") == "true" and protected
         and harness.joinpath(".harness/scripts/harness_receive.py").is_file()
-        and key_permissions_valid and trusted_signers and receipts.is_dir() and hooks_valid
+        and key_permissions_valid and trusted_signers and signing_key_trusted
+        and receipts.is_dir() and hooks_valid
     )
     return {
         "decision": "pass" if valid else "block",
@@ -106,6 +113,7 @@ def audit(repo: Path) -> dict[str, Any]:
             "protected_refs": list(protected),
             "signing_key_permissions_valid": key_permissions_valid,
             "trusted_signers": len(trusted_signers),
+            "signing_key_trusted": signing_key_trusted,
         },
     }
 

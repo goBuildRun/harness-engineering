@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / ".harness" / "scripts"
@@ -20,7 +21,7 @@ from provider_lifecycle import validate_receipt  # noqa: E402
 
 class HarnessReceiveTest(unittest.TestCase):
     def repository(self, root: Path) -> tuple[str, str]:
-        subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+        subprocess.run(["git", "init", "-q", "-b", "main"], cwd=root, check=True)
         subprocess.run(["git", "config", "user.email", "harness@example.invalid"], cwd=root, check=True)
         subprocess.run(["git", "config", "user.name", "Harness Test"], cwd=root, check=True)
         (root / "docs").mkdir()
@@ -64,6 +65,13 @@ class HarnessReceiveTest(unittest.TestCase):
             )
             self.assertEqual(outcome["decision"], "block")
             self.assertEqual(outcome["reason"], "RECEIVE_RANGE_INVALID")
+
+    def test_protected_ref_rejects_non_fast_forward(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            old, new = self.repository(repo)
+            outcome = verify_updates(repo, ROOT, [(new, old, "refs/heads/main")])
+            self.assertEqual(outcome["reason"], "RECEIVE_NON_FAST_FORWARD_BLOCK")
 
     def test_receive_recomputes_commit_result_without_network_or_workspace_writes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -143,6 +151,46 @@ class HarnessReceiveTest(unittest.TestCase):
             create_attestation(repo, result, commit=new)
             outcome = verify_updates(repo, ROOT, [(old, new, "refs/heads/main")])
             self.assertEqual(outcome["reason"], "RECEIVE_CODE_HEALTH_BLOCK")
+
+    def test_receive_does_not_trust_client_gc_agent_claim(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.email", "harness@example.invalid"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.name", "Harness Test"], cwd=repo, check=True)
+            (repo / "src").mkdir()
+            (repo / "src/a.py").write_text("def live():\n    return 1\n")
+            subprocess.run(["git", "add", "."], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-qm", "base"], cwd=repo, check=True)
+            old = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
+            (repo / "src/a.py").write_text("def unused_helper():\n    pass\n")
+            subprocess.run(["git", "commit", "-qam", "dead code"], cwd=repo, check=True)
+            new = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
+            result = default_result("receive-task", initial_tier="standard")
+            result.update({"state": "validated", "decision": "pass", "policy_digest": policy_for(ROOT, repo)})
+            result["subject"] = {"kind": "commit", "digest": new}
+            result["task"] = {"scope": ["src"], "tier_floor": "standard"}
+            result["invariants"] = {name: "pass" for name in result["invariants"]}
+            result["checks"]["code_health"] = {
+                "decision": "pass", "mode": "mechanical+agent", "agent_result_digest": "forged",
+            }
+            create_attestation(repo, result, commit=new)
+            outcome = verify_updates(repo, ROOT, [(old, new, "refs/heads/main")])
+            self.assertEqual(outcome["reason"], "RECEIVE_GC_AUTHORITY_REQUIRED")
+
+    def test_receive_reruns_gates_instead_of_trusting_client_checks(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            old, new = self.repository(repo)
+            self.attest(repo, new)
+            with mock.patch("harness_receive.run_gate_plan", return_value={
+                "decision": "block",
+                "checks": {"quality_test": {"decision": "block"}},
+                "missing": [],
+            }):
+                outcome = verify_updates(repo, ROOT, [(old, new, "refs/heads/main")])
+            self.assertEqual(outcome["reason"], "RECEIVE_GATE_BLOCK")
+            self.assertEqual(outcome["blocked_gates"], ["quality_test"])
 
     def test_acceptance_receipt_is_derived_from_verified_commit_binding(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

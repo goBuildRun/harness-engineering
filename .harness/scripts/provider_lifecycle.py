@@ -115,6 +115,16 @@ def validate_receipt(receipt: Any, *, work_item_id: str, repo: Path,
             return False, "ACCEPTANCE_SIGNATURE_TOOL_MISSING"
     if completed.returncode != 0:
         return False, "ACCEPTANCE_SIGNATURE_INVALID"
+    try:
+        contained = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", str(receipt["commit_sha"]),
+             str(receipt["accepted_ref"])], cwd=repo, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        ).returncode == 0
+    except FileNotFoundError:
+        contained = False
+    if not contained:
+        return False, "ACCEPTANCE_REF_MISMATCH"
     return True, "ACCEPTANCE_RECEIPT_VALID"
 
 

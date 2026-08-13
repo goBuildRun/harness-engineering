@@ -1,6 +1,6 @@
 # Harness 精简强制执行设计
 
-> 状态：Git-native core 实现中；共享结果、三入口、GC 判定、迁移审计和 attestation 已落地，受控接收端 enforcement 尚未验证
+> 状态：Git-native core 与受控 bare Git enforcement 已完成端到端验证；独立 authority GC receipt 仍是触发 Agent GC 的正式接收前置
 > 日期：2026-08-11
 > 适用范围：所有通过 harness-engineering 接入的产品迭代  
 > 当前命令实态仍以 [USAGE.md](../USAGE.md) 为准。
@@ -112,7 +112,7 @@ harness-workspace/runs/tasks/<task-id>/result.json
 
 `result.json` 使用任务级单写锁和“临时文件 + 原子替换”更新；中断后可恢复，多个 Agent 不得并发覆盖。它是当前任务的物化状态，不是可由开发者提交后让接受端盲信的证明。
 
-Harness core 的唯一事实源是 Git 对象库。`finish` 先验证工作区并生成 validated result；commit 后由 hook 将 canonical result 写成 Git blob，再生成绑定 `commit SHA + tree SHA + task_id + policy_digest + result object/digest + decision` 的 attestation，并写入 `refs/harness/attestations/<commit>`。`status` 和接受端 verifier 从 Git object/ref 读取并重算绑定关系；工作区 `result.json` 只是可恢复的物化视图。
+Harness core 的唯一事实源是 Git 对象库。`finish` 先验证工作区并生成 validated result；commit 后由 hook 将 canonical result 写成 Git blob，再生成绑定 `commit SHA + tree SHA + task_id + policy_digest + result object/digest + decision` 的 attestation，并原子写入 `refs/harness/attestations/<commit>` 与 `refs/harness/results/<commit>`。后者只保证 result blob 可被 Git 传输，不是平行完成态。`status` 和接受端 verifier 从 Git object/ref 读取并重算绑定关系；工作区 `result.json` 只是可恢复的物化视图。
 
 代码托管和 CI 不参与 Harness 生命周期。它们可以运行或展示 verifier，但接受真相始终是“目标 Git commit 拥有由相应权限边界生成的有效 attestation”；任何展示层都不得引入第二个状态机。
 
@@ -274,7 +274,7 @@ harness migrate-task <task-id>
 
 ## 11. 成功判定
 
-当前实施按 [Git-native Harness Upgrade](../exec-plans/active/git-native-harness-upgrade.md) 的 Epic/Story 顺序推进。Epic 1 已完成：bare receive verifier 对正式 ref 的全部新增 commit 重验；SSH receipt 绑定 commit/ref/task/policy/result/Work Item/provider 并校验有效期；受控安装与 audit 已用真实 Git push 验证拒绝、接受、签发和 provider 消费。框架具备 enforced 能力，但 assurance 是产品实例属性：实际 authority 未通过 audit 的产品仍为 local/guarded（兼容字段为 shadow）。
+当前实施按 [Git-native Harness Upgrade](../exec-plans/active/git-native-harness-upgrade.md) 的 Epic/Story 顺序推进。bare receive verifier、SSH acceptance receipt、受控安装与 audit 已用真实 Git push 验证拒绝、接受、签发和 provider 消费。三遍信任边界审核进一步确认：receive authority 必须重跑 gates，且不能信任客户端自报的独立 GC 结果；当前一旦触发 Agent GC 会 fail closed。独立 GC receipt 尚未纳入 authority SSH 信任链，因此框架 enforced 能力当前只覆盖无该信号的 commit，不能宣称所有 execution tier 已闭合。
 
 - 未经过 Harness 的变更无法获得有效 attestation、关闭 Work Item 或进入正式 ref/制品。
 - 本地伪造、复制或提交 `result.json` 不能让其他 commit 通过 verifier。

@@ -13,6 +13,6 @@
 | GC sweeper | `finish` 机械扫描并按 tier/信号要求一次独立结果；接受端对目标 commit 复核绑定 | 已接入，receipt 绑定 role/task/subject/policy，缺 runner fail closed | `test_harness_runtime.py`、`test_harness_gc_context.py`、`test_ci_gc_review.py` |
 | Brownfield Intake | 首次接入或事实漂移时独立调用 | 保留，不进入每任务固定链 | 既有 intake tests |
 | Work Item provider | 本地最多 ready；终态要求受控接受 receipt | 已机械封堵本地终态；receipt 绑定 Git attestation、commit、ref 与 authority | provider lifecycle / attestation tests |
-| Git commit 接受 | canonical Git object + `refs/harness/attestations/<commit>` | local/guarded 已实现；受控接收端完整接线待验收 | `harness_attestation.py` |
+| Git commit 接受 | canonical Git object + attestation/result refs + receive authority | local/guarded/enforced 框架链已实现并通过真实 bare Git push；产品实例须独立 audit | `harness_attestation.py`、`harness_receive.py`、`harness_enforced.py` |
 
 升级到 `guarded` 需要版本化 Git hooks 对正常工作流机械阻断并报告显式绕过边界；升级到 `enforced` 要求受控 `pre-receive` 或 release gate 对正式 ref/制品强制 verifier，并由 provider done 消费对应 acceptance receipt。缺少该权限边界时不能宣称 enforced。

@@ -72,6 +72,18 @@ Acceptance criteria:
 
 Implementation note: 内部 `harness_enforced.py` 为受控 bare Git 安装和审计 `pre-receive` / `post-receive`。真实 Git push 验收证明未验证 commit 被拒绝、有效 commit 被接受并生成可消费 receipt；hook 偏移、信任根缺失或私钥权限暴露均使 audit fail closed。框架能力已达到 enforced，但每个产品仍须对自身实际 authority 独立审计。
 
+### E1-S4 Authority-trusted GC receipts
+
+Status: in-progress
+
+Acceptance criteria:
+
+- receive authority 不信任 canonical result 中客户端自报的 `mechanical+agent` 结论。
+- mechanical scan 触发独立 GC 时，没有 authority 可验证 receipt 必须返回 `RECEIVE_GC_AUTHORITY_REQUIRED`。
+- GC receipt 必须绑定 commit、task、policy、触发信号、上下文摘要和 Agent telemetry，并纳入与 acceptance receipt 相同的 SSH trust root。
+- strict 缺 receipt、receipt 被篡改、跨 commit/policy 复用或 Agent 调用超过一次均阻断。
+- 完成前，enforced 只能声明覆盖无 GC Agent 信号的 commit；不得声称所有 execution tier 已闭合。
+
 ## Epic 2: Lightweight Adoption And Migration
 
 目标：个人与小团队不建设服务器也能低成本获得正确的 local/guarded 行为，需要强约束时再按需升级。
@@ -142,8 +154,8 @@ Acceptance criteria:
 
 ## Execution Order
 
-1. E1-S1 → E1-S2 → E1-S3
+1. E1-S1 → E1-S2 → E1-S3 → E1-S4
 2. E2-S1 → E2-S2 → E2-S3
 3. E3-S1 → E3-S2 → E3-S3
 
-Epic 1 完成前只能声明 local/guarded。每完成一个 Story，同步本文件状态、受影响权威文档和技术债；不得一次性把未验收 Story 标记完成。
+Epic 1 完成前只能对通过实际 authority audit 且未触发未闭合信任链的 commit 声明 enforced。每完成一个 Story，同步本文件状态、受影响权威文档和技术债；不得一次性把未验收 Story 标记完成。

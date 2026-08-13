@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from harness_attestation import verify_attestation
+from harness_gates import run_gate_plan
 from harness_output import dump_json
 from harness_runtime import classify_tier, git_changed, mechanical_code_health, policy_for
 from harness_scope import paths_within_scope
@@ -40,13 +41,69 @@ def commits_for_update(repo: Path, old: str, new: str) -> list[str]:
     return [line for line in output.splitlines() if line]
 
 
-def _export_commit(repo: Path, commit: str, destination: Path) -> None:
+def is_fast_forward(repo: Path, old: str, new: str) -> bool:
+    if is_zero(old) or is_zero(new):
+        return True
+    return subprocess.run(
+        ["git", "merge-base", "--is-ancestor", old, new], cwd=repo,
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    ).returncode == 0
+
+
+def valid_update_objects(repo: Path, old: str, new: str) -> bool:
+    values = [value for value in (old, new) if not is_zero(value)]
+    try:
+        return all(_git(repo, "cat-file", "-t", value) == "commit" for value in values)
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return False
+
+
+def _export_tree(repo: Path, commit: str, destination: Path) -> None:
     archive = subprocess.check_output(
-        ["git", "archive", "--format=tar", commit], cwd=repo,
-        stderr=subprocess.DEVNULL,
+        ["git", "archive", "--format=tar", commit], cwd=repo, stderr=subprocess.DEVNULL,
     )
     with tarfile.open(fileobj=io.BytesIO(archive), mode="r:") as bundle:
         bundle.extractall(destination, filter="data")
+
+
+def _checkout_commit(repo: Path, commit: str, destination: Path) -> None:
+    synthetic_env = dict(os.environ)
+    for name in ("GIT_DIR", "GIT_WORK_TREE", "GIT_OBJECT_DIRECTORY",
+                 "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_QUARANTINE_PATH"):
+        synthetic_env.pop(name, None)
+    subprocess.run(
+        ["git", "init", "--quiet", str(destination)],
+        check=True, env=synthetic_env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    subprocess.run(["git", "config", "user.email", "authority@harness.invalid"], cwd=destination,
+                   check=True, env=synthetic_env)
+    subprocess.run(["git", "config", "user.name", "Harness Authority"], cwd=destination,
+                   check=True, env=synthetic_env)
+    try:
+        parent = _git(repo, "rev-parse", f"{commit}^1")
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        parent = ""
+    if parent:
+        _export_tree(repo, parent, destination)
+        subprocess.run(["git", "add", "-A"], cwd=destination, check=True, env=synthetic_env)
+        subprocess.run(
+            ["git", "-c", "core.hooksPath=/dev/null", "commit", "--quiet", "-m", "subject parent"],
+            cwd=destination, check=True, env=synthetic_env,
+        )
+        for child in destination.iterdir():
+            if child.name != ".git":
+                if child.is_dir():
+                    import shutil
+                    shutil.rmtree(child)
+                else:
+                    child.unlink()
+    _export_tree(repo, commit, destination)
+    subprocess.run(["git", "add", "-A"], cwd=destination, check=True, env=synthetic_env)
+    subprocess.run(
+        ["git", "-c", "core.hooksPath=/dev/null", "commit", "--quiet", "--allow-empty",
+         "-m", "subject commit"], cwd=destination,
+        check=True, env=synthetic_env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
 
 
 def verify_commit(repo: Path, harness: Path, commit: str) -> dict[str, Any]:
@@ -66,11 +123,13 @@ def verify_commit(repo: Path, harness: Path, commit: str) -> dict[str, Any]:
         return {"decision": "block", "reason": "RECEIVE_DIFF_FAILED", "commit": commit}
     with tempfile.TemporaryDirectory() as tmp:
         checkout = Path(tmp) / "subject"
-        checkout.mkdir()
         try:
-            _export_commit(repo, commit, checkout)
-        except (FileNotFoundError, subprocess.CalledProcessError):
-            return {"decision": "block", "reason": "RECEIVE_CHECKOUT_FAILED", "commit": commit}
+            _checkout_commit(repo, commit, checkout)
+        except (FileNotFoundError, subprocess.CalledProcessError) as exc:
+            return {"decision": "block", "reason": "RECEIVE_CHECKOUT_FAILED", "commit": commit,
+                    "detail": type(exc).__name__ + (
+                        f":exit={exc.returncode}" if isinstance(exc, subprocess.CalledProcessError) else ""
+                    )}
         effective = classify_tier(changed, floor=tier_floor)
         if effective != (result.get("tier") or {}).get("effective"):
             return {"decision": "block", "reason": "RECEIVE_TIER_MISMATCH", "commit": commit}
@@ -82,9 +141,19 @@ def verify_commit(repo: Path, harness: Path, commit: str) -> dict[str, Any]:
         health = mechanical_code_health(checkout, changed, tier=effective)
         if health["decision"] != "pass":
             return {"decision": "block", "reason": "RECEIVE_CODE_HEALTH_BLOCK", "commit": commit}
-    checks = result.get("checks") or {}
-    if any(check.get("decision") != "pass" or check.get("stale") for check in checks.values()):
-        return {"decision": "block", "reason": "RECEIVE_RESULT_CHECK_BLOCK", "commit": commit}
+        if health.get("agent_required"):
+            return {"decision": "block", "reason": "RECEIVE_GC_AUTHORITY_REQUIRED",
+                    "commit": commit, "triggers": health.get("triggers", [])}
+        gates = run_gate_plan(
+            harness, checkout, tier=effective, subject_digest=commit, policy_digest=policy,
+            ci_task_id=str(result.get("task_id") or ""), changed_files=changed, read_only=True,
+        )
+        if gates["decision"] != "pass" or gates["missing"]:
+            return {"decision": "block", "reason": "RECEIVE_GATE_BLOCK", "commit": commit,
+                    "blocked_gates": sorted(
+                        name for name, check in gates["checks"].items()
+                        if check.get("decision") != "pass"
+                    ) + list(gates["missing"])}
     return {"decision": "pass", "reason": "RECEIVE_COMMIT_VALID", "commit": commit,
             "task_id": result["task_id"], "work_item": result.get("work_item"),
             "attestation_object": attested["object"]}
@@ -96,6 +165,12 @@ def verify_updates(repo: Path, harness: Path, updates: list[tuple[str, str, str]
     for old, new, ref in updates:
         if ref not in protected_refs:
             continue
+        if not valid_update_objects(repo, old, new):
+            return {"decision": "block", "reason": "RECEIVE_RANGE_INVALID", "ref": ref,
+                    "verified_commits": verified}
+        if not is_fast_forward(repo, old, new):
+            return {"decision": "block", "reason": "RECEIVE_NON_FAST_FORWARD_BLOCK",
+                    "ref": ref, "verified_commits": verified}
         try:
             commits = commits_for_update(repo, old, new)
         except (FileNotFoundError, subprocess.CalledProcessError):
@@ -180,11 +255,19 @@ def main() -> int:
                 receipt_dir.mkdir(parents=True, exist_ok=True)
                 for receipt in outcome["receipts"]:
                     target = receipt_dir / f"{receipt['commit_sha']}.json"
-                    temporary = target.with_suffix(".json.tmp")
-                    temporary.write_text(
-                        json.dumps(receipt, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+                    fd, temporary_name = tempfile.mkstemp(
+                        prefix=f".{receipt['commit_sha']}.", suffix=".tmp", dir=receipt_dir,
                     )
-                    os.replace(temporary, target)
+                    temporary = Path(temporary_name)
+                    try:
+                        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                            json.dump(receipt, stream, ensure_ascii=False, indent=2)
+                            stream.write("\n")
+                            stream.flush()
+                            os.fsync(stream.fileno())
+                        os.replace(temporary, target)
+                    finally:
+                        temporary.unlink(missing_ok=True)
     else:
         outcome = verify_updates(repo, harness, updates, protected_refs=configured)
     dump_json(outcome)
