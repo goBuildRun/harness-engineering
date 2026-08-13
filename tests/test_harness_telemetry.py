@@ -86,7 +86,24 @@ class HarnessTelemetryTest(unittest.TestCase):
                 result, task_id="cost-task", subject_digest="subject-a",
                 policy_digest="policy-a", path=str(receipt),
             ))
-            self.assertIn("USAGE_RECEIPT_SOURCE_MISSING", result["blockers"])
+        self.assertIn("USAGE_RECEIPT_SOURCE_MISSING", result["blockers"])
+
+    def test_unknown_receipt_fields_clear_stale_numeric_values(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            receipt = Path(tmp) / "usage.json"
+            receipt.write_text(json.dumps({
+                "task_id": "cost-task", "subject_digest": "subject-a",
+                "policy_digest": "policy-a", "provider": "openai", "model": "codex",
+                "implementation": {"input_tokens": 12, "output_tokens": 3},
+                "harness": {"input_tokens": "unknown", "output_tokens": "unknown"},
+            }))
+            result = default_result("cost-task")
+            result["cost"]["harness"]["input_tokens"] = 0
+            result["cost"]["harness"]["output_tokens"] = 0
+            apply_usage_receipt(result, task_id="cost-task", subject_digest="subject-a",
+                                policy_digest="policy-a", path=str(receipt))
+            self.assertEqual(result["cost"]["harness"]["input_tokens"], "unknown")
+            self.assertEqual(result["cost"]["harness"]["output_tokens"], "unknown")
 
     def test_numeric_budget_excess_requires_approval(self) -> None:
         result = default_result("cost-task")

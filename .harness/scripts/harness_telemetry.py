@@ -56,6 +56,7 @@ def apply_usage_receipt(result: dict[str, Any], *, task_id: str,
             if _non_negative_int(value):
                 target[field] = value
             else:
+                target[field] = "unknown"
                 complete = False
     result["cost"]["telemetry_complete"] = complete
     result["cost"]["receipt"] = {
