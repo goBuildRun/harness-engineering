@@ -7,7 +7,7 @@ import json
 import os
 import subprocess
 import tempfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -40,15 +40,19 @@ def sign_receipt(receipt: dict[str, Any], signing_key: Path) -> dict[str, Any]:
 
 
 def build_receipt(repo: Path, *, commit: str, work_item_id: str, provider: str,
-                  authority: str, accepted_ref: str, signing_key: Path | None = None) -> dict[str, Any]:
+                  authority: str, accepted_ref: str, signing_key: Path | None = None,
+                  validity_seconds: int = 86400) -> dict[str, Any]:
     if authority not in AUTHORITIES:
         raise ValueError("ACCEPTANCE_AUTHORITY_INVALID")
     if not work_item_id or not provider or not accepted_ref.startswith("refs/"):
         raise ValueError("ACCEPTANCE_BINDING_MISSING")
+    if validity_seconds <= 0:
+        raise ValueError("ACCEPTANCE_VALIDITY_INVALID")
     verified = verify_attestation(repo, commit=commit)
     if verified["decision"] != "pass":
         raise ValueError(verified["reason"])
     attestation = verified["attestation"]
+    accepted_at = datetime.now(timezone.utc)
     receipt = {
         "schema": "harness-acceptance-receipt-v1",
         "authority": authority,
@@ -60,7 +64,8 @@ def build_receipt(repo: Path, *, commit: str, work_item_id: str, provider: str,
         "result_digest": attestation["result_digest"],
         "work_item_id": work_item_id,
         "provider": provider,
-        "accepted_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "accepted_at": accepted_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "expires_at": (accepted_at + timedelta(seconds=validity_seconds)).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
     if signing_key is None or not signing_key.is_file():
         raise ValueError("ACCEPTANCE_SIGNING_KEY_REQUIRED")
@@ -74,11 +79,19 @@ def validate_receipt(receipt: Any, *, work_item_id: str, repo: Path,
     if receipt.get("authority") not in AUTHORITIES:
         return False, "ACCEPTANCE_AUTHORITY_INVALID"
     required = ("accepted_ref", "commit_sha", "attestation_object", "task_id",
-                "policy_digest", "result_digest", "provider", "accepted_at", "signature")
+                "policy_digest", "result_digest", "provider", "accepted_at", "expires_at", "signature")
     if any(not isinstance(receipt.get(field), str) or not receipt[field] for field in required):
         return False, "ACCEPTANCE_RECEIPT_INVALID"
     if receipt.get("work_item_id") != work_item_id:
         return False, "ACCEPTANCE_WORK_ITEM_MISMATCH"
+    try:
+        expires_at = datetime.strptime(str(receipt["expires_at"]), "%Y-%m-%dT%H:%M:%SZ").replace(
+            tzinfo=timezone.utc
+        )
+    except ValueError:
+        return False, "ACCEPTANCE_RECEIPT_INVALID"
+    if expires_at <= datetime.now(timezone.utc):
+        return False, "ACCEPTANCE_RECEIPT_EXPIRED"
     if not allowed_signers.is_file():
         return False, "ACCEPTANCE_TRUST_ROOT_MISSING"
     verified = verify_attestation(repo, commit=str(receipt["commit_sha"]))

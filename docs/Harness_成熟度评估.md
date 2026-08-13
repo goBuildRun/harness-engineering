@@ -60,7 +60,7 @@ Team Product R&D Harness 已经从 embedded 项目脚手架升级为 **harness-e
 | 项 | 为什么重要 | 建议落点 |
 |----|------------|----------|
 | 结果状态与成本遥测 | 没有原子任务状态、Token、上下文和 gate 成本就无法验证优化 | `runs/tasks/<id>/result.json` 作为本地物化快照；不新增独立成本报告 |
-| Git-native 接受权威 | 本地文件可被修改，不能直接证明某个 commit 合规 | `finish` 生成 result，commit hook 生成 result-object-bound attestation；bare receive verifier core 已逐 commit 重算确定性事实，受控签名与安装验收仍待完成 |
+| Git-native 接受权威 | 本地文件可被修改，不能直接证明某个 commit 合规 | `finish` 生成 result，commit hook 生成 result-object-bound attestation；bare receive verifier 逐 commit 重算确定性事实并可签发有期限的 SSH receipt，受控安装验收仍待完成 |
 | 三级接入保障 | 任务执行严格度不应迫使轻量用户先建设平台基础设施 | `local` 默认可用、`guarded` 作为轻量推广目标、`enforced` 用于不可绕过准入；三者不降低 `lite/standard/strict` 要求 |
 | Enforced 接入验收 | verifier core 存在不代表正式 ref/制品入口已防绕过 | 未完成受控 hook、独立签名 receipt 和 provider 终态端到端接线的产品保持 local/guarded；全链通过后才进入 enforced |
 | 能力迁移验收 | 统一入口可能在降本时误删已有优秀机制 | 为参考能力矩阵建立验收测试，证明每项能力被内部承载、按需触发或有明确替代 |

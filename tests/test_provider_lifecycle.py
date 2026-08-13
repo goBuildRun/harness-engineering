@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 SCRIPTS = Path(__file__).resolve().parents[1] / ".harness" / "scripts"
@@ -53,12 +54,40 @@ class ProviderLifecycleTest(unittest.TestCase):
                 "ACCEPTANCE_SIGNATURE_INVALID",
             )
 
+    def test_terminal_receipt_rejects_expired_signature(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.email", "harness@example.invalid"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.name", "Harness Test"], cwd=repo, check=True)
+            (repo / "a").write_text("a")
+            subprocess.run(["git", "add", "a"], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-qm", "a"], cwd=repo, check=True)
+            commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
+            result = default_result("task-1")
+            result.update({"decision": "pass", "state": "validated", "policy_digest": "policy"})
+            result["subject"] = {"kind": "commit", "digest": commit}
+            result["invariants"] = {name: "pass" for name in result["invariants"]}
+            create_attestation(repo, result, commit=commit)
+            key, allowed = self.keys(repo)
+            receipt = build_receipt(
+                repo, commit=commit, work_item_id="WI-42", provider="jira",
+                authority="git-receive", accepted_ref="refs/heads/main", signing_key=key,
+            )
+            receipt["expires_at"] = (datetime.now(timezone.utc) - timedelta(seconds=1)).strftime(
+                "%Y-%m-%dT%H:%M:%SZ"
+            )
+            self.assertEqual(validate_receipt(
+                receipt, work_item_id="WI-42", repo=repo, allowed_signers=allowed
+            )[1], "ACCEPTANCE_RECEIPT_EXPIRED")
+
     def test_terminal_receipt_rejects_wrong_item_or_local_authority(self) -> None:
         receipt = {
             "schema": "harness-acceptance-receipt-v1", "authority": "local",
             "accepted_ref": "refs/heads/main", "commit_sha": "a", "attestation_object": "b",
             "task_id": "t", "policy_digest": "p", "result_digest": "r",
             "work_item_id": "WI-42", "provider": "jira", "accepted_at": "now",
+            "expires_at": "2099-01-01T00:00:00Z",
         }
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)

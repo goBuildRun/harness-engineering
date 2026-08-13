@@ -13,8 +13,9 @@ SCRIPTS = ROOT / ".harness" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 from harness_attestation import create_attestation  # noqa: E402
-from harness_receive import commits_for_update, verify_updates  # noqa: E402
+from harness_receive import accept_updates, commits_for_update, verify_updates  # noqa: E402
 from harness_runtime import default_result, policy_for  # noqa: E402
+from provider_lifecycle import validate_receipt  # noqa: E402
 
 
 class HarnessReceiveTest(unittest.TestCase):
@@ -32,13 +33,20 @@ class HarnessReceiveTest(unittest.TestCase):
         new = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
         return old, new
 
-    def attest(self, repo: Path, commit: str) -> None:
-        result = default_result("receive-task", initial_tier="lite")
+    def attest(self, repo: Path, commit: str, *, work_item: dict[str, str] | None = None) -> None:
+        result = default_result("receive-task", initial_tier="lite", work_item=work_item)
         result.update({"state": "validated", "decision": "pass", "policy_digest": policy_for(ROOT, repo)})
         result["subject"] = {"kind": "commit", "digest": commit}
         result["task"] = {"scope": ["docs"], "tier_floor": "lite"}
         result["invariants"] = {name: "pass" for name in result["invariants"]}
         create_attestation(repo, result, commit=commit)
+
+    def keys(self, root: Path) -> tuple[Path, Path]:
+        key = root / "authority"
+        subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(key)], check=True)
+        allowed = root / "allowed_signers"
+        allowed.write_text(f"harness {key.with_suffix('.pub').read_text()}", encoding="utf-8")
+        return key, allowed
 
     def test_commit_range_excludes_old_and_handles_delete(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -133,6 +141,36 @@ class HarnessReceiveTest(unittest.TestCase):
             create_attestation(repo, result, commit=new)
             outcome = verify_updates(repo, ROOT, [(old, new, "refs/heads/main")])
             self.assertEqual(outcome["reason"], "RECEIVE_CODE_HEALTH_BLOCK")
+
+    def test_acceptance_receipt_is_derived_from_verified_commit_binding(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            old, new = self.repository(repo)
+            self.attest(repo, new, work_item={"id": "WI-42", "provider": "jira"})
+            key, allowed = self.keys(repo)
+            outcome = accept_updates(
+                repo, ROOT, [(old, new, "refs/heads/main")], signing_key=key
+            )
+            self.assertEqual(outcome["decision"], "pass", outcome)
+            receipt = outcome["receipts"][0]
+            self.assertEqual(receipt["accepted_ref"], "refs/heads/main")
+            self.assertEqual(receipt["work_item_id"], "WI-42")
+            self.assertEqual(receipt["provider"], "jira")
+            self.assertEqual(validate_receipt(
+                receipt, work_item_id="WI-42", repo=repo, allowed_signers=allowed
+            ), (True, "ACCEPTANCE_RECEIPT_VALID"))
+
+    def test_acceptance_does_not_sign_unbound_or_unverified_commit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            old, new = self.repository(repo)
+            key, _ = self.keys(repo)
+            self.attest(repo, new)
+            outcome = accept_updates(
+                repo, ROOT, [(old, new, "refs/heads/main")], signing_key=key
+            )
+            self.assertEqual(outcome["reason"], "ACCEPTANCE_WORK_ITEM_BINDING_MISSING")
+            self.assertNotIn("receipts", outcome)
 
 
 if __name__ == "__main__":

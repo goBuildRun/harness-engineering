@@ -180,7 +180,7 @@ Harness 使用两个正交分层：`lite|standard|strict` 决定任务验证深�
 | Code health | `finish` 始终执行 diff 机械扫描，并按 tier/信号要求独立 gc-sweeper 结果 |
 | Commit acceptance | `finish` 生成 validated result；`post-commit` 绑定 commit/tree/result object 并生成 attestation |
 | Enforcement audit | 验证目标 remote/ref 或发布入口安装接收端 verifier、强制逐 commit 重验，并持有独立签名私钥 |
-| Provider lifecycle | 本地最多 ready/review；终态校验受控接受点签名的 acceptance receipt |
+| Provider lifecycle | 本地最多 ready/review；终态校验受控接受点签名且未过期的 acceptance receipt，签名信任根支持多公钥轮换 |
 
 ## 8. Progressive Disclosure
 

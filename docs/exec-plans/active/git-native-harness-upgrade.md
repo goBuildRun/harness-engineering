@@ -48,7 +48,7 @@ Acceptance criteria:
 
 ### E1-S2 Server-signed acceptance receipts
 
-Status: pending
+Status: completed (2026-08-13)
 
 Acceptance criteria:
 
@@ -56,6 +56,8 @@ Acceptance criteria:
 - allowed-signers 公钥轮换支持至少双钥并存。
 - receipt 绑定 accepted ref 和实际接收的 attestation object。
 - 篡改、跨任务、跨 commit、跨 ref 和过期 receipt 全部阻断。
+
+Implementation note: receipt 只能由已通过 receive verifier 的 commit/ref 组合生成，Work Item 和 provider 从 canonical result 读取；默认有效期为 24 小时，信任根使用 OpenSSH `allowed_signers`，可并存多个公钥完成轮换。
 
 ### E1-S3 Enforced installation and audit
 

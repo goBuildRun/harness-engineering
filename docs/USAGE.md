@@ -698,7 +698,7 @@ bash .harness/scripts/harness migrate-task <task-id> --reason '<复核原因>'
 
 结构化 gate runner 按 tier 将 planning、structure、QA、knowledge、growth 和 quality 分别写入 `checks`。standard 命中 `.tsx/.jsx/.vue/.svelte/.html/.css/.scss` 或 frontend/web/ui/pages/components 路径时自动要求 `HARNESS_BROWSER_QA_URL` 并执行浏览器审计；strict 还要求 `HARNESS_STRICT_EVIDENCE` 指向绑定当前 subject、包含 browser/deployment/rollback pass 的 JSON receipt。产品可在 `quality.commands.lint` 使用 `python-import-boundaries` builtin 声明 `paths` 和 `boundaries: [{from, forbid}]`，通用默认值不内置产品目录。
 
-本地 `work_item.sh close` 默认只写 `ready_to_release`。`done`、`implemented`、`released` 等终态必须传入受控 `git-receive` 或 `release-gate` 使用独立 SSH 私钥签发的 `--lifecycle-receipt`，并设置 `HARNESS_ACCEPTANCE_ALLOWED_SIGNERS` 指向产品信任的公钥清单。消费端会回查 Git attestation/result object，并校验 work item、task、policy/result digest、commit、accepted ref 和签名；手写 JSON 一律阻断。
+本地 `work_item.sh close` 默认只写 `ready_to_release`。`done`、`implemented`、`released` 等终态必须传入受控 `git-receive` 或 `release-gate` 使用独立 SSH 私钥签发的 `--lifecycle-receipt`，并设置 `HARNESS_ACCEPTANCE_ALLOWED_SIGNERS` 指向产品信任的 OpenSSH `allowed_signers` 清单；轮换时可让旧、新公钥短期并存。receive authority 只为刚通过 verifier 的 commit/ref 签发 receipt，Work Item 和 provider 取自 canonical result，默认有效期 24 小时。消费端会回查 Git attestation/result object，并校验 work item、task、policy/result digest、commit、accepted ref、有效期和签名；手写 JSON 一律阻断。
 
 | 公开动作 | 使用者看到的结果 | 过渡期内部能力参考 |
 |----------|------------------|--------------------|

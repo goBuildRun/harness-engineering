@@ -17,6 +17,7 @@ from harness_attestation import verify_attestation
 from harness_output import dump_json
 from harness_runtime import classify_tier, git_changed, mechanical_code_health, policy_for
 from harness_scope import paths_within_scope
+from provider_lifecycle import build_receipt
 
 ZERO_SHA = "0" * 40
 
@@ -85,7 +86,8 @@ def verify_commit(repo: Path, harness: Path, commit: str) -> dict[str, Any]:
     if any(check.get("decision") != "pass" or check.get("stale") for check in checks.values()):
         return {"decision": "block", "reason": "RECEIVE_RESULT_CHECK_BLOCK", "commit": commit}
     return {"decision": "pass", "reason": "RECEIVE_COMMIT_VALID", "commit": commit,
-            "task_id": result["task_id"], "attestation_object": attested["object"]}
+            "task_id": result["task_id"], "work_item": result.get("work_item"),
+            "attestation_object": attested["object"]}
 
 
 def verify_updates(repo: Path, harness: Path, updates: list[tuple[str, str, str]], *,
@@ -103,9 +105,39 @@ def verify_updates(repo: Path, harness: Path, updates: list[tuple[str, str, str]
             outcome = verify_commit(repo, harness, commit)
             if outcome["decision"] != "pass":
                 return {**outcome, "ref": ref, "verified_commits": verified}
+            outcome["ref"] = ref
             verified.append(outcome)
     return {"decision": "pass", "reason": "RECEIVE_UPDATES_VALID",
             "verified_commits": verified}
+
+
+def accept_updates(repo: Path, harness: Path, updates: list[tuple[str, str, str]], *,
+                   signing_key: Path, protected_refs: tuple[str, ...] = ("refs/heads/main",)
+                   ) -> dict[str, Any]:
+    outcome = verify_updates(repo, harness, updates, protected_refs=protected_refs)
+    if outcome["decision"] != "pass":
+        return outcome
+    bindings: list[tuple[dict[str, Any], str, str]] = []
+    for verified in outcome["verified_commits"]:
+        work_item = verified.get("work_item")
+        if (not isinstance(work_item, dict) or not isinstance(work_item.get("id"), str)
+                or not work_item["id"] or not isinstance(work_item.get("provider"), str)
+                or not work_item["provider"]):
+            return {"decision": "block", "reason": "ACCEPTANCE_WORK_ITEM_BINDING_MISSING",
+                    "commit": verified["commit"], "verified_commits": outcome["verified_commits"]}
+        bindings.append((verified, work_item["id"], work_item["provider"]))
+    receipts = []
+    try:
+        for verified, work_item_id, provider in bindings:
+            receipts.append(build_receipt(
+                repo, commit=verified["commit"], work_item_id=work_item_id,
+                provider=provider, authority="git-receive", accepted_ref=verified["ref"],
+                signing_key=signing_key,
+            ))
+    except ValueError as exc:
+        return {"decision": "block", "reason": str(exc),
+                "verified_commits": outcome["verified_commits"]}
+    return {**outcome, "reason": "RECEIVE_UPDATES_ACCEPTED", "receipts": receipts}
 
 
 def parse_updates(stream: Any) -> list[tuple[str, str, str]]:
