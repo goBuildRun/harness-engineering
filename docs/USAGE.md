@@ -489,6 +489,8 @@ Docker 后端默认 `HARNESS_SANDBOX_DOCKER_NETWORK=none`，并把当前解析�
 python3 .harness/scripts/sandbox_acceptance.py --cwd "$PWD"
 ```
 
+需要验证 Python/Node 官方镜像都能承载业务测试时增加 `--runtime-suite`。该套件仍默认断网，只运行内置的最小测试，不下载依赖；它用于首次接线和运行时升级验收，不进入日常 `validate_harness`。
+
 ### 5.3 调试纪律
 
 ```bash

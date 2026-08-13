@@ -2,7 +2,7 @@
 
 | ID | 描述 | 严重度 | 状态 |
 |----|------|--------|------|
-| TD-001 | 沙箱接 Firecracker/远程隔离执行器 | 中 | partially done：Docker backend（默认无网络）、可选实机 acceptance 和 subject-bound HTTPS remote executor 协议已接入；Firecracker/remote executor 实机部署和隔离验证 open |
+| TD-001 | 沙箱接 Firecracker/远程隔离执行器 | 中 | partially done：Docker backend（默认无网络）、Python/Node 可选实机 runtime-suite acceptance 和 subject-bound HTTPS remote executor 协议已接入；Firecracker/remote executor 实机部署和隔离验证 open |
 | TD-002 | browser_qa 复杂交互脚本库与 report 语义规范 | — | **已偿还** 2026-08-11 · setup/CI、trace、截图、console/network audit 与最多 50 步的 allowlist scenario JSON 已落地；逐步 decision 写入统一 browser report，任意 JS 仅保留兼容入口 |
 | TD-003 | import-linter / Ruff 分层 import CI | — | **已偿还** 2026-08-11 · `quality.commands` 支持安全 Ruff argv 与 AST `python-import-boundaries` builtin，边界由产品 profile 配置 |
 | TD-004 | Ralph agent-review 脚本化（非 echo） | — | **已偿还** 2026-06-21 · CI `ai_code_review` 调用 `mr_ready.sh` |

@@ -47,6 +47,17 @@ class SandboxExecTest(unittest.TestCase):
         self.assertEqual(result["probes"][1]["name"], "network-isolated")
         self.assertEqual(result["probes"][1]["decision"], "block")
 
+    def test_business_runtime_suite_runs_python_and_node_and_propagates_failure(self) -> None:
+        outcomes = [(True, ""), (True, ""), (True, ""), (True, ""), (False, "node failed")]
+        with patch("sandbox_acceptance.run_probe", side_effect=outcomes) as probe:
+            result = accept(Path("/tmp/product"), 10, runtime_suite=True)
+        self.assertEqual(result["decision"], "block")
+        runtime_results = result["probes"][-2:]
+        self.assertEqual([item["name"] for item in runtime_results], ["python-business-test", "node-business-test"])
+        self.assertEqual([item["image"] for item in runtime_results], ["python:3.11-slim", "node:22-slim"])
+        self.assertEqual(runtime_results[1]["decision"], "block")
+        self.assertEqual(probe.call_args_list[-1].kwargs["image"], "node:22-slim")
+
     def remote_env(self) -> dict[str, str]:
         return {
             "HARNESS_SANDBOX_REMOTE_URL": "https://executor.example.invalid/v1/run",
