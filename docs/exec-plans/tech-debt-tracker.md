@@ -19,7 +19,7 @@
 | TD-015 | 7 字段任务契约机械校验 | — | **已偿还** 2026-06-20 · `task_contract_check.py` |
 | TD-016 | 产品侧 `quality.commands` 接入 CI/check | — | **已偿还** 2026-06-21 · `quality_commands.py` + Harness allowlist/危险 env 拦截 |
 | TD-017 | 开源发布前防泄漏预检 | — | **已偿还** 2026-06-21 · `release_preflight.sh` |
-| TD-018 | 实现统一 `start/status/finish` 门面、原子 `result.json` 与实现/Harness 分项成本遥测；内部复用现有 gate，不新增并行流程 | 高 | partially done：tier-aware 结构化 runner、本地/CI 共享 checks、usage receipt、预算阻断与确定性缓存已落地；仍需真实 provider usage receipt 联调 |
+| TD-018 | 实现统一 `start/status/finish` 门面、原子 `result.json` 与实现/Harness 分项成本遥测；内部复用现有 gate，不新增并行流程 | 高 | partially done：tier-aware 结构化 runner、本地/CI 共享 checks、task/subject/policy-bound usage receipt、预算阻断与确定性缓存已落地；仍需真实 provider usage receipt 联调 |
 | TD-019 | CI 对目标 commit 使用共享判定器生成 required check；本地 `finish` 只进入 ready/review，合并或发布后才能关闭 Work Item | 高 | partially done：GitHub PR/merge commit 双阶段 check、release/provider root workflows 与 terminal receipt gate 已落地；其他平台可复用共享判定器，目标分支 required 与真实 workflow run 尚未实测 |
 | TD-020 | 建立能力迁移验收：逐项证明 BMAD、TDD、QA、安全、知识、浏览器、协同能力已被统一门面承载或按需触发 | 高 | partially done：见 [能力迁移映射](../design-docs/capability-migration-map.md)；前端 diff 自动触发 browser gate 已落地，provider 生命周期仍待真实端到端验证 |
 | TD-021 | 建立 `shadow → enforced` 接入探针与绕过测试；required check、发布依赖或 provider 生命周期任一未验证时必须显示 `NOT_ENFORCED` | 高 | partially done：live GitHub probe、平台无关 HTTPS authority probe、远端目标 commit workflow 读取、过期/伪造/本地 dirty 绕过阻断、默认分支 merge-only workflows 及 release/provider 成功运行 subject 绑定已落地；branch protection/API 权限和真实 run 尚无外部证据，因此仍为 shadow |

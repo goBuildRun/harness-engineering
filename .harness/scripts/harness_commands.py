@@ -242,7 +242,8 @@ def cmd_finish(args: argparse.Namespace) -> int:
     ) else "block"
     result["invariants"]["final_result"] = "pass"
     result["cost"]["harness"]["gate_duration_ms"] += int((time.monotonic() - started) * 1000)
-    apply_usage_receipt(result, subject_digest=subject)
+    apply_usage_receipt(result, task_id=task_id, subject_digest=subject,
+                        policy_digest=result["policy_digest"])
     enforce_budget(result)
     finalize(result, finish_decision)
     atomic_write_result(path, result)
@@ -317,7 +318,8 @@ def cmd_ci_check(args: argparse.Namespace) -> int:
     )
     result["invariants"]["final_result"] = "pass"
     result["cost"]["harness"]["gate_duration_ms"] += int((time.monotonic() - started) * 1000)
-    apply_usage_receipt(result, subject_digest=sha)
+    apply_usage_receipt(result, task_id=args.task_id, subject_digest=sha,
+                        policy_digest=result["policy_digest"])
     enforce_budget(result)
     finalize(result, finish_decision, local=True)
     if args.output:

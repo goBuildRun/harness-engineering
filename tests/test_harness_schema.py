@@ -30,6 +30,24 @@ class HarnessSchemaTest(unittest.TestCase):
         result["cost"]["telemetry_complete"] = True
         self.assertIn("cost.telemetry_complete_unknown", validate_result(result))
 
+    def test_usage_receipt_metadata_requires_complete_binding(self) -> None:
+        result = default_result("cost-task")
+        result["cost"]["receipt"] = {
+            "provider": "openai", "model": "codex", "task_id": "cost-task",
+            "subject_digest": "subject-a",
+        }
+        self.assertIn("cost.receipt.policy_digest", validate_result(result))
+
+    def test_usage_receipt_metadata_must_match_result_identity(self) -> None:
+        result = default_result("cost-task")
+        result["subject"]["digest"] = "subject-a"
+        result["policy_digest"] = "policy-a"
+        result["cost"]["receipt"] = {
+            "provider": "openai", "model": "codex", "task_id": "other-task",
+            "subject_digest": "subject-a", "policy_digest": "policy-a",
+        }
+        self.assertIn("cost.receipt.task_id_mismatch", validate_result(result))
+
     def test_negative_or_boolean_cost_is_rejected(self) -> None:
         result = default_result("task-1")
         result["cost"]["harness"]["agent_calls"] = -1

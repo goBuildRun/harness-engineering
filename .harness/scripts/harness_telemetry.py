@@ -15,7 +15,8 @@ def _non_negative_int(value: Any) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value >= 0
 
 
-def apply_usage_receipt(result: dict[str, Any], *, subject_digest: str,
+def apply_usage_receipt(result: dict[str, Any], *, task_id: str,
+                        subject_digest: str, policy_digest: str,
                         path: str = "") -> bool:
     raw = path or os.environ.get("HARNESS_USAGE_RECEIPT", "")
     if not raw:
@@ -25,8 +26,22 @@ def apply_usage_receipt(result: dict[str, Any], *, subject_digest: str,
     except (OSError, json.JSONDecodeError):
         result["blockers"] = sorted(set(result.get("blockers", [])) | {"USAGE_RECEIPT_INVALID"})
         return False
-    if receipt.get("subject_digest") != subject_digest:
-        result["blockers"] = sorted(set(result.get("blockers", [])) | {"USAGE_RECEIPT_STALE"})
+    expected = {
+        "task_id": task_id,
+        "subject_digest": subject_digest,
+        "policy_digest": policy_digest,
+    }
+    if any(receipt.get(key) != value for key, value in expected.items()):
+        result["blockers"] = sorted(
+            set(result.get("blockers", [])) | {"USAGE_RECEIPT_BINDING_MISMATCH"}
+        )
+        return False
+    provider = str(receipt.get("provider") or "").strip()
+    model = str(receipt.get("model") or "").strip()
+    if not provider or not model:
+        result["blockers"] = sorted(
+            set(result.get("blockers", [])) | {"USAGE_RECEIPT_SOURCE_MISSING"}
+        )
         return False
     complete = True
     for group in ("implementation", "harness"):
@@ -40,9 +55,11 @@ def apply_usage_receipt(result: dict[str, Any], *, subject_digest: str,
                 complete = False
     result["cost"]["telemetry_complete"] = complete
     result["cost"]["receipt"] = {
-        "provider": str(receipt.get("provider") or "unknown"),
-        "model": str(receipt.get("model") or "unknown"),
+        "provider": provider,
+        "model": model,
+        "task_id": task_id,
         "subject_digest": subject_digest,
+        "policy_digest": policy_digest,
     }
     return True
 

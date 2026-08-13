@@ -701,6 +701,8 @@ bash .harness/scripts/harness enforcement audit
 
 本地 `finish` 只在 subject、policy、相关输入和工具 digest 全部一致时复用确定性的 `tier` 与 `scope` 判定，并把命中数累加到 `cost.harness.cache_hits`。diff code-health 每次都以 `source: executed` 重跑；QA、GC Agent、生产、部署和回滚证据不进入缓存。GC 修改代码后，tier、scope、测试、结构和 code-health 的旧 fingerprint 均失效。CI `ci-check` 始终针对目标 commit 重新执行，不读取本地缓存。
 
+设置 `HARNESS_USAGE_RECEIPT=<json-path>` 可把 Agent/provider 成本写入同一 `result.json.cost`。receipt 必须包含与当前执行一致的 `task_id`、`subject_digest`、`policy_digest`，非空 `provider` / `model`，以及 `implementation`、`harness` 两组 `input_tokens`、`output_tokens`、`context_chars`、`agent_calls`。未提供时成本保持 `unknown` 且不单独阻断；提供后若任务、subject、policy 或来源身份不匹配，则返回 `USAGE_RECEIPT_BINDING_MISMATCH` 或 `USAGE_RECEIPT_SOURCE_MISSING`。
+
 结构化 gate runner 按 tier 将 planning、structure、QA、knowledge、growth 和 quality 分别写入 `checks`。standard 命中 `.tsx/.jsx/.vue/.svelte/.html/.css/.scss` 或 frontend/web/ui/pages/components 路径时自动要求 `HARNESS_BROWSER_QA_URL` 并执行浏览器审计；strict 还要求 `HARNESS_STRICT_EVIDENCE` 指向绑定当前 subject、包含 browser/deployment/rollback pass 的 JSON receipt。产品可在 `quality.commands.lint` 使用 `python-import-boundaries` builtin 声明 `paths` 和 `boundaries: [{from, forbid}]`，通用默认值不内置产品目录。
 
 本地 `work_item.sh close` 默认只写 `ready_to_release`。`done`、`implemented`、`released` 等终态必须在 CI 中传入绑定 work item、merge commit SHA、成功 required run 和 merge/release event 的 `--lifecycle-receipt`；provider workflow 只消费触发它的成功 run artifact，并验证该 SHA 恰好关联一个已合并 PR。普通 Agent 调用会返回 `PROVIDER_TERMINAL_STATUS_FORBIDDEN`。

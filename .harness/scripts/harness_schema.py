@@ -80,6 +80,22 @@ def validate_result(data: dict[str, Any]) -> list[str]:
         issues.append("cost.telemetry_complete")
     if cost.get("telemetry_complete") and _contains_unknown(cost):
         issues.append("cost.telemetry_complete_unknown")
+    receipt = cost.get("receipt")
+    if receipt is not None:
+        if not isinstance(receipt, dict):
+            issues.append("cost.receipt")
+        else:
+            for field in ("provider", "model", "task_id", "subject_digest", "policy_digest"):
+                if not isinstance(receipt.get(field), str) or not receipt[field].strip():
+                    issues.append(f"cost.receipt.{field}")
+            bindings = {
+                "task_id": data.get("task_id"),
+                "subject_digest": (data.get("subject") or {}).get("digest"),
+                "policy_digest": data.get("policy_digest"),
+            }
+            for field, expected in bindings.items():
+                if receipt.get(field) != expected:
+                    issues.append(f"cost.receipt.{field}_mismatch")
     return issues
 
 

@@ -22,12 +22,16 @@ class HarnessTelemetryTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             receipt = Path(tmp) / "usage.json"
             receipt.write_text(json.dumps({
-                "subject_digest": "subject-a", "provider": "openai", "model": "codex",
+                "task_id": "cost-task", "subject_digest": "subject-a",
+                "policy_digest": "policy-a", "provider": "openai", "model": "codex",
                 "implementation": {"input_tokens": 10, "output_tokens": 4, "context_chars": 30, "agent_calls": 1},
                 "harness": {"input_tokens": 3, "output_tokens": 1, "context_chars": 8, "agent_calls": 1},
             }))
             result = default_result("cost-task")
-            self.assertTrue(apply_usage_receipt(result, subject_digest="subject-a", path=str(receipt)))
+            self.assertTrue(apply_usage_receipt(
+                result, task_id="cost-task", subject_digest="subject-a",
+                policy_digest="policy-a", path=str(receipt),
+            ))
             self.assertTrue(result["cost"]["telemetry_complete"])
             self.assertEqual(result["cost"]["implementation"]["input_tokens"], 10)
             self.assertEqual(result["cost"]["receipt"]["provider"], "openai")
@@ -35,11 +39,31 @@ class HarnessTelemetryTest(unittest.TestCase):
     def test_stale_receipt_blocks_without_faking_zero(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             receipt = Path(tmp) / "usage.json"
-            receipt.write_text('{"subject_digest":"old"}')
+            receipt.write_text(json.dumps({
+                "task_id": "old-task", "subject_digest": "old", "policy_digest": "old-policy",
+                "provider": "openai", "model": "codex",
+            }))
             result = default_result("cost-task")
-            self.assertFalse(apply_usage_receipt(result, subject_digest="new", path=str(receipt)))
-            self.assertIn("USAGE_RECEIPT_STALE", result["blockers"])
+            self.assertFalse(apply_usage_receipt(
+                result, task_id="cost-task", subject_digest="new",
+                policy_digest="new-policy", path=str(receipt),
+            ))
+            self.assertIn("USAGE_RECEIPT_BINDING_MISMATCH", result["blockers"])
             self.assertEqual(result["cost"]["implementation"]["input_tokens"], "unknown")
+
+    def test_receipt_requires_provider_and_model_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            receipt = Path(tmp) / "usage.json"
+            receipt.write_text(json.dumps({
+                "task_id": "cost-task", "subject_digest": "subject-a",
+                "policy_digest": "policy-a", "implementation": {}, "harness": {},
+            }))
+            result = default_result("cost-task")
+            self.assertFalse(apply_usage_receipt(
+                result, task_id="cost-task", subject_digest="subject-a",
+                policy_digest="policy-a", path=str(receipt),
+            ))
+            self.assertIn("USAGE_RECEIPT_SOURCE_MISSING", result["blockers"])
 
     def test_numeric_budget_excess_requires_approval(self) -> None:
         result = default_result("cost-task")

@@ -108,6 +108,8 @@ harness-workspace/runs/tasks/<task-id>/result.json
 
 `status` 默认展示两类成本及可计算的合计；只有相关字段都为数值时才输出合计值，否则显示 `unknown` 并把 `telemetry_complete` 置为 `false`。不得再为成本跟踪新增一套 Markdown 报告或独立状态协议。
 
+外部 Agent/provider 通过 `HARNESS_USAGE_RECEIPT` 注入成本时，receipt 必须同时绑定 `task_id`、`subject_digest` 和 `policy_digest`，声明非空 `provider`、`model`，并分别提供 implementation/harness 的 Token、上下文字符数和 Agent 调用数。缺失遥测保持 `unknown`；已提供但绑定错误或来源身份缺失的 receipt 必须 block，不能跨任务、diff 或策略复用。
+
 `result.json` 使用任务级单写锁和“临时文件 + 原子替换”更新；中断后可恢复，多个 Agent 不得并发覆盖。它是当前任务的物化状态，不是可由开发者提交后让 CI 盲信的证明。
 
 CI 必须对目标 commit 独立运行同一结果 schema，并把 `commit SHA + policy_digest + decision` 发布为 required check 和 CI artifact。合并/发布以该 commit 绑定的 CI check 为接受真相；本地 `result.json` 只能证明当前工作区已验证。二者共用一个 schema 和判定器，不新增第二套报告协议。
