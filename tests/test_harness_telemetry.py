@@ -14,7 +14,7 @@ SCRIPTS = Path(__file__).resolve().parents[1] / ".harness" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 from harness_runtime import default_result  # noqa: E402
-from harness_telemetry import apply_gc_telemetry, apply_usage_receipt, enforce_budget  # noqa: E402
+from harness_telemetry import apply_automatic_usage, apply_gc_telemetry, apply_usage_receipt, enforce_budget  # noqa: E402
 
 
 class HarnessTelemetryTest(unittest.TestCase):
@@ -59,6 +59,20 @@ class HarnessTelemetryTest(unittest.TestCase):
             ))
             self.assertIn("USAGE_RECEIPT_BINDING_MISMATCH", result["blockers"])
             self.assertEqual(result["cost"]["implementation"]["input_tokens"], "unknown")
+
+    @mock.patch("harness_telemetry.automatic_receipt")
+    def test_automatic_usage_applies_when_explicit_receipt_is_absent(self, automatic) -> None:
+        automatic.return_value = {
+            "task_id": "cost-task", "subject_digest": "subject-a", "policy_digest": "policy-a",
+            "provider": "openai", "model": "codex",
+            "implementation": {"input_tokens": 12, "output_tokens": 3},
+            "harness": {},
+        }
+        result = default_result("cost-task")
+        self.assertTrue(apply_automatic_usage(
+            result, task_id="cost-task", subject_digest="subject-a", policy_digest="policy-a",
+        ))
+        self.assertEqual(result["cost"]["implementation"]["input_tokens"], 12)
 
     def test_receipt_requires_provider_and_model_identity(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

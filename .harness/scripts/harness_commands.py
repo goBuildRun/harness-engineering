@@ -16,7 +16,7 @@ from harness_assurance import finalize, refresh_result
 from harness_attestation import verify_attestation
 from harness_cache import executed_check, reuse_check, tool_digest
 from harness_gates import checks_for_tier, committed_work_item, run_gate_plan
-from harness_telemetry import apply_gc_telemetry, apply_usage_receipt, enforce_budget
+from harness_telemetry import apply_automatic_usage, apply_gc_telemetry, apply_usage_receipt, enforce_budget
 from harness_runtime import (
     active_task_path, apply_code_health, atomic_write_result,
     canonical_digest, classify_tier, default_result, task_kind_tier,
@@ -313,8 +313,8 @@ def cmd_finish(args: argparse.Namespace) -> int:
     ) else "block"
     result["invariants"]["final_result"] = "pass"
     result["cost"]["harness"]["gate_duration_ms"] += int((time.monotonic() - started) * 1000)
-    apply_usage_receipt(result, task_id=task_id, subject_digest=subject,
-                        policy_digest=result["policy_digest"])
+    apply_automatic_usage(result, task_id=task_id, subject_digest=subject,
+                          policy_digest=result["policy_digest"])
     enforce_budget(result)
     finalize(result, finish_decision)
     refresh_assurance(result, product, result["policy_digest"], phase="pre-commit-head")

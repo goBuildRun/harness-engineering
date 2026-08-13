@@ -7,6 +7,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+from codex_usage_receipt import automatic_receipt
+
 
 USAGE_FIELDS = ("input_tokens", "output_tokens", "context_chars", "agent_calls")
 SOURCE_TEXT_FIELDS = ("kind", "session_id", "originator", "rollout_sha256", "usage_event_at")
@@ -81,6 +83,26 @@ def apply_usage_receipt(result: dict[str, Any], *, task_id: str,
         if sanitized:
             result["cost"]["receipt"]["source"] = sanitized
     return True
+
+
+def apply_automatic_usage(result: dict[str, Any], *, task_id: str,
+                          subject_digest: str, policy_digest: str) -> bool:
+    if os.environ.get("HARNESS_USAGE_RECEIPT", "").strip():
+        return apply_usage_receipt(
+            result, task_id=task_id, subject_digest=subject_digest,
+            policy_digest=policy_digest,
+        )
+    receipt = automatic_receipt(task_id, subject_digest, policy_digest)
+    if receipt is None:
+        return False
+    import tempfile
+    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", suffix=".json") as handle:
+        json.dump(receipt, handle)
+        handle.flush()
+        return apply_usage_receipt(
+            result, task_id=task_id, subject_digest=subject_digest,
+            policy_digest=policy_digest, path=handle.name,
+        )
 
 
 def apply_gc_telemetry(result: dict[str, Any], gc_result: dict[str, Any] | None) -> bool:

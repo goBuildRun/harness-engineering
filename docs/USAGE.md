@@ -710,7 +710,7 @@ bash .harness/scripts/harness amend-task <task-id> --scope <path> --reason '<修
 
 设置 `HARNESS_USAGE_RECEIPT=<json-path>` 可把 Agent/provider 成本写入同一 `result.json.cost`。receipt 必须包含与当前执行一致的 `task_id`、`subject_digest`、`policy_digest`，非空 `provider` / `model`，以及 `implementation`、`harness` 两组 `input_tokens`、`output_tokens`、`context_chars`、`agent_calls`。未提供时成本保持 `unknown` 且不单独阻断；提供后若任务、subject、policy 或来源身份不匹配，则返回 `USAGE_RECEIPT_BINDING_MISMATCH` 或 `USAGE_RECEIPT_SOURCE_MISSING`。
 
-Codex 本地会话可从显式指定的 rollout JSONL 导出服务端累计 Token，不扫描其他会话，也不复制 prompt、message 或工具参数：
+Codex Desktop/CLI 向进程提供 `CODEX_THREAD_ID` 时，`harness finish` 会在本机 Codex sessions/archived_sessions 中按该 ID 唯一定位 rollout，自动导入服务端累计 Token；不按时间猜测，不扫描或合并其他会话，也不复制 prompt、message 或工具参数。找不到唯一匹配时保持 `unknown`。显式导出命令仅用于离线诊断或不透传 thread ID 的执行环境：
 
 ```bash
 python3 .harness/scripts/codex_usage_receipt.py \

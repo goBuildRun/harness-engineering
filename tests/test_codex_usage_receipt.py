@@ -6,10 +6,14 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / ".harness" / "scripts" / "codex_usage_receipt.py"
+import sys
+sys.path.insert(0, str(ROOT / ".harness" / "scripts"))
+from codex_usage_receipt import automatic_receipt  # noqa: E402
 
 
 class CodexUsageReceiptTest(unittest.TestCase):
@@ -51,6 +55,23 @@ class CodexUsageReceiptTest(unittest.TestCase):
             ], text=True, capture_output=True, check=False)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("CODEX_USAGE_MISSING", result.stderr)
+
+    def test_automatic_receipt_requires_exact_thread_id_match(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            codex_home = Path(tmp)
+            rollout = codex_home / "sessions" / "2026" / "08" / "13" / "rollout-session-1.jsonl"
+            rollout.parent.mkdir(parents=True)
+            self._write(rollout, [
+                {"type": "session_meta", "payload": {"id": "session-1", "model_provider": "openai"}},
+                {"type": "turn_context", "payload": {"model": "gpt-test"}},
+                {"type": "event_msg", "timestamp": "2026-08-13T00:02:00Z", "payload": {"type": "token_count", "info": {"total_token_usage": {"input_tokens": 25, "output_tokens": 8, "total_tokens": 33}}}},
+            ])
+            with mock.patch.dict("os.environ", {"CODEX_HOME": str(codex_home), "CODEX_THREAD_ID": "session-1"}, clear=False):
+                receipt = automatic_receipt("task-1", "subject-1", "policy-1")
+            self.assertIsNotNone(receipt)
+            self.assertEqual(receipt["implementation"]["input_tokens"], 25)
+            with mock.patch.dict("os.environ", {"CODEX_HOME": str(codex_home), "CODEX_THREAD_ID": "other"}, clear=False):
+                self.assertIsNone(automatic_receipt("task-1", "subject-1", "policy-1"))
 
 
 if __name__ == "__main__":
