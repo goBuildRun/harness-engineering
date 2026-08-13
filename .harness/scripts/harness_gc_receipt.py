@@ -45,6 +45,8 @@ def build_receipt(*, commit: str, task_id: str, policy_digest: str,
             or gc_result.get("policy_digest") != policy_digest
             or not _valid_count(telemetry.get("agent_calls"), maximum=1)
             or telemetry.get("agent_calls") != 1
+            or not str(telemetry.get("provider") or "").strip()
+            or not str(telemetry.get("model") or "").strip()
             or not _valid_count(telemetry.get("context_chars"))
             or not _valid_count(telemetry.get("duration_ms"))):
         raise ValueError("GC_RECEIPT_RESULT_INVALID")
@@ -118,7 +120,9 @@ def verify_receipt(repo: Path, *, commit: str, task_id: str, policy_digest: str,
     if any(receipt.get(key) != value for key, value in expected.items()):
         return {"decision": "block", "reason": "GC_RECEIPT_BINDING_MISMATCH"}
     telemetry = receipt.get("telemetry") or {}
-    if (telemetry.get("agent_calls") != 1 or not _valid_count(telemetry.get("context_chars"))
+    if (telemetry.get("agent_calls") != 1 or not str(telemetry.get("provider") or "").strip()
+            or not str(telemetry.get("model") or "").strip()
+            or not _valid_count(telemetry.get("context_chars"))
             or not _valid_count(telemetry.get("duration_ms"))
             or not allowed_signers.is_file()):
         return {"decision": "block", "reason": "GC_RECEIPT_INVALID"}

@@ -25,8 +25,9 @@ CAPABILITIES: dict[str, dict[str, Any]] = {
     "independent-qa": {"mode": "tier-triggered", "gates": {"standard": ["qa_evidence"]},
                        "files": [".harness/scripts/qa_evidence_check.py", ".harness/scripts/agent_review.py"]},
     "gc-sweeper": {"mode": "signal-triggered", "gates": {},
-                   "files": [".harness/scripts/harness_gc_context.py", ".harness/scripts/ci_gc_review.py",
-                             "tests/test_harness_gc_context.py", "tests/test_ci_gc_review.py"]},
+                   "files": [".harness/scripts/harness_gc_context.py",
+                             ".harness/scripts/harness_gc_receipt.py",
+                             "tests/test_harness_gc_context.py", "tests/test_harness_gc_receipt.py"]},
     "brownfield-intake": {"mode": "explicit", "gates": {},
                           "files": [".harness/scripts/harness_intake.py"]},
     "work-item-provider": {"mode": "lifecycle-triggered", "gates": {},
@@ -34,7 +35,9 @@ CAPABILITIES: dict[str, dict[str, Any]] = {
                                      "tests/test_provider_lifecycle.py"]},
     "commit-acceptance": {"mode": "authority-triggered", "gates": {},
                           "files": [".harness/scripts/harness_attestation.py",
-                                    "tests/test_harness_attestation.py"]},
+                                    ".harness/scripts/harness_receive.py",
+                                    ".harness/scripts/harness_enforced.py",
+                                    "tests/test_harness_enforced.py"]},
 }
 
 TIER_INHERITANCE = {"lite": ("lite", "standard", "strict"),

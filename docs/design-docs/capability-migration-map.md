@@ -1,6 +1,6 @@
 # Harness 能力迁移映射
 
-> 状态：local implementation，2026-08-13。此表解释能力承载关系；`.harness/scripts/capability_contract.py` 与 `validate_harness.sh` 机械检查承载入口和 tier gate 未被静默删除。该审计不代表 guarded 或 enforced 接受保障已接线；旧 result schema 仍显示 `shadow`。
+> 状态：Git-native implementation，2026-08-13。此表解释能力承载关系；`.harness/scripts/capability_contract.py` 与 `validate_harness.sh` 机械检查承载入口和 tier gate 未被静默删除。guarded/enforced 是否对某个产品生效仍以该产品实际 authority audit 为准。
 
 | 来源能力 | 统一入口承载 | 当前状态 | 验收证据 |
 |----------|--------------|----------|----------|
@@ -10,7 +10,7 @@
 | Flow-X：CONTEXT / LESSONS / evidence | workspace 原位兼容，不批量迁移 | 已承载；真实 workspace audit 会区分 completed legacy 与活动任务 | `workspace audit` / `migrate-task` / migration tests |
 | GStack / 浏览器 QA | standard 前端 diff 自动触发；strict 使用 subject-bound receipt | 已承载，缺 URL/receipt 时阻断 | browser gate 与 gate coverage tests |
 | Ralph / Agent Review、独立 QA | standard/strict 将 QA evidence 写入独立 check | 已承载且缺失时阻断 | `checks.qa_evidence` 与 gate coverage tests |
-| GC sweeper | `finish` 机械扫描并按 tier/信号要求一次独立结果；接受端对目标 commit 复核绑定 | 已接入，receipt 绑定 role/task/subject/policy，缺 runner fail closed | `test_harness_runtime.py`、`test_harness_gc_context.py`、`test_ci_gc_review.py` |
+| GC sweeper | `finish` 机械扫描并按 tier/信号要求一次独立结果；接受端重建 context 并验证 SSH receipt | 已接入，receipt 绑定 commit/task/policy/context/triggers/model/telemetry，缺失或跨 subject 复用 fail closed | `test_harness_runtime.py`、`test_harness_gc_context.py`、`test_harness_gc_receipt.py` |
 | Brownfield Intake | 首次接入或事实漂移时独立调用 | 保留，不进入每任务固定链 | 既有 intake tests |
 | Work Item provider | 本地最多 ready；终态要求受控接受 receipt | 已机械封堵本地终态；receipt 绑定 Git attestation、commit、ref 与 authority | provider lifecycle / attestation tests |
 | Git commit 接受 | canonical Git object + attestation/result refs + receive authority | local/guarded/enforced 框架链已实现并通过真实 bare Git push；产品实例须独立 audit | `harness_attestation.py`、`harness_receive.py`、`harness_enforced.py` |

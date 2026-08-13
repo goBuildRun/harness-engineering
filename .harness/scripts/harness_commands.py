@@ -43,7 +43,8 @@ def execution_paths(product: Path, task_id: str, changed: list[str]) -> list[str
         generated_rel = str(generated.relative_to(product))
     except ValueError:
         generated_rel = ""
-    return [path for path in changed if path != generated_rel]
+    runs = str((workspace_root(product) / "runs").relative_to(product)).rstrip("/") + "/"
+    return [path for path in changed if path != generated_rel and not path.startswith(runs)]
 
 
 def cmd_start(args: argparse.Namespace) -> int:
@@ -98,6 +99,7 @@ def cmd_status(args: argparse.Namespace) -> int:
     result = load_result(path)
     baseline = path.parent / "worktree_baseline.json"
     changed = changed_since_baseline(product, baseline) if baseline.is_file() else git_changed(product)
+    effective_changed = execution_paths(product, task_id, changed)
     current_subject = subject_for(product, changed)
     current_policy = policy_for(Path(args.harness_root).resolve(), product)
     attestation = verify_attestation(product, commit="HEAD", policy_digest=current_policy)
@@ -211,10 +213,11 @@ def cmd_finish(args: argparse.Namespace) -> int:
     gc_result = invoke_gc_once(result, task_root, mechanical, changed, product) if mechanical["agent_required"] else None
     if gc_result:
         changed_after = changed_since_baseline(product, baseline) if baseline.is_file() else git_changed(product)
+        effective_after = execution_paths(product, task_id, changed_after)
         subject_after = subject_for(product, changed_after)
         if subject_after != subject:
             changed, subject = changed_after, subject_after
-            effective_changed = execution_paths(product, task_id, changed)
+            effective_changed = effective_after
             effective = classify_tier(effective_changed, floor=effective)
             result["tier"]["effective"] = effective
             result["subject"] = {"kind": "worktree", "digest": subject, "paths": changed}

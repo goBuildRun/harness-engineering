@@ -191,7 +191,8 @@ class HarnessReceiveTest(unittest.TestCase):
                 "task_id": "receive-task", "subject_digest": new,
                 "policy_digest": result["policy_digest"], "findings": 1, "remediated": 1,
                 "deferred_work_items": [],
-                "telemetry": {"agent_calls": 1, "context_chars": context_chars, "duration_ms": 10},
+                "telemetry": {"agent_calls": 1, "context_chars": context_chars, "duration_ms": 10,
+                              "provider": "compatible", "model": "gc-model"},
             }
             receipt = build_receipt(
                 commit=new, task_id="receive-task", policy_digest=result["policy_digest"],

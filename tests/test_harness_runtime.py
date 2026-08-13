@@ -429,7 +429,8 @@ class HarnessRuntimeTest(unittest.TestCase):
                 "task_id": "gc-ci", "subject_digest": sha,
                 "policy_digest": harness_commands.policy_for(ROOT, product),
                 "findings": 0, "remediated": 0, "deferred_work_items": [],
-                "telemetry": {"agent_calls": 1, "context_chars": 321, "duration_ms": 54},
+                "telemetry": {"agent_calls": 1, "context_chars": 321, "duration_ms": 54,
+                              "provider": "compatible", "model": "gc-model"},
             }))
             captured = []
             with mock.patch.object(harness_commands, "run_gate_plan", return_value={

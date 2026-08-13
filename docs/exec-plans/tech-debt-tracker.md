@@ -21,9 +21,9 @@
 | TD-015 | 7 字段任务契约机械校验 | — | **已偿还** 2026-06-20 · `task_contract_check.py` |
 | TD-016 | 产品侧 `quality.commands` 接入 CI/check | — | **已偿还** 2026-06-21 · `quality_commands.py` + Harness allowlist/危险 env 拦截 |
 | TD-017 | 开源发布前防泄漏预检 | — | **已偿还** 2026-06-21 · `release_preflight.sh` |
-| TD-018 | 实现统一 `start/status/finish` 门面、原子 `result.json` 与实现/Harness 分项成本遥测；内部复用现有 gate，不新增并行流程 | 高 | partially done：tier-aware 结构化 runner、本地/CI 共享 checks、task/subject/policy-bound usage receipt、预算阻断与确定性缓存已落地；仍需真实 provider usage receipt 联调 |
-| TD-019 | 以 Git object/ref attestation 作为唯一 commit 接受真相；`finish` 只进入 ready/review，受控接受或发布后才能关闭 Work Item | 高 | in progress：canonical result object、attestation refs、verifier 与 SSH-signed provider receipt 已落地；受控接收端重跑验收待完成 |
-| TD-020 | 建立能力迁移验收：逐项证明 BMAD、TDD、QA、安全、知识、浏览器、协同能力已被统一门面承载或按需触发 | 高 | partially done：见 [能力迁移映射](../design-docs/capability-migration-map.md)；`capability_contract.py` 已机械检查承载入口/tier gate，前端 diff 自动触发 browser gate 已落地，provider 生命周期仍待真实端到端验证 |
+| TD-018 | 实现统一 `start/status/finish` 门面、原子 `result.json` 与实现/Harness 分项成本遥测；内部复用现有 gate，不新增并行流程 | 中 | partially done：统一入口、结构化 runner、绑定 usage receipt、GC 模型身份和 rollout 汇总已落地；仍需第三方 provider 真实 usage response 与至少 5 个 lite 样本 |
+| TD-019 | 以 Git object/ref attestation 作为唯一 commit 接受真相；`finish` 只进入 ready/review，受控接受或发布后才能关闭 Work Item | — | **已偿还** 2026-08-13 · canonical result/attestation/GC refs、receive gate 重跑、SSH acceptance receipt、provider 消费与 bare Git push 验收已闭合 |
+| TD-020 | 建立能力迁移验收：逐项证明 BMAD、TDD、QA、安全、知识、浏览器、协同能力已被统一门面承载或按需触发 | — | **已偿还** 2026-08-13 · [能力迁移映射](../design-docs/capability-migration-map.md) 与 `capability_contract.py` 覆盖 BMAD/TDD/QA/知识/浏览器/GC/provider/Git authority carrier |
 | TD-021 | 建立 Git-native `local → guarded → enforced` 验收与绕过测试 | 高 | in progress：guarded 已覆盖全部新增 commit、同步 attestation refs 并保持 commit 后状态；enforced 仍须证明受控 `pre-receive` 或发布入口重跑 gates 并签名 |
 | TD-022 | 拆分超过 400 行的 `work_item.py`，保持 provider CLI、诊断和同步契约不变 | — | **已偿还** 2026-08-11 · provider 网络诊断与能力矩阵迁入 `work_item_diagnostics.py`；核心 CLI 降至 400 行内 |
 | TD-023 | 拆分超过 1000 行的 brownfield intake，隔离扫描策略、信号采集、报告渲染与知识沉淀 | — | **已偿还** 2026-08-11 · `harness_intake_{policy,scan,review}.py` 按职责拆分，入口和各模块均不超过 400 行并保留 CLI/import 契约 |

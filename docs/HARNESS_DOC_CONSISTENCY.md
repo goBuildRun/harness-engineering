@@ -105,8 +105,8 @@
 | HDC-003 | provider 深度验证 | 飞书/Jira 基础 adapter 已接入；需要真实租户验证状态流转、Webhook、权限错误 |
 | HDC-004 | 强沙箱 | `run_in_sandbox.sh` 已支持 controlled 与 Docker backend；Firecracker/远程隔离执行器仍是后续项 |
 | HDC-005 | 精简执行门面与结果 schema | `start/status/finish`、原子 `result.json`、tier-aware gate 与 Git-native attestation 已实现；`shadow|enforced` 只作为历史兼容字段 |
-| HDC-006 | 成本与缓存 | implementation / harness 分项 schema、task/subject/policy-bound usage receipt、fingerprint 安全边界和 `tier` / `scope` 确定性缓存已落地；code-health、QA、GC Agent 与生产证据不缓存。真实 Agent token 注入仍待 provider adapter，未知成本继续记为 `unknown` |
-| HDC-007 | Legacy workspace 兼容 | `workspace audit` 只读分类，`migrate-task` 机械拒绝已完成 legacy、缺凭证和不存在任务；仅活动凭证任务可逐项迁移，已有结果只做身份修复，不批量改写 |
+| HDC-006 | 成本与缓存 | implementation/harness 分项 schema、绑定 usage receipt、GC provider/model/calls/context/duration、fingerprint 和只读 rollout 汇总已落地；真实第三方 usage response 联调仍需 endpoint/model/key，未知 baseline 或样本不足返回 insufficient_data |
+| HDC-007 | Legacy workspace 兼容 | **已完成**：`workspace audit` 只读分类且有无副作用测试；`migrate-task` 机械拒绝已完成 legacy、缺凭证和不存在任务，仅活动凭证任务可逐项迁移，已有结果只做身份修复 |
 | HDC-010 | 三级保障接入验收 | **已完成**：local/guarded、bare Git receive 阻断、acceptance receipt、provider 消费、authority audit 与独立 SSH GC receipt 已覆盖；产品实例仍须对自己的 authority 单独 install/audit |
 | HDC-011 | 能力迁移验收 | `capability_contract.py` 已将 BMAD/TDD/QA/知识/浏览器/GC/协同/Git 接受能力接入 `validate_harness`；真实 provider 生命周期仍由 HDC-003/HDC-010 跟踪 |
 

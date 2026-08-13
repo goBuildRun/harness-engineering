@@ -67,13 +67,19 @@ def apply_usage_receipt(result: dict[str, Any], *, task_id: str,
 def apply_gc_telemetry(result: dict[str, Any], gc_result: dict[str, Any] | None) -> bool:
     telemetry = gc_result.get("telemetry") if isinstance(gc_result, dict) else None
     fields = ("agent_calls", "context_chars", "duration_ms")
-    if not isinstance(telemetry, dict) or not all(_non_negative_int(telemetry.get(key)) for key in fields):
+    provider = str(telemetry.get("provider") or "").strip() if isinstance(telemetry, dict) else ""
+    model = str(telemetry.get("model") or "").strip() if isinstance(telemetry, dict) else ""
+    if (not isinstance(telemetry, dict) or not provider or not model
+            or not all(_non_negative_int(telemetry.get(key)) for key in fields)):
         result["blockers"] = sorted(set(result.get("blockers", [])) | {"GC_TELEMETRY_INVALID"})
         return False
     cost = result["cost"]["harness"]
     cost["agent_calls"] += telemetry["agent_calls"]
     cost["context_chars"] += telemetry["context_chars"]
     cost["gate_duration_ms"] += telemetry["duration_ms"]
+    result.setdefault("checks", {}).setdefault("code_health", {}).setdefault(
+        "agent", {"provider": provider, "model": model}
+    )
     return True
 
 

@@ -32,7 +32,8 @@ class HarnessGcReceiptTest(unittest.TestCase):
                 "decision": "pass", "role": "gc-sweeper", "independent": True,
                 "task_id": "task-1", "subject_digest": "commit-a", "policy_digest": "policy-a",
                 "findings": 1, "remediated": 1, "deferred_work_items": [],
-                "telemetry": {"agent_calls": 1, "context_chars": 42, "duration_ms": 12},
+                "telemetry": {"agent_calls": 1, "context_chars": 42, "duration_ms": 12,
+                              "provider": "compatible", "model": "gc-model"},
             }
             receipt = build_receipt(
                 commit="commit-a", task_id="task-1", policy_digest="policy-a",

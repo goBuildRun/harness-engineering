@@ -6,6 +6,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -20,6 +21,31 @@ from harness_schema import validate_result  # noqa: E402
 
 
 class HarnessAssuranceTest(unittest.TestCase):
+    def test_local_lite_onboarding_public_path_completes_under_five_minutes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            subprocess.run(["git", "init", "-q"], cwd=product, check=True)
+            subprocess.run(["git", "config", "user.email", "harness@example.invalid"], cwd=product, check=True)
+            subprocess.run(["git", "config", "user.name", "Harness Test"], cwd=product, check=True)
+            (product / "docs").mkdir()
+            (product / "docs/note.md").write_text("base\n")
+            subprocess.run(["git", "add", "."], cwd=product, check=True)
+            subprocess.run(["git", "commit", "-qm", "base"], cwd=product, check=True)
+            command = [str(SCRIPTS / "harness"), "--product-root", str(product)]
+            started = time.monotonic()
+            start = json.loads(subprocess.check_output(
+                [*command, "start", "onboarding", "--tier", "lite", "--scope", "docs"], text=True,
+            ))
+            (product / "docs/note.md").write_text("implemented\n")
+            finish = json.loads(subprocess.check_output(
+                [*command, "finish", "--skip-legacy-gates"], text=True,
+            ))
+            status = json.loads(subprocess.check_output([*command, "status"], text=True))
+            self.assertEqual(start["decision"], "pass")
+            self.assertEqual(finish["decision"], "pass", finish)
+            self.assertEqual(status["decision"], "pass")
+            self.assertLess(time.monotonic() - started, 300)
+            self.assertFalse((product / ".github").exists())
     def test_default_result_is_local_and_legacy_result_remains_readable(self) -> None:
         current = default_result("current")
         self.assertEqual(current["assurance"]["level"], "local")
@@ -135,6 +161,13 @@ class HarnessAssuranceTest(unittest.TestCase):
         self.assertIn("rev-list", script)
         self.assertIn("refs/harness/attestations", script)
         self.assertIn("git push", script)
+        self.assertIn("--atomic", script)
+        self.assertIn("refs/harness/results", script)
+
+    def test_pre_push_ignores_deleted_refs_and_processes_each_input_ref(self) -> None:
+        script = pre_push_script()
+        self.assertIn('[[ "$local_sha" =~ ^0+$ ]] && continue', script)
+        self.assertIn("while read -r local_ref local_sha remote_ref remote_sha", script)
 
     def test_schema_rejects_both_directions_of_enforcement_mismatch(self) -> None:
         result = default_result("mismatch")

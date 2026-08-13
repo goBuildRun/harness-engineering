@@ -679,6 +679,8 @@ bash .harness/scripts/harness status demo-login-task
 bash .harness/scripts/harness finish demo-login-task
 ```
 
+lite onboarding 的风险分类只读取实际产品 execution paths。`start` 自动生成的本地 `runs/` 状态和最小 `planning/tasks/<task-id>/task.json` 不会把 lite 自行升级为 standard 或造成 scope 越界；它们仍包含在完整 subject/attestation 中，不能被提交后静默替换。
+
 范围变更和紧急修复仍通过 `start` 建档，不增加公共命令。使用 `--kind scope-change|hotfix --reason '<原因>'`；`scope-change` 最低为 standard，`hotfix` 强制提升到 strict，不能用显式 `--tier lite` 降级，也不豁免 planning、scope、测试、GC 或最终结果不变式。
 
 `standard` / `strict` 命中 GC 要求而没有有效独立结果时，`finish` 返回 `GC_REQUIRED`。`gc_result.json` 必须包含 `role: gc-sweeper`、`independent: true`，并绑定当前 `task_id`、`subject_digest`、`policy_digest`；任一不匹配都不可复用。配置 `HARNESS_GC_AGENT_ARGV`（JSON argv 数组）后可自动调用一次 runner；runner 只接收任务 scope、`changed_since_baseline` 文件的真实 patch/新增文件内容、变更文件列表、一层直接依赖、触发信号、限制和结果契约。上下文超过 `HARNESS_GC_CONTEXT_MAX_CHARS`（默认 200000）或超过一次 Agent 调用预算都返回 `BUDGET_APPROVAL_REQUIRED`，不会静默截断或扩读全仓。受控 receive authority 不信任客户端自报的 GC Agent 结论；机械扫描触发独立 GC 时，要求 `refs/harness/gc/<commit>` 指向以 `harness-gc-review` namespace 签名的最小 receipt，并重算 task、policy、context digest、triggers 和 telemetry。缺失、篡改、跨 commit/policy 或 Agent 调用次数不为一均阻断。
@@ -697,6 +699,8 @@ bash .harness/scripts/harness migrate-task <task-id> --reason '<复核原因>'
 本地 `finish` 只在 subject、policy、相关输入和工具 digest 全部一致时复用确定性的 `tier` 与 `scope` 判定，并把命中数累加到 `cost.harness.cache_hits`。diff code-health 每次都以 `source: executed` 重跑；QA、GC Agent、生产、部署和回滚证据不进入缓存。GC 修改代码后，tier、scope、测试、结构和 code-health 的旧 fingerprint 均失效。CI `ci-check` 始终针对目标 commit 重新执行，不读取本地缓存。
 
 设置 `HARNESS_USAGE_RECEIPT=<json-path>` 可把 Agent/provider 成本写入同一 `result.json.cost`。receipt 必须包含与当前执行一致的 `task_id`、`subject_digest`、`policy_digest`，非空 `provider` / `model`，以及 `implementation`、`harness` 两组 `input_tokens`、`output_tokens`、`context_chars`、`agent_calls`。未提供时成本保持 `unknown` 且不单独阻断；提供后若任务、subject、policy 或来源身份不匹配，则返回 `USAGE_RECEIPT_BINDING_MISMATCH` 或 `USAGE_RECEIPT_SOURCE_MISSING`。
+
+GC telemetry 同样要求非空 `provider` / `model`，以及真实 `agent_calls`、`context_chars`、`duration_ms`；缺身份或使用布尔值/负数时返回 `GC_TELEMETRY_INVALID`。内部 `harness_metrics.py` 可从任务 `result.json` 目录只读汇总 rollout 指标；baseline 含 `unknown` 或 lite 样本少于 5 时只报告 `insufficient_data`。
 
 结构化 gate runner 按 tier 将 planning、structure、QA、knowledge、growth 和 quality 分别写入 `checks`。standard 命中 `.tsx/.jsx/.vue/.svelte/.html/.css/.scss` 或 frontend/web/ui/pages/components 路径时自动要求 `HARNESS_BROWSER_QA_URL` 并执行浏览器审计；strict 还要求 `HARNESS_STRICT_EVIDENCE` 指向绑定当前 subject、包含 browser/deployment/rollback pass 的 JSON receipt。产品可在 `quality.commands.lint` 使用 `python-import-boundaries` builtin 声明 `paths` 和 `boundaries: [{from, forbid}]`，通用默认值不内置产品目录。
 

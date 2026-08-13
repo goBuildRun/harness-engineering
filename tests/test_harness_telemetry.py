@@ -77,10 +77,12 @@ class HarnessTelemetryTest(unittest.TestCase):
         result = default_result("cost-task")
         self.assertTrue(apply_gc_telemetry(result, {"telemetry": {
             "agent_calls": 1, "context_chars": 123, "duration_ms": 45,
+            "provider": "compatible", "model": "gc-model",
         }}))
         self.assertEqual(result["cost"]["harness"]["agent_calls"], 1)
         self.assertEqual(result["cost"]["harness"]["context_chars"], 123)
         self.assertEqual(result["cost"]["harness"]["gate_duration_ms"], 45)
+        self.assertEqual(result["checks"]["code_health"]["agent"]["model"], "gc-model")
         self.assertFalse(apply_gc_telemetry(result, {"telemetry": {
             "agent_calls": True, "context_chars": 0, "duration_ms": 0,
         }}))

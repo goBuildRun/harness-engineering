@@ -95,6 +95,20 @@ class HarnessMigrationTest(unittest.TestCase):
             self.assertEqual(captured[-1]["decision"], "block")
             self.assertFalse((product / "harness-workspace/runs/tasks/done-task").exists())
 
+    def test_workspace_audit_is_read_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            task = product / "harness-workspace/planning/tasks/active-task"
+            task.mkdir(parents=True)
+            (task / "00-任务卡.md").write_text("- 当前状态：进行中\n")
+            (task / "planning_gate_pass.json").write_text('{"decision":"pass"}')
+            before = sorted(str(path.relative_to(product)) for path in product.rglob("*"))
+            report = audit_workspace(product)
+            after = sorted(str(path.relative_to(product)) for path in product.rglob("*"))
+            self.assertEqual(report["needs_migration"], ["active-task"])
+            self.assertEqual(after, before)
+            self.assertFalse((product / "harness-workspace/runs").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

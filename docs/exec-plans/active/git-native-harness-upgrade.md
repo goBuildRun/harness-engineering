@@ -92,7 +92,7 @@ Implementation note: `harness_gc_receipt.py` 使用独立 `harness-gc-review` SS
 
 ### E2-S1 Five-minute onboarding
 
-Status: pending
+Status: completed (2026-08-13)
 
 Acceptance criteria:
 
@@ -100,9 +100,11 @@ Acceptance criteria:
 - local/guarded 初始化、首个 lite task、finish、commit、status 可在五分钟内完成。
 - public documentation 只展示 `start/status/finish` 日常路径。
 
+Implementation note: 临时新 Git 仓库通过 `start → finish → status` 的 lite 路径在五分钟预算内完成且不生成托管平台目录。Harness 自动生成的 `runs/` 与 lite `task.json` 仍纳入完整 subject/attestation，但不参与 execution tier、scope 或 code-health 风险分类。
+
 ### E2-S2 Guarded multi-commit reliability
 
-Status: partially-complete
+Status: completed (2026-08-13)
 
 Acceptance criteria:
 
@@ -112,7 +114,7 @@ Acceptance criteria:
 
 ### E2-S3 Workspace migration and audit
 
-Status: pending
+Status: completed (2026-08-13)
 
 Acceptance criteria:
 
@@ -134,9 +136,11 @@ Acceptance criteria:
 - GC Agent 调用次数、上下文字符数、耗时和模型身份进入统一成本字段。
 - 未提供或不可验证的成本保持 `unknown`。
 
+Implementation status: schema、task/subject/policy-bound usage receipt、implementation/harness 分项、GC provider/model/calls/context/duration telemetry 均已完成。当前环境未提供可发现的第三方 OpenAI-compatible endpoint/model/key，真实 usage response 联调仍为外部验收阻塞；不得用 mock 或 0 代替。
+
 ### E3-S2 Capability migration closure
 
-Status: pending
+Status: completed (2026-08-13)
 
 Acceptance criteria:
 
@@ -144,15 +148,19 @@ Acceptance criteria:
 - 删除被统一入口真正替代的旧脚本和重复证据要求。
 - capability contract 不再使用 CI/平台生命周期术语。
 
+Implementation note: capability contract 的 GC carrier 已从旧 HTTPS/CI adapter 切换为 Git-native signed GC receipt，commit acceptance carrier 覆盖 attestation、receive 和 enforced authority；旧 adapter 仅保留为可选 runner，不参与生命周期权威。
+
 ### E3-S3 Rollout metrics
 
-Status: pending
+Status: implementation-complete; rollout-data-pending
 
 Acceptance criteria:
 
 - lite 相比旧 L2 路径的中位上下文/证据减少至少 40%，门禁耗时减少至少 30%。
 - execution tier 误降级为 0，非风险误阻断率不高于 5%。
 - 指标从 result telemetry 机械汇总，不新增成本 Markdown 报告。
+
+Implementation note: `harness_metrics.py` 只读汇总 canonical result，输出 lite 中位 context/gate duration/checks、tier downgrade 和 block rate。少于 5 个 lite 样本或 baseline 为 `unknown` 时返回 `ROLLOUT_METRICS_INSUFFICIENT_DATA`，不会伪造阈值通过。
 
 ## Execution Order
 
