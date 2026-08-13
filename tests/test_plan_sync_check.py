@@ -15,7 +15,8 @@ SCRIPT_DIR = ROOT / ".harness" / "scripts"
 sys.path.insert(0, str(SCRIPT_DIR))
 
 from worktree_baseline import capture_baseline  # noqa: E402
-from plan_sync_check import active_task_baseline, task_changed  # noqa: E402
+from plan_sync_check import active_task_baseline, extract_planned_paths, task_changed  # noqa: E402
+from business_paths import find_business_paths, load_business_roots  # noqa: E402
 from workspace_paths import load_layout  # noqa: E402
 
 
@@ -94,8 +95,12 @@ workspace:
 
             result = self._run(product, task_dir)
 
-            self.assertEqual(result["decision"], "pass")
+            self.assertEqual(result["decision"], "pass", result)
             self.assertIn("1 个变更路径", result["reason"])
+            self.assertEqual(
+                find_business_paths("`deer-flow` and `deer-flowing`", ("deer-flow/",)),
+                ["deer-flow"],
+            )
 
     def test_recovery_baseline_requires_reason_and_preserves_planned_change(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -115,6 +120,47 @@ workspace:
             self.assertIn("PLAN_SYNC_BASELINE_RECOVERED", recovered["reason"])
             self.assertTrue(baseline.is_file())
             self.assertEqual(checked["decision"], "pass")
+
+    def test_plan_sync_accepts_explicit_business_root_for_submodule_pointer(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product, task_dir, baseline = self._product(Path(tmp))
+            (product / "harness-workspace" / "project.yaml").write_text(
+                """
+product:
+  id: demo
+platform_product:
+  source_roots:
+    runtime: deer-flow
+workspace:
+  root: harness-workspace
+  planning: planning
+  runs: runs
+  knowledge: knowledge
+  evidence: evidence
+""".lstrip(),
+                encoding="utf-8",
+            )
+            (task_dir / "03-实施方案.md").write_text(
+                "| ID | write_files |\n|---|---|\n| T1 | `deer-flow` |\n",
+                encoding="utf-8",
+            )
+            subprocess.run(["git", "add", "."], cwd=product, check=True)
+            subprocess.run(["git", "commit", "-qm", "configure submodule root"], cwd=product, check=True)
+            capture_baseline(product, baseline, work_item_id="wi-demo")
+            subprocess.run(["git", "add", "."], cwd=product, check=True)
+            subprocess.run(["git", "commit", "-qm", "capture task baseline"], cwd=product, check=True)
+            subprocess.run(["git", "update-index", "--add", "--cacheinfo", "160000,1111111111111111111111111111111111111111,deer-flow"], cwd=product, check=True)
+
+            layout = load_layout(ROOT, product)
+            roots = load_business_roots(ROOT, product_root=product)
+            self.assertEqual(roots, ("deer-flow/", "harness-workspace/"))
+            self.assertIn("deer-flow", extract_planned_paths(layout, str(task_dir)))
+            self.assertIn("deer-flow", task_changed(layout))
+
+            result = self._run(product, task_dir)
+
+            self.assertEqual(result["decision"], "pass", result)
+            self.assertIn("1 个变更路径", result["reason"])
 
 
 if __name__ == "__main__":

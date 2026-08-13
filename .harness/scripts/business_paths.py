@@ -153,8 +153,11 @@ def is_business_path(path: str, roots: tuple[str, ...] = DEFAULT_BUSINESS_ROOTS)
 
 
 def _path_pattern(roots: tuple[str, ...]) -> re.Pattern[str]:
-    alternates = "|".join(re.escape(root) for root in sorted(roots, key=len, reverse=True))
-    return re.compile(rf"(?<![A-Za-z0-9_./-])(?:{alternates})[^\s`'\"|,\];；，。)]*")
+    alternates = "|".join(
+        rf"{re.escape(root.rstrip('/'))}(?:/[^\s`'\"|,\];；，。)]*)?"
+        for root in sorted(roots, key=len, reverse=True)
+    )
+    return re.compile(rf"(?<![A-Za-z0-9_./-])(?:{alternates})(?![A-Za-z0-9_.-])")
 
 
 def find_business_paths(text: str, roots: tuple[str, ...] = DEFAULT_BUSINESS_ROOTS) -> list[str]:
