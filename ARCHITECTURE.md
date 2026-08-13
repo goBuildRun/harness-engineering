@@ -91,7 +91,7 @@ harness-workspace/
 | 任务规格与计划 | `<product-root>/harness-workspace/planning/` | 产品记录系统 |
 | 运行凭证与 active task | `<product-root>/harness-workspace/runs/` | 本地运行状态 |
 | 目标任务状态 | `<product-root>/harness-workspace/runs/tasks/<task-id>/result.json` | 本地物化快照，不作为接受端可盲信凭证 |
-| 目标合并/发布准入 | `refs/harness/attestations/<commit>` 指向的 canonical Git attestation | attestation 同时引用 canonical result Git blob；受控接受端必须重跑 verifier/gates并签发 acceptance receipt |
+| 目标合并/发布准入 | 受控 Git 接收端对 `refs/harness/attestations/<commit>` 和 canonical result object 的重验结果 | attestation 只是输入索引；接收端逐 commit 重算 tier、scope、policy 与机械 code-health，后续由受控端签发 acceptance receipt |
 | 接入/测试/审查/成长证据 | `<product-root>/harness-workspace/evidence/` | 可回放证据 |
 | 长期产品知识 | `<product-root>/harness-workspace/knowledge/` | 不依赖聊天记忆 |
 
@@ -158,7 +158,7 @@ flowchart TD
 - 没有结构守门和计划同步，不允许合并。
 - 没有人工 review 和 `harness_growth.sh apply-review`，成长候选不能进入产品知识；没有跨产品 review，不能升级成全局规则。
 
-Harness 使用两个正交分层：`lite|standard|strict` 决定任务验证深度，`local|guarded|enforced` 决定接受保障。core 只依赖 Git：`local` 生成任务结果；`guarded` 由 `post-commit` 生成 attestation 并用 repo-local hooks 验证；`enforced` 在受控 remote 的 `pre-receive` 或发布入口重跑 verifier/gates，并用受信密钥签发 acceptance receipt。代码托管和 CI 不参与 Harness 生命周期。
+Harness 使用两个正交分层：`lite|standard|strict` 决定任务验证深度，`local|guarded|enforced` 决定接受保障。core 只依赖 Git：`local` 生成任务结果；`guarded` 由 `post-commit` 生成 attestation 并用 repo-local hooks 验证；接收端 verifier core 已能在 bare Git 中逐个重验新增 commit 且保持仓库只读。只有受控 `pre-receive` / release gate、独立签名 receipt 和 provider 终态链路完成端到端验收后，才可声明 `enforced`。代码托管和 CI 不参与 Harness 生命周期。
 
 ## 7. Gate Chain
 
@@ -179,7 +179,7 @@ Harness 使用两个正交分层：`lite|standard|strict` 决定任务验证深�
 | Final check | 发布前完整链路 |
 | Code health | `finish` 始终执行 diff 机械扫描，并按 tier/信号要求独立 gc-sweeper 结果 |
 | Commit acceptance | `finish` 生成 validated result；`post-commit` 绑定 commit/tree/result object 并生成 attestation |
-| Enforcement audit | 验证目标 remote/ref 或发布入口强制重跑 verifier/gates，并持有独立签名私钥 |
+| Enforcement audit | 验证目标 remote/ref 或发布入口安装接收端 verifier、强制逐 commit 重验，并持有独立签名私钥 |
 | Provider lifecycle | 本地最多 ready/review；终态校验受控接受点签名的 acceptance receipt |
 
 ## 8. Progressive Disclosure

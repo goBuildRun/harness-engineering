@@ -55,6 +55,7 @@ required_files:
   - .harness/scripts/harness_tier.py
   - .harness/scripts/harness_commands.py
   - .harness/scripts/harness_attestation.py
+  - .harness/scripts/harness_receive.py
   - .harness/scripts/harness_assurance.py
   - .harness/scripts/harness_scope.py
   - .harness/scripts/harness_state.py
@@ -146,6 +147,7 @@ required_files:
   - tests/test_harness_gc_context.py
   - tests/test_harness_runtime.py
   - tests/test_harness_attestation.py
+  - tests/test_harness_receive.py
   - tests/test_git_native_contract.py
   - tests/test_harness_assurance.py
   - tests/test_harness_schema.py

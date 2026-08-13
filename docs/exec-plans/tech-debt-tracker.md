@@ -1,5 +1,7 @@
 # 技术债追踪
 
+当前执行顺序和验收标准以 [Git-native Harness Upgrade](./active/git-native-harness-upgrade.md) 为准；本表只保留债务状态，不作为第二套 backlog。
+
 | ID | 描述 | 严重度 | 状态 |
 |----|------|--------|------|
 | TD-001 | 沙箱接 Firecracker/远程隔离执行器 | 中 | partially done：Docker backend（默认无网络）、可选实机 acceptance 和 subject-bound HTTPS remote executor 协议已接入；Firecracker/remote executor 实机部署和隔离验证 open |
