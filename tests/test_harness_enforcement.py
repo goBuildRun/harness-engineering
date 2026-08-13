@@ -143,7 +143,8 @@ class EnforcementTest(unittest.TestCase):
         self.assertIn("harness-result-${{ env.TARGET_COMMIT }}", required)
         self.assertIn("ci_gc_review.py", required)
         self.assertIn("HARNESS_GC_REVIEW_URL", required)
-        self.assertIn("OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}", required)
+        self.assertIn("HARNESS_GC_API_KEY: ${{ secrets.HARNESS_GC_API_KEY }}", required)
+        self.assertIn("HARNESS_GC_API_BASE: ${{ vars.HARNESS_GC_API_BASE }}", required)
         self.assertIn("--gc-result gc-result.json", required)
         for workflow in (release, provider):
             self.assertIn("workflow_run.conclusion == 'success'", workflow)

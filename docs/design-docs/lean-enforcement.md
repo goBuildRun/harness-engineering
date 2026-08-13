@@ -201,7 +201,7 @@ CI 必须对目标 commit 独立运行同一结果 schema，并把 `commit SHA +
 - Growth 仅在发现新失败模式、架构边界、默认行为或明确技术债候选时触发。
 - 外部 Work Item 使用批量差异同步，不逐项重复 close/pull。
 - 超出 execution tier 预算时先停止自动扩张上下文或 Agent 调用，并返回 `BUDGET_APPROVAL_REQUIRED`；人工批准只能增加预算或升级 tier，不能跳过必要 gate。
-- CI required check 对目标 commit 重算 GC 信号；默认在 Actions runner 内使用 `OPENAI_API_KEY` 按需执行一次 subject-bound gc-sweeper，不要求部署服务。HTTPS reviewer 仅是可选集中式后端。lite 和 standard 无信号不调用模型；需要 Agent 时缺少任一可用后端或 receipt 无效，均不能降级为机械 pass。精确调用次数、上下文字符数与耗时写入统一成本字段。
+- CI required check 对目标 commit 重算 GC 信号；默认在 Actions runner 内通过显式配置的第三方 OpenAI-compatible provider 按需执行一次 subject-bound gc-sweeper，不要求部署服务，也不默认访问官方端点。HTTPS reviewer 仅是可选集中式后端。lite 和 standard 无信号不调用模型；需要 Agent 时缺少任一可用后端或 receipt 无效，均不能降级为机械 pass。精确调用次数、上下文字符数与耗时写入统一成本字段。
 
 成本优化不能取消四个不变式，也不能降低高风险任务的证据质量。
 

@@ -64,21 +64,32 @@ def request_remote(endpoint: str, token: str, payload: dict) -> dict:
     return receipt if isinstance(receipt, dict) else {}
 
 
-def request_openai(api_key: str, payload: dict) -> dict:
-    base = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
-    endpoint = f"{base}/responses"
-    body = {
-        "model": os.environ.get("HARNESS_GC_MODEL", "gpt-5-mini"),
-        "instructions": (
-            "You are an independent gc-sweeper. Review only the supplied task-scoped context. "
-            "Do not add features, change acceptance criteria, or expand scope. Block unresolved "
-            "dead code, debug residue, harmful duplication, or structural regression. Out-of-scope "
-            "debt must reference a deferred work item; never invent identifiers."
-        ),
-        "input": json.dumps(payload["context"], ensure_ascii=False),
-        "text": {"format": {"type": "json_schema", "name": "gc_result",
-                              "strict": True, "schema": GC_RESPONSE_SCHEMA}},
-    }
+def request_compatible(api_base: str, api_key: str, model: str, mode: str,
+                       payload: dict) -> dict:
+    instructions = (
+        "You are an independent gc-sweeper. Review only the supplied task-scoped context. "
+        "Do not add features, change acceptance criteria, or expand scope. Block unresolved "
+        "dead code, debug residue, harmful duplication, or structural regression. Out-of-scope "
+        "debt must reference a deferred work item; never invent identifiers. Return JSON only."
+    )
+    context = json.dumps(payload["context"], ensure_ascii=False)
+    if mode == "responses":
+        endpoint = f"{api_base.rstrip('/')}/responses"
+        body = {
+            "model": model, "instructions": instructions, "input": context,
+            "text": {"format": {"type": "json_schema", "name": "gc_result",
+                                  "strict": True, "schema": GC_RESPONSE_SCHEMA}},
+        }
+    elif mode == "chat_completions":
+        endpoint = f"{api_base.rstrip('/')}/chat/completions"
+        body = {
+            "model": model,
+            "messages": [{"role": "system", "content": instructions},
+                         {"role": "user", "content": context}],
+            "response_format": {"type": "json_object"},
+        }
+    else:
+        raise ValueError("unsupported compatible API mode")
     request = urllib.request.Request(
         endpoint, data=json.dumps(body, ensure_ascii=False).encode("utf-8"), method="POST",
         headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
@@ -86,7 +97,10 @@ def request_openai(api_key: str, payload: dict) -> dict:
     with urllib.request.urlopen(request, timeout=120) as response:
         remote = json.loads(response.read().decode("utf-8"))
     text = remote.get("output_text", "") if isinstance(remote, dict) else ""
-    if not text and isinstance(remote, dict):
+    if mode == "chat_completions" and isinstance(remote, dict):
+        choices = remote.get("choices") or []
+        text = choices[0].get("message", {}).get("content", "") if choices else ""
+    elif not text and isinstance(remote, dict):
         for item in remote.get("output", []):
             for content in item.get("content", []):
                 if content.get("type") == "output_text":
@@ -113,10 +127,18 @@ def review(args: argparse.Namespace) -> dict:
                 "subject_digest": sha, "triggers": mechanical.get("triggers", [])}
     endpoint = os.environ.get("HARNESS_GC_REVIEW_URL", "").strip()
     token = os.environ.get("HARNESS_GC_REVIEW_TOKEN", "").strip()
-    api_key = os.environ.get("OPENAI_API_KEY", "").strip()
+    api_base = os.environ.get("HARNESS_GC_API_BASE", "").strip()
+    api_key = os.environ.get("HARNESS_GC_API_KEY", "").strip()
+    model = os.environ.get("HARNESS_GC_MODEL", "").strip()
+    api_mode = os.environ.get("HARNESS_GC_API_MODE", "chat_completions").strip()
     parsed = urllib.parse.urlparse(endpoint)
     remote_configured = parsed.scheme == "https" and bool(parsed.netloc) and bool(token)
-    if not remote_configured and not api_key:
+    compatible = urllib.parse.urlparse(api_base)
+    compatible_configured = (
+        compatible.scheme == "https" and bool(compatible.netloc)
+        and bool(api_key) and bool(model) and api_mode in {"responses", "chat_completions"}
+    )
+    if not remote_configured and not compatible_configured:
         return {"decision": "block", "reason": "GC_REVIEWER_UNAVAILABLE",
                 "subject_digest": sha, "triggers": mechanical.get("triggers", [])}
     policy = policy_for(harness, product)
@@ -136,10 +158,10 @@ def review(args: argparse.Namespace) -> dict:
     }
     started = time.monotonic()
     try:
-        receipt = (request_remote(endpoint, token, payload) if remote_configured
-                   else request_openai(api_key, payload))
+        receipt = (request_remote(endpoint, token, payload) if remote_configured else
+                   request_compatible(api_base, api_key, model, api_mode, payload))
     except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError,
-            json.JSONDecodeError, KeyError, TypeError):
+            json.JSONDecodeError, KeyError, TypeError, ValueError, IndexError):
         return {"decision": "block", "reason": "GC_REVIEW_FAILED", "subject_digest": sha}
     receipt["telemetry"] = {"context_chars": context_chars,
                              "duration_ms": int((time.monotonic() - started) * 1000),

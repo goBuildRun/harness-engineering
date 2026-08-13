@@ -31,8 +31,9 @@ jobs:
         run: python3 .harness/scripts/ci_binding.py --event "$GITHUB_EVENT_PATH" --github-output "$GITHUB_OUTPUT"
       - name: Run subject-bound GC review
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL }}
+          HARNESS_GC_API_KEY: ${{ secrets.HARNESS_GC_API_KEY }}
+          HARNESS_GC_API_BASE: ${{ vars.HARNESS_GC_API_BASE }}
+          HARNESS_GC_API_MODE: ${{ vars.HARNESS_GC_API_MODE }}
           HARNESS_GC_MODEL: ${{ vars.HARNESS_GC_MODEL }}
           HARNESS_GC_REVIEW_URL: ${{ secrets.HARNESS_GC_REVIEW_URL }}
           HARNESS_GC_REVIEW_TOKEN: ${{ secrets.HARNESS_GC_REVIEW_TOKEN }}
