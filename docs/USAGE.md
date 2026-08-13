@@ -710,6 +710,20 @@ bash .harness/scripts/harness amend-task <task-id> --scope <path> --reason '<修
 
 设置 `HARNESS_USAGE_RECEIPT=<json-path>` 可把 Agent/provider 成本写入同一 `result.json.cost`。receipt 必须包含与当前执行一致的 `task_id`、`subject_digest`、`policy_digest`，非空 `provider` / `model`，以及 `implementation`、`harness` 两组 `input_tokens`、`output_tokens`、`context_chars`、`agent_calls`。未提供时成本保持 `unknown` 且不单独阻断；提供后若任务、subject、policy 或来源身份不匹配，则返回 `USAGE_RECEIPT_BINDING_MISMATCH` 或 `USAGE_RECEIPT_SOURCE_MISSING`。
 
+Codex 本地会话可从显式指定的 rollout JSONL 导出服务端累计 Token，不扫描其他会话，也不复制 prompt、message 或工具参数：
+
+```bash
+python3 .harness/scripts/codex_usage_receipt.py \
+  --rollout /absolute/path/to/rollout.jsonl \
+  --output /absolute/path/to/usage-receipt.json \
+  --task-id <task-id> \
+  --subject-digest <current-subject-digest> \
+  --policy-digest <current-policy-digest>
+HARNESS_USAGE_RECEIPT=/absolute/path/to/usage-receipt.json bash .harness/scripts/harness finish <task-id>
+```
+
+导出器只采用最后一条有效 `token_count.total_token_usage`，并记录 session ID、模型、usage 时间、rollout 大小与 SHA-256。`input_tokens` 包含服务端报告的 cached input，细分值保留在 receipt `source`。Codex rollout 未提供可信 `context_chars` / `agent_calls` 时这两项保持 `unknown`，所以 Token 可精确展示，但 `telemetry_complete` 仍为 `false`；不得用事件条数或 context-window 容量填充。
+
 GC telemetry 同样要求非空 `provider` / `model`，以及真实 `agent_calls`、`context_chars`、`duration_ms`；缺身份或使用布尔值/负数时返回 `GC_TELEMETRY_INVALID`。内部 `harness_metrics.py` 可从任务 `result.json` 目录只读汇总 rollout 指标；baseline 含 `unknown` 或 lite 样本少于 5 时只报告 `insufficient_data`。
 
 结构化 gate runner 按 tier 将 planning、structure、QA、knowledge、growth 和 quality 分别写入 `checks`。standard 命中 `.tsx/.jsx/.vue/.svelte/.html/.css/.scss` 或 frontend/web/ui/pages/components 路径时自动要求 `HARNESS_BROWSER_QA_URL` 并执行浏览器审计；strict 还要求 `HARNESS_STRICT_EVIDENCE` 指向绑定当前 subject、包含 browser/deployment/rollback pass 的 JSON receipt。产品可在 `quality.commands.lint` 使用 `python-import-boundaries` builtin 声明 `paths` 和 `boundaries: [{from, forbid}]`，通用默认值不内置产品目录。

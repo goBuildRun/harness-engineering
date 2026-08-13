@@ -67,6 +67,7 @@ required_files:
   - .harness/scripts/harness_gates.py
   - .harness/scripts/capability_contract.py
   - .harness/scripts/harness_telemetry.py
+  - .harness/scripts/codex_usage_receipt.py
   - .harness/scripts/harness_metrics.py
   - .harness/scripts/harness_migration.py
   - .harness/scripts/harness_migration_commands.py
@@ -172,6 +173,7 @@ required_files:
   - docs/design-docs/capability-migration-map.md
   - tests/test_business_paths.py
   - tests/test_doc_gardening.py
+  - tests/test_codex_usage_receipt.py
   - tests/test_worktree_baseline.py
   - tests/test_plan_sync_check.py
   - .harness/scripts/task_workspace.sh
