@@ -265,6 +265,10 @@ class HarnessRuntimeTest(unittest.TestCase):
         self.assertEqual(task_kind_tier("scope-change", "lite"), "standard")
         self.assertEqual(task_kind_tier("hotfix", "lite"), "strict")
         self.assertEqual(task_kind_tier("implementation", "strict"), "strict")
+        self.assertEqual(task_kind_tier("harness-maintenance", "lite"), "lite")
+        self.assertEqual(classify_tier([".githooks/pre-commit", "harness-workspace/project.yaml"],
+                                       floor="lite", kind="harness-maintenance"), "lite")
+        self.assertEqual(classify_tier(["src/a.py"], floor="lite", kind="harness-maintenance"), "standard")
 
     def test_repository_root_scope_covers_all_paths(self) -> None:
         self.assertTrue(paths_within_scope(["src/a.py", "docs/a.md"], ["."]))

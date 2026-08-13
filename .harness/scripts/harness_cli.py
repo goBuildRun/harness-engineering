@@ -23,7 +23,7 @@ def build_parser() -> argparse.ArgumentParser:
     start.add_argument("--tier", choices=tuple(TIERS), default="standard")
     start.add_argument("--scope", action="append", default=[])
     start.add_argument(
-        "--kind", choices=("implementation", "debt-maintenance", "scope-change", "hotfix"),
+        "--kind", choices=("implementation", "debt-maintenance", "scope-change", "hotfix", "harness-maintenance"),
         default="implementation",
     )
     start.add_argument("--reason", default="")
@@ -39,6 +39,7 @@ def build_parser() -> argparse.ArgumentParser:
     amend.add_argument("task_id")
     amend.add_argument("--scope", action="append", required=True)
     amend.add_argument("--reason", required=True)
+    amend.add_argument("--kind", choices=("implementation", "debt-maintenance", "scope-change", "hotfix", "harness-maintenance"), default="")
     bootstrap = sub.add_parser("bootstrap-guarded")
     bootstrap.add_argument("--task-id", required=True)
     bootstrap.add_argument("--reason", required=True)

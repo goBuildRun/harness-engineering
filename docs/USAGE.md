@@ -688,6 +688,8 @@ lite onboarding 的风险分类只读取实际产品 execution paths。`start` �
 
 范围变更和紧急修复仍通过 `start` 建档，不增加公共命令。使用 `--kind scope-change|hotfix --reason '<原因>'`；`scope-change` 最低为 standard，`hotfix` 强制提升到 strict，不能用显式 `--tier lite` 降级，也不豁免 planning、scope、测试、GC 或最终结果不变式。
 
+版本化 hooks、产品 `project.yaml` 和接管记录的维护可使用 `--kind harness-maintenance --tier lite`。只有变更完全位于该固定接入白名单时保持 lite，并仍执行 Harness、structure、quality 与机械 GC；任何产品源码、业务 evidence 或其他路径都会自动升级为 standard/strict。
+
 `standard` / `strict` 命中 GC 要求而没有有效独立结果时，`finish` 返回 `GC_REQUIRED`。`gc_result.json` 必须包含 `role: gc-sweeper`、`independent: true`，并绑定当前 `task_id`、`subject_digest`、`policy_digest`；任一不匹配都不可复用。配置 `HARNESS_GC_AGENT_ARGV`（JSON argv 数组）后可自动调用一次 runner；runner 只接收任务 scope、`changed_since_baseline` 文件的真实 patch/新增文件内容、变更文件列表、一层直接依赖、触发信号、限制和结果契约。上下文超过 `HARNESS_GC_CONTEXT_MAX_CHARS`（默认 200000）或超过一次 Agent 调用预算都返回 `BUDGET_APPROVAL_REQUIRED`，不会静默截断或扩读全仓。受控 receive authority 不信任客户端自报的 GC Agent 结论；机械扫描触发独立 GC 时，要求 `refs/harness/gc/<commit>` 指向以 `harness-gc-review` namespace 签名的最小 receipt，并重算 task、policy、context digest、triggers 和 telemetry。缺失、篡改、跨 commit/policy 或 Agent 调用次数不为一均阻断。
 
 workspace 兼容命令：

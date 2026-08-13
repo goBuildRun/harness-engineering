@@ -11,6 +11,7 @@ TASK_KIND_FLOORS = {
     "debt-maintenance": "standard",
     "scope-change": "standard",
     "hotfix": "strict",
+    "harness-maintenance": "lite",
 }
 HIGH_RISK_PARTS = {
     "auth", "security", "permission", "payments", "production", "deploy",
@@ -19,9 +20,13 @@ HIGH_RISK_PARTS = {
 DOC_PREFIXES = ("docs/", "README", "AGENTS.md", "ARCHITECTURE.md")
 
 
-def classify_tier(paths: list[str], *, floor: str = "standard") -> str:
+def classify_tier(paths: list[str], *, floor: str = "standard", kind: str = "implementation") -> str:
     floor = floor if floor in TIERS else "standard"
-    inferred = "standard"
+    maintenance = kind == "harness-maintenance" and bool(paths) and all(
+        path in {"harness-workspace/project.yaml", "harness-workspace/knowledge/HARNESS_TAKEOVER.md"}
+        or path.startswith(".githooks/") for path in paths
+    )
+    inferred = "lite" if maintenance else "standard"
     if paths and all(path.startswith(DOC_PREFIXES) or Path(path).suffix in {".md", ".txt"} for path in paths):
         inferred = "lite"
     lowered = [part.lower() for path in paths for part in Path(path).parts]

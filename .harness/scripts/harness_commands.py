@@ -117,11 +117,14 @@ def cmd_amend(args: argparse.Namespace) -> int:
         "work_item": (result.get("work_item") or {}).get("id"),
         "source": previous.get("source") or result.get("baseline", {}).get("source") or "amendment",
     }
+    if getattr(args, "kind", ""):
+        binding["kind"] = args.kind
     revisions = list(result.get("binding_revisions") or [])
     revisions.append({
         "amended_at": now(), "reason": reason,
         "previous_binding_digest": result.get("binding_digest") or "",
         "previous_scope": list(previous.get("scope") or []), "scope": scope,
+        "previous_kind": previous.get("kind") or "", "kind": binding.get("kind") or "",
     })
     result["task"] = binding
     result["binding_revisions"] = revisions
@@ -222,7 +225,8 @@ def cmd_finish(args: argparse.Namespace) -> int:
             result["cost"]["harness"].get("cache_hits") or 0
         ) + 1
     else:
-        effective = classify_tier(effective_changed, floor=tier_floor)
+        effective = classify_tier(effective_changed, floor=tier_floor,
+                                  kind=str(result.get("task", {}).get("kind") or "implementation"))
         tier_check = executed_check(
             decision="pass", fingerprint=tier_fingerprint,
             subject_digest=subject, policy_digest=current_policy,
@@ -263,7 +267,8 @@ def cmd_finish(args: argparse.Namespace) -> int:
         if subject_after != subject:
             changed, subject = changed_after, subject_after
             effective_changed = effective_after
-            effective = classify_tier(effective_changed, floor=effective)
+            effective = classify_tier(effective_changed, floor=effective,
+                                      kind=str(result.get("task", {}).get("kind") or "implementation"))
             result["tier"]["effective"] = effective
             result["subject"] = {"kind": "worktree", "digest": subject, "paths": changed}
             tier_fingerprint = fingerprint(
