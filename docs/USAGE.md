@@ -693,6 +693,8 @@ bash .harness/scripts/harness migrate-task <task-id> --reason '<复核原因>'
 bash .harness/scripts/harness enforcement audit
 ```
 
+`migrate-task` 只接受 audit 已归入 `needs_migration` 的进行中、且拥有 Planning Gate 凭证的任务。已完成 legacy、缺凭证或不存在的任务分别返回 `COMPLETED_LEGACY_MIGRATION_FORBIDDEN`、`MIGRATION_CREDENTIAL_MISSING`、`MIGRATION_TASK_NOT_FOUND`，且不得创建 runs 或 baseline；已有 `result.json` 仅允许兼容身份修复，不批量重写历史 workspace。
+
 `enforcement audit` 默认使用 `GITHUB_TOKEN` 实时检查目标分支 required check 与远端当前 commit，并通过 Contents API 从该 commit 读取 required/release/provider workflow，禁止用本地 dirty 文件影响判断。repository 可从 GitHub HTTPS、`git@github.com:` 或 `ssh.github.com:443` remote 严格解析，也可由产品 enforcement 配置显式覆盖；非 GitHub host 不会被猜测。随后通过 Actions API 要求 release/provider 成功运行的 `head_sha` 都等于该 commit。目标分支推进后旧运行失效；Required 失败、非目标分支或非 merge 运行都会让下游 workflow 显式失败，不能用 job skip 产生可误认的成功运行。
 
 非 GitHub 的受控 bare repository、发布 gate 或其他接受权威可设置 `HARNESS_AUTHORITY_URL=https://...` 与 `HARNESS_AUTHORITY_TOKEN`，继续调用同一个 `enforcement audit`。Harness 以 bearer-authenticated POST 发送 repository、目标分支和 required check，服务返回同一 enforcement snapshot；只允许无内嵌凭据的 HTTPS URL，且返回值仍必须满足目标 commit、有效期、shared judger、发布依赖和 provider 完成态全部条件。authority adapter 不创建第二套状态机，也不会把不完整响应直接认定为 enforced。`--snapshot` 仅用于离线诊断，会被强制标记为非 live，永远不能升级状态。`status` 每次重新评价一小时有效期的 live probe，不信任旧结果中的 `enforcement` 字符串。

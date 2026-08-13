@@ -7,8 +7,9 @@ import os
 from pathlib import Path
 
 from harness_commands import (
-    cmd_audit, cmd_ci_check, cmd_enforcement, cmd_finish, cmd_migrate, cmd_start, cmd_status,
+    cmd_ci_check, cmd_enforcement, cmd_finish, cmd_start, cmd_status,
 )
+from harness_migration_commands import cmd_audit, cmd_migrate
 from harness_runtime import TIERS
 
 

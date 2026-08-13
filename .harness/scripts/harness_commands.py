@@ -18,7 +18,6 @@ from harness_assurance import audit_report, finalize, refresh_result
 from harness_cache import executed_check, reuse_check, tool_digest
 from harness_gates import committed_work_item, run_gate_plan
 from harness_telemetry import apply_gc_telemetry, apply_usage_receipt, enforce_budget
-from harness_migration import audit_workspace, repair_migrated_identity
 from harness_runtime import (
     active_task_path, apply_code_health, atomic_write_result,
     canonical_digest, classify_tier, default_result, task_kind_tier,
@@ -326,37 +325,6 @@ def cmd_ci_check(args: argparse.Namespace) -> int:
         atomic_write_result(Path(args.output), result)
     dump_json({"decision": result["decision"], "reason": "CI_SHADOW_RESULT", "result": result})
     return 0
-
-def cmd_audit(args: argparse.Namespace) -> int:
-    product = Path(args.product_root).resolve()
-    report = audit_workspace(product)
-    dump_json({"decision": "pass", "reason": "WORKSPACE_AUDIT", "audit": report})
-    return 0
-def cmd_migrate(args: argparse.Namespace) -> int:
-    product, harness = Path(args.product_root).resolve(), Path(args.harness_root).resolve()
-    path = result_path(product, args.task_id)
-    work_item = committed_work_item(harness, product, args.task_id)
-    if path.exists():
-        result, repaired = repair_migrated_identity(path, args.task_id, work_item)
-        reason = "TASK_MIGRATION_IDENTITY_REPAIRED" if repaired else "TASK_ALREADY_MIGRATED"
-        dump_json({"decision": "pass", "reason": reason, "result": result})
-        return 0
-    result = default_result(args.task_id, initial_tier="standard", work_item=work_item)
-    result["baseline"]["source"] = "migration"
-    result["policy_digest"] = policy_for(harness, product)
-    binding = {"task_id": args.task_id, "work_item": work_item,
-               "tier_floor": "standard", "source": "migration"}
-    result["binding_digest"] = canonical_digest(binding)
-    if work_item:
-        result["invariants"]["task_identity"] = "pass"
-    baseline = path.parent / "worktree_baseline.json"
-    capture_baseline(product, baseline, work_item_id=args.task_id, mode="recovery", reason=args.reason)
-    result["baseline"]["digest"] = canonical_digest(json.loads(baseline.read_text()))
-    result["blockers"] = ["STANDARD_REVALIDATION_REQUIRED"]
-    atomic_write_result(path, result)
-    dump_json({"decision": "pass", "reason": "TASK_MIGRATED_REVALIDATION_REQUIRED", "result": result})
-    return 0
-
 
 def cmd_enforcement(args: argparse.Namespace) -> int:
     product = Path(args.product_root).resolve()

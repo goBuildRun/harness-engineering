@@ -34,6 +34,7 @@ from harness_runtime import (  # noqa: E402
 from harness_scope import paths_within_scope  # noqa: E402
 from harness_state import invalidate_if_stale  # noqa: E402
 import harness_commands  # noqa: E402
+import harness_migration_commands  # noqa: E402
 
 
 class HarnessRuntimeTest(unittest.TestCase):
@@ -104,8 +105,8 @@ class HarnessRuntimeTest(unittest.TestCase):
                 "work_item": {"id": "WI-42", "provider": "jira"},
             }))
             captured = []
-            with mock.patch.object(harness_commands, "dump_json", side_effect=captured.append):
-                harness_commands.cmd_migrate(SimpleNamespace(
+            with mock.patch.object(harness_migration_commands, "dump_json", side_effect=captured.append):
+                harness_migration_commands.cmd_migrate(SimpleNamespace(
                     product_root=str(product), harness_root=str(ROOT),
                     task_id=task_id, reason="active legacy task",
                 ))
@@ -122,7 +123,7 @@ class HarnessRuntimeTest(unittest.TestCase):
                 product / "harness-workspace" / "runs" / "tasks" / task_id / "result.json",
                 result,
             )
-            harness_commands.cmd_migrate(SimpleNamespace(
+            harness_migration_commands.cmd_migrate(SimpleNamespace(
                 product_root=str(product), harness_root=str(ROOT),
                 task_id=task_id, reason="active legacy task",
             ))

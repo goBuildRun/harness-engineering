@@ -44,6 +44,19 @@ def audit_workspace(product: Path) -> dict[str, list[str]]:
     return report
 
 
+def migration_eligibility(product: Path, task_id: str) -> tuple[bool, str]:
+    report = audit_workspace(product)
+    if task_id in report["needs_migration"]:
+        return True, "TASK_MIGRATION_ELIGIBLE"
+    if task_id in report["legacy"]:
+        return False, "COMPLETED_LEGACY_MIGRATION_FORBIDDEN"
+    if task_id in report["missing_credentials"]:
+        return False, "MIGRATION_CREDENTIAL_MISSING"
+    if task_id in report["new_format"]:
+        return False, "TASK_ALREADY_MIGRATED"
+    return False, "MIGRATION_TASK_NOT_FOUND"
+
+
 def repair_migrated_identity(path: Path, task_id: str,
                              work_item: dict[str, str] | None) -> tuple[dict, bool]:
     result = load_result(path)

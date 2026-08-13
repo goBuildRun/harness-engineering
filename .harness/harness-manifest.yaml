@@ -68,6 +68,7 @@ required_files:
   - .harness/scripts/capability_contract.py
   - .harness/scripts/harness_telemetry.py
   - .harness/scripts/harness_migration.py
+  - .harness/scripts/harness_migration_commands.py
   - .harness/scripts/provider_lifecycle.py
   - .harness/scripts/work_item_contract.py
   - .harness/scripts/work_item_feishu.py
