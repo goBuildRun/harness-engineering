@@ -233,7 +233,7 @@ def probe_github(product: Path, *, repository: str, branch: str,
         and '--repository "$REPOSITORY"' in release_text
         and '--required-run-id "$REQUIRED_RUN_ID"' in release_text
         and "release-eligibility.json" in release_text
-        and "actions/upload-artifact@v4" in release_text
+        and "actions/upload-artifact@v6" in release_text
         and "if-no-files-found: error" in release_text
     )
     provider_guard = (

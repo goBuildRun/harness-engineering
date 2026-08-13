@@ -15,10 +15,10 @@ jobs:
       - name: Reject closed unmerged pull request
         if: github.event.action == 'closed' && github.event.pull_request.merged != true
         run: exit 1
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 2
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
       - name: Install runtime dependencies
@@ -56,7 +56,7 @@ jobs:
           python3 -c "import json; d=json.load(open('harness-result-output.json')); assert d['decision']=='pass', d"
       - name: Upload Harness result
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: harness-result-${{ github.sha }}
           path: harness-result.json

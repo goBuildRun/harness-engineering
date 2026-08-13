@@ -36,14 +36,14 @@ jobs:
         run: exit 1
       - name: Download required result artifact
         if: steps.lifecycle.outputs.eligible == 'true'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           pattern: harness-result-*
           path: harness-artifacts
           merge-multiple: true
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         if: steps.lifecycle.outputs.eligible == 'true'
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
@@ -60,7 +60,7 @@ jobs:
             --required-run-id "$REQUIRED_RUN_ID" --output release-eligibility.json
       - name: Upload release eligibility receipt
         if: steps.lifecycle.outputs.eligible == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: release-eligibility-${{ github.event.workflow_run.head_sha }}
           path: release-eligibility.json

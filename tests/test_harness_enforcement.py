@@ -154,12 +154,12 @@ class EnforcementTest(unittest.TestCase):
         self.assertIn("release_eligibility.py build", release)
         self.assertIn("--result harness-artifacts/harness-result.json", release)
         self.assertIn("run-id: ${{ github.event.workflow_run.id }}", release)
-        self.assertIn("actions/upload-artifact@v4", release)
+        self.assertIn("actions/upload-artifact@v6", release)
         self.assertIn("if-no-files-found: error", release)
         self.assertNotIn("pull_request:\n    types: [closed]", provider)
         self.assertIn("required_run_id', String(run.id)", provider)
         self.assertIn("--lifecycle-receipt", provider)
-        self.assertIn("actions/setup-python@v5", provider)
+        self.assertIn("actions/setup-python@v6", provider)
         self.assertIn("pip install -r .harness/scripts/requirements.txt", provider)
         self.assertIn("tee provider-complete-output.json", provider)
         self.assertIn("d['decision']=='pass'", provider)
@@ -171,6 +171,26 @@ class EnforcementTest(unittest.TestCase):
             self.assertIn(f"{secret}: ${{{{ secrets.{secret} }}}}", provider)
         self.assertEqual(release, (ROOT / ".github/workflows/release.yml").read_text())
         self.assertEqual(provider, (ROOT / ".github/workflows/harness-provider-complete.yml").read_text())
+
+    def test_committed_workflows_use_node24_action_generations(self) -> None:
+        paths = [
+            ROOT / ".github/workflows/harness-required.yml",
+            ROOT / ".github/workflows/release.yml",
+            ROOT / ".github/workflows/harness-provider-complete.yml",
+            ROOT / ".harness/templates/github/release.yml",
+            ROOT / ".harness/templates/github/harness-provider-complete.yml",
+        ]
+        combined = "\n".join(path.read_text() for path in paths)
+        for expected in (
+            "actions/checkout@v6", "actions/setup-python@v6",
+            "actions/upload-artifact@v6", "actions/download-artifact@v7",
+        ):
+            self.assertIn(expected, combined)
+        for deprecated in (
+            "actions/checkout@v4", "actions/setup-python@v5",
+            "actions/upload-artifact@v4", "actions/download-artifact@v4",
+        ):
+            self.assertNotIn(deprecated, combined)
 
     def test_probe_rejects_skip_only_workflow_guards(self) -> None:
         class Response:
@@ -296,7 +316,7 @@ class EnforcementTest(unittest.TestCase):
             "missing result artifact": release.replace("harness-artifacts/harness-result.json", "missing.json"),
             "missing commit binding": release.replace('--commit "$VERIFIED_COMMIT"', '--commit unknown'),
             "missing run binding": release.replace('--required-run-id "$REQUIRED_RUN_ID"', '--required-run-id unknown'),
-            "missing artifact upload": release.replace("actions/upload-artifact@v4", "actions/checkout@v4"),
+            "missing artifact upload": release.replace("actions/upload-artifact@v6", "actions/checkout@v6"),
             "non-failing missing artifact": release.replace("if-no-files-found: error", "if-no-files-found: warn"),
         }
         for name, degraded_release in regressions.items():
