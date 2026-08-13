@@ -63,3 +63,25 @@ def apply_story_usage(result: dict[str, Any], receipt: dict[str, Any] | None) ->
         })
     cost["story"] = story
     return story["status"] == "exact"
+
+
+def aggregate_epic_usage(epic_id: str, results: list[dict[str, Any]]) -> dict[str, Any]:
+    exact = []
+    incomplete = 0
+    for result in results:
+        if str((result.get("task") or {}).get("epic_id") or "") != epic_id:
+            continue
+        story = (result.get("cost") or {}).get("story") or {}
+        if (story.get("status") == "exact" and isinstance(story.get("input_tokens"), int)
+                and isinstance(story.get("output_tokens"), int)):
+            exact.append(story)
+        else:
+            incomplete += 1
+    return {
+        "epic_id": epic_id,
+        "input_tokens": sum(item["input_tokens"] for item in exact),
+        "output_tokens": sum(item["output_tokens"] for item in exact),
+        "exact_story_count": len(exact),
+        "incomplete_story_count": incomplete,
+        "complete": incomplete == 0,
+    }

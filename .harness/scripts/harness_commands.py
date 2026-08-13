@@ -18,7 +18,7 @@ from harness_cache import executed_check, reuse_check, tool_digest
 from harness_gates import checks_for_tier, committed_work_item, run_gate_plan
 from harness_telemetry import apply_automatic_usage, apply_gc_telemetry, apply_usage_receipt, enforce_budget
 from codex_usage_receipt import automatic_receipt
-from harness_usage_ledger import apply_story_usage, capture_usage_baseline
+from harness_usage_ledger import aggregate_epic_usage, apply_story_usage, capture_usage_baseline
 from harness_runtime import (
     active_task_path, apply_code_health, atomic_write_result,
     canonical_digest, classify_tier, default_result, task_kind_tier,
@@ -168,16 +168,18 @@ def cmd_usage_baseline(args: argparse.Namespace) -> int:
         dump_json({"decision": "block", "reason": "USAGE_BASELINE_ENDPOINT_MISSING"})
         return 0
     previous = result.get("cost", {}).get("story_usage_baseline")
-    if previous:
-        result.setdefault("cost", {}).setdefault("story_usage_baseline_revisions", []).append({
-            "replaced_at": now(), "reason": reason, "previous": previous,
-        })
-    capture_usage_baseline(result, receipt)
-    result["cost"]["story_usage_baseline_reason"] = reason
-    result["cost"].pop("story", None)
+    if not previous:
+        capture_usage_baseline(result, receipt)
+        result["cost"]["story_usage_baseline_reason"] = reason
+    epic_id = str(getattr(args, "epic_id", "") or "").strip()
+    if epic_id:
+        result.setdefault("task", {})["epic_id"] = epic_id
+    if not previous:
+        result["cost"].pop("story", None)
     atomic_write_result(path, result)
     dump_json({"decision": "pass", "reason": "USAGE_BASELINE_CAPTURED",
-               "baseline": result["cost"]["story_usage_baseline"]})
+               "baseline": result["cost"]["story_usage_baseline"],
+               "baseline_preserved": bool(previous)})
     return 0
 
 
@@ -354,6 +356,16 @@ def cmd_finish(args: argparse.Namespace) -> int:
                           policy_digest=result["policy_digest"])
     receipt = automatic_receipt(task_id, subject, result["policy_digest"])
     apply_story_usage(result, receipt)
+    epic_id = str((result.get("task") or {}).get("epic_id") or "")
+    if epic_id:
+        results = []
+        for candidate in (workspace_root(product) / "runs" / "tasks").glob("*/result.json"):
+            try:
+                results.append(load_result(candidate))
+            except (OSError, ValueError):
+                continue
+        results = [item for item in results if item.get("task_id") != task_id] + [result]
+        result["cost"]["epic"] = aggregate_epic_usage(epic_id, results)
     enforce_budget(result)
     finalize(result, finish_decision)
     refresh_assurance(result, product, result["policy_digest"], phase="pre-commit-head")

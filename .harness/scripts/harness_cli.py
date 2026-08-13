@@ -43,6 +43,7 @@ def build_parser() -> argparse.ArgumentParser:
     usage = sub.add_parser("usage-baseline")
     usage.add_argument("task_id")
     usage.add_argument("--reason", required=True)
+    usage.add_argument("--epic-id", default="")
     bootstrap = sub.add_parser("bootstrap-guarded")
     bootstrap.add_argument("--task-id", required=True)
     bootstrap.add_argument("--reason", required=True)
