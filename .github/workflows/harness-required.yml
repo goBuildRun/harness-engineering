@@ -54,6 +54,13 @@ jobs:
             $GC_ARGS \
             --output harness-result.json | tee harness-result-output.json
           python3 -c "import json; d=json.load(open('harness-result-output.json')); assert d['decision']=='pass', d"
+      - name: Upload GC review result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gc-review-result-${{ github.sha }}
+          path: gc-result.json
+          if-no-files-found: error
       - name: Upload Harness result
         if: always()
         uses: actions/upload-artifact@v4
