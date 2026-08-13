@@ -159,6 +159,23 @@ class CiGcReviewTest(unittest.TestCase):
             self.assertEqual(result["reason"], "GC_REVIEW_BLOCKED")
             self.assertEqual(result["findings"], 1)
 
+    def test_non_object_compatible_response_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = self._repo(Path(tmp))
+            sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=product, text=True).strip()
+            args = type("Args", (), {
+                "product_root": str(product), "harness_root": str(ROOT),
+                "task_id": "task-invalid", "commit": sha, "tier": "standard", "scope": ["."],
+            })()
+            response = Response({"choices": [{"message": {"content": "[]"}}]})
+            with patch.dict(os.environ, {
+                "HARNESS_GC_API_BASE": "https://compatible.example/v1",
+                "HARNESS_GC_API_KEY": "test-key", "HARNESS_GC_MODEL": "test-model",
+            }, clear=True), patch("urllib.request.urlopen", return_value=response):
+                result = review(args)
+            self.assertEqual(result["decision"], "block")
+            self.assertEqual(result["reason"], "GC_REVIEW_FAILED")
+
 
 if __name__ == "__main__":
     unittest.main()

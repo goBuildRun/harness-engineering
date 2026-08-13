@@ -106,6 +106,8 @@ def request_compatible(api_base: str, api_key: str, model: str, mode: str,
                 if content.get("type") == "output_text":
                     text += content.get("text", "")
     receipt = json.loads(text)
+    if not isinstance(receipt, dict):
+        raise TypeError("compatible GC response must be a JSON object")
     receipt.update({
         "role": "gc-sweeper", "independent": True,
         "task_id": payload["task_id"], "subject_digest": payload["subject_digest"],
