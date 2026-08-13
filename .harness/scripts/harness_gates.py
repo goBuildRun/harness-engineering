@@ -29,6 +29,11 @@ TIER_GATES = {
     ),
 }
 
+
+def checks_for_tier(checks: dict[str, dict[str, Any]], tier: str) -> dict[str, dict[str, Any]]:
+    required = {"tier", "scope", "code_health", *TIER_GATES[tier]}
+    return {name: check for name, check in checks.items() if name in required}
+
 FRONTEND_PARTS = {"frontend", "web", "ui", "app", "pages", "components"}
 FRONTEND_SUFFIXES = {".tsx", ".jsx", ".vue", ".svelte", ".html", ".css", ".scss"}
 

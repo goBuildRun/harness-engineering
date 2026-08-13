@@ -272,6 +272,22 @@ class HarnessRuntimeTest(unittest.TestCase):
                                        floor="lite", kind="harness-maintenance"), "lite")
         self.assertEqual(classify_tier(["src/a.py"], floor="lite", kind="harness-maintenance"), "standard")
 
+    def test_lite_revalidation_discards_stale_standard_only_checks(self) -> None:
+        checks = {
+            "tier": {"decision": "pass"}, "scope": {"decision": "pass"},
+            "code_health": {"decision": "pass"}, "harness": {"decision": "pass"},
+            "quality_lint": {"decision": "pass"}, "quality_test": {"decision": "pass"},
+            "structure": {"decision": "pass"},
+            "qa_evidence": {"decision": "block", "stale": True},
+        }
+        required = {
+            "tier", "scope", "code_health", "harness", "structure",
+            "quality_lint", "quality_test",
+        }
+        retained = harness_commands.checks_for_tier(checks, "lite")
+        self.assertNotIn("qa_evidence", retained)
+        self.assertEqual(set(retained), required)
+
     def test_repository_root_scope_covers_all_paths(self) -> None:
         self.assertTrue(paths_within_scope(["src/a.py", "docs/a.md"], ["."]))
         self.assertFalse(paths_within_scope(["src/a.py", "docs/a.md"], ["src"]))

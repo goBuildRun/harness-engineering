@@ -15,7 +15,7 @@ from harness_output import dump_json
 from harness_assurance import finalize, refresh_result
 from harness_attestation import verify_attestation
 from harness_cache import executed_check, reuse_check, tool_digest
-from harness_gates import committed_work_item, run_gate_plan
+from harness_gates import checks_for_tier, committed_work_item, run_gate_plan
 from harness_telemetry import apply_gc_telemetry, apply_usage_receipt, enforce_budget
 from harness_runtime import (
     active_task_path, apply_code_health, atomic_write_result,
@@ -306,6 +306,7 @@ def cmd_finish(args: argparse.Namespace) -> int:
         result["checks"].update(gates["checks"])
         if gates["missing"]:
             result["blockers"].append("REQUIRED_GATE_MISSING")
+        result["checks"] = checks_for_tier(result["checks"], effective)
     result["invariants"]["risk_validation"] = "pass" if all(
         check.get("decision") == "pass" and not check.get("stale")
         for check in result["checks"].values()
