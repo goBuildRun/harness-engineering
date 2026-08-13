@@ -6,6 +6,7 @@ on:
     types: [completed]
 
 permissions:
+  actions: read
   contents: read
   pull-requests: read
 
@@ -33,14 +34,30 @@ jobs:
       - name: Reject non-target or non-merge run
         if: steps.lifecycle.outputs.eligible != 'true'
         run: exit 1
-      - name: Write subject-bound release eligibility receipt
+      - name: Download required result artifact
+        if: steps.lifecycle.outputs.eligible == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          pattern: harness-result-*
+          path: harness-artifacts
+          merge-multiple: true
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/checkout@v4
+        if: steps.lifecycle.outputs.eligible == 'true'
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - name: Build result-bound release eligibility receipt
         if: steps.lifecycle.outputs.eligible == 'true'
         env:
           VERIFIED_COMMIT: ${{ github.event.workflow_run.head_sha }}
           REQUIRED_RUN_ID: ${{ github.event.workflow_run.id }}
           REPOSITORY: ${{ github.repository }}
         run: |
-          python3 -c 'import json, os; print(json.dumps({"schema_version": 1, "decision": "pass", "kind": "release-eligibility", "repository": os.environ["REPOSITORY"], "commit_sha": os.environ["VERIFIED_COMMIT"], "required_run_id": os.environ["REQUIRED_RUN_ID"]}, indent=2))' > release-eligibility.json
+          python3 .harness/scripts/release_eligibility.py \
+            --result harness-artifacts/harness-result.json \
+            --commit "$VERIFIED_COMMIT" --repository "$REPOSITORY" \
+            --required-run-id "$REQUIRED_RUN_ID" --output release-eligibility.json
       - name: Upload release eligibility receipt
         if: steps.lifecycle.outputs.eligible == 'true'
         uses: actions/upload-artifact@v4

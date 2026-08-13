@@ -150,9 +150,9 @@ class EnforcementTest(unittest.TestCase):
             self.assertIn("outputs.eligible == 'true'", workflow)
             self.assertIn("steps.lifecycle.outputs.eligible != 'true'", workflow)
         self.assertIn("name: Harness Release Eligibility", release)
-        self.assertIn('"kind": "release-eligibility"', release)
-        self.assertIn('"commit_sha": os.environ["VERIFIED_COMMIT"]', release)
-        self.assertIn('"required_run_id": os.environ["REQUIRED_RUN_ID"]', release)
+        self.assertIn("release_eligibility.py", release)
+        self.assertIn("--result harness-artifacts/harness-result.json", release)
+        self.assertIn("run-id: ${{ github.event.workflow_run.id }}", release)
         self.assertIn("actions/upload-artifact@v4", release)
         self.assertIn("if-no-files-found: error", release)
         self.assertNotIn("pull_request:\n    types: [closed]", provider)
@@ -291,13 +291,10 @@ class EnforcementTest(unittest.TestCase):
         release = (ROOT / ".harness/templates/github/release.yml").read_text()
         provider = (ROOT / ".harness/templates/github/harness-provider-complete.yml").read_text()
         regressions = {
-            "missing receipt kind": release.replace('"kind": "release-eligibility"', '"kind": "status"'),
-            "missing repository binding": release.replace(
-                '"repository": os.environ["REPOSITORY"]', '"repository": "org/repo"'),
-            "missing commit binding": release.replace(
-                '"commit_sha": os.environ["VERIFIED_COMMIT"]', '"commit_sha": "unknown"'),
-            "missing run binding": release.replace(
-                '"required_run_id": os.environ["REQUIRED_RUN_ID"]', '"required_run_id": "unknown"'),
+            "missing result builder": release.replace("release_eligibility.py", "json_pretty.py"),
+            "missing result artifact": release.replace("harness-artifacts/harness-result.json", "missing.json"),
+            "missing commit binding": release.replace('--commit "$VERIFIED_COMMIT"', '--commit unknown'),
+            "missing run binding": release.replace('--required-run-id "$REQUIRED_RUN_ID"', '--required-run-id unknown'),
             "missing artifact upload": release.replace("actions/upload-artifact@v4", "actions/checkout@v4"),
             "non-failing missing artifact": release.replace("if-no-files-found: error", "if-no-files-found: warn"),
         }

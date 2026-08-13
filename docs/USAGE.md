@@ -653,7 +653,7 @@ Harness-Tier: lite|standard|strict
 
 缺失、重复、路径穿越或非法 tier 会直接 block。required workflow 在 PR 阶段判定分支保护所见 commit；PR 合并后再对真实 merge commit 使用同一判定器生成 `harness-result.json` artifact，不读取开发者本地结果。关闭但未合并的 PR 会生成明确失败的 Required run，不能通过跳过 job 触发含糊的下游成功链。`harness init` 只在目标文件缺失时安装 required、release 和 provider-complete workflows，不覆盖产品已有 workflow。
 
-`Harness Release Eligibility` 在成功 Required run 确认属于默认分支唯一 merge commit 后，生成并上传绑定 repository、commit SHA 和 required run ID 的 `release-eligibility.json`。该 receipt 是发布自动化或人工发布流程可消费的准入凭证；workflow 本身不创建 GitHub Release，也不能阻止拥有仓库管理权限的人手工发布。要声明 `enforced`，权威发布入口必须实际要求该凭证，并由 live audit 验证成功运行绑定当前目标 commit。
+`Harness Release Eligibility` 在成功 Required run 确认属于默认分支唯一 merge commit 后，只下载该 run 的 `harness-result.json`，生成并上传绑定 repository、commit SHA、required run ID、task ID、policy/binding/result digest 的 `release-eligibility.json`。该 receipt 是发布自动化或人工发布流程可消费的准入凭证；workflow 本身不创建 GitHub Release，也不能阻止拥有仓库管理权限的人手工发布。要声明 `enforced`，权威发布入口必须实际要求该凭证，并由 live audit 验证成功运行绑定当前目标 commit。
 
 ---
 

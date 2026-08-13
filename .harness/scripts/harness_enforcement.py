@@ -226,10 +226,12 @@ def probe_github(product: Path, *, repository: str, branch: str,
         and "listPullRequestsAssociatedWithCommit" in release_text
         and "merge_commit_sha === run.head_sha" in release_text
         and "item.base.ref === targetBranch" in release_text
-        and '"kind": "release-eligibility"' in release_text
-        and '"repository": os.environ["REPOSITORY"]' in release_text
-        and '"commit_sha": os.environ["VERIFIED_COMMIT"]' in release_text
-        and '"required_run_id": os.environ["REQUIRED_RUN_ID"]' in release_text
+        and "release_eligibility.py" in release_text
+        and "--result harness-artifacts/harness-result.json" in release_text
+        and "run-id: ${{ github.event.workflow_run.id }}" in release_text
+        and '--commit "$VERIFIED_COMMIT"' in release_text
+        and '--repository "$REPOSITORY"' in release_text
+        and '--required-run-id "$REQUIRED_RUN_ID"' in release_text
         and "release-eligibility.json" in release_text
         and "actions/upload-artifact@v4" in release_text
         and "if-no-files-found: error" in release_text
