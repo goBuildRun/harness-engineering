@@ -107,6 +107,9 @@ PY
   KNOWLEDGE=$(bash "$SCRIPT_DIR/harness_knowledge.sh" paths 2>/dev/null || true)
   json_pass "$KNOWLEDGE" || SMOKE_FAILS+=("SMOKE_KNOWLEDGE_PATHS:$KNOWLEDGE")
 
+  CAPABILITIES=$(python3 "$SCRIPT_DIR/capability_contract.py" "$ROOT_DIR" 2>/dev/null || true)
+  json_pass "$CAPABILITIES" || SMOKE_FAILS+=("SMOKE_CAPABILITY_CONTRACT:$CAPABILITIES")
+
   PRODUCT_LIST=$(bash "$SCRIPT_DIR/harness_init.sh" list 2>/dev/null || true)
   json_pass "$PRODUCT_LIST" || SMOKE_FAILS+=("SMOKE_PRODUCT_LIST:$PRODUCT_LIST")
 

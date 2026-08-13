@@ -1,6 +1,6 @@
 # Harness 能力迁移映射
 
-> 状态：local implementation，2026-08-12。此表验证能力承载关系，不代表 guarded 或 enforced 接受保障已接线；旧 result schema 仍显示 `shadow`。
+> 状态：local implementation，2026-08-13。此表解释能力承载关系；`.harness/scripts/capability_contract.py` 与 `validate_harness.sh` 机械检查承载入口和 tier gate 未被静默删除。该审计不代表 guarded 或 enforced 接受保障已接线；旧 result schema 仍显示 `shadow`。
 
 | 来源能力 | 统一入口承载 | 当前状态 | 验收证据 |
 |----------|--------------|----------|----------|

@@ -108,7 +108,7 @@
 | HDC-006 | 成本与缓存 | implementation / harness 分项 schema、task/subject/policy-bound usage receipt、fingerprint 安全边界和 `tier` / `scope` 确定性缓存已落地；code-health、QA、GC Agent 与生产证据不缓存。真实 Agent token 注入仍待 provider adapter，未知成本继续记为 `unknown` |
 | HDC-007 | Legacy workspace 兼容 | `workspace audit` 已在真实产品验证完成任务只读归入 legacy、仅活动任务进入迁移候选；`migrate-task` 保持显式逐任务操作，不批量改写 |
 | HDC-010 | 三级保障接入验收 | local/guarded schema、Git hooks、GitHub 与平台无关 HTTPS authority probe 已实现；guarded 实战和真实 enforced 接线仍待完成 |
-| HDC-011 | 能力迁移验收 | 统一门面落地时须用能力迁移映射逐项证明 BMAD/TDD/QA/安全/知识/浏览器/协同能力已内部承载或按需触发，不能以“精简”为由静默删除 |
+| HDC-011 | 能力迁移验收 | `capability_contract.py` 已将能力迁移映射的 BMAD/TDD/QA/知识/浏览器/GC/协同/CI 承载关系接入 `validate_harness`；真实 provider 生命周期仍由 HDC-003/HDC-010 跟踪 |
 
 ## 7. 已解决或保留兼容
 
