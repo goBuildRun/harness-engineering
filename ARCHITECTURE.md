@@ -91,7 +91,7 @@ harness-workspace/
 | 任务规格与计划 | `<product-root>/harness-workspace/planning/` | 产品记录系统 |
 | 运行凭证与 active task | `<product-root>/harness-workspace/runs/` | 本地运行状态 |
 | 目标任务状态 | `<product-root>/harness-workspace/runs/tasks/<task-id>/result.json` | 本地物化快照，不作为 CI 可盲信凭证 |
-| 目标合并/发布准入 | 绑定 commit SHA 与 policy digest 的 CI required check | 服务端接受真相；使用与本地相同的 result schema 和判定器 |
+| 目标合并/发布准入 | `refs/harness/attestations/<commit>` 指向的 canonical Git attestation | Git 对象库是唯一事实源；hook、pre-receive、发布脚本和 CI 只调用同一 verifier |
 | 接入/测试/审查/成长证据 | `<product-root>/harness-workspace/evidence/` | 可回放证据 |
 | 长期产品知识 | `<product-root>/harness-workspace/knowledge/` | 不依赖聊天记忆 |
 
@@ -158,7 +158,7 @@ flowchart TD
 - 没有结构守门和计划同步，不允许合并。
 - 没有人工 review 和 `harness_growth.sh apply-review`，成长候选不能进入产品知识；没有跨产品 review，不能升级成全局规则。
 
-Harness 使用两个正交分层：`lite|standard|strict` 决定任务验证深度，`local|guarded|enforced` 决定部署环境的接受保障。`local` 提供完整的任务级结果与审计；`guarded` 再用 Git guards/CI 阻断正常工作流，但承认本机管理员或 `--no-verify` 可绕过；`enforced` 要求受保护的权威接受点、commit-bound check、发布依赖和 provider 完成态写权限全部接线。GitHub live probe 是一种平台实现，不是 core 前提；其他 Git 服务、受控 bare repository 或发布 gate 可提供等价证据。仅初始化 workspace 的产品属于 `local`，旧 schema 仍显示 `shadow`，不能承诺不可绕过。
+Harness 使用两个正交分层：`lite|standard|strict` 决定任务验证深度，`local|guarded|enforced` 决定接受保障。core 只依赖 Git：`local` 生成任务结果和 attestation；`guarded` 用 repo-local hooks 验证；`enforced` 在受控 remote 的 `pre-receive` 或发布入口强制同一 verifier。GitHub/GitLab/Gitea/CI 都是可选 adapter，不拥有第二份真相。仅初始化 workspace 的产品属于 `local`，旧 schema 仍显示 `shadow`。
 
 ## 7. Gate Chain
 
@@ -178,9 +178,9 @@ Harness 使用两个正交分层：`lite|standard|strict` 决定任务验证深�
 | Doc gardening | 文档链接、旧路径和信息架构约束 |
 | Final check | 发布前完整链路 |
 | Code health | `finish` 始终执行 diff 机械扫描，并按 tier/信号要求独立 gc-sweeper 结果 |
-| Commit acceptance | `ci-check` 对 commit SHA 与 policy digest 生成同 schema shadow artifact；平台 required 接线后才可 enforced |
-| Enforcement audit | live probe 同时验证 shared judger、branch required check、release dependency 和 provider done guard；snapshot/过期证据不能升级状态 |
-| Provider lifecycle | 本地最多 ready/review；终态要求绑定成功 check 的 merge/release CI receipt |
+| Commit acceptance | `finish` 生成 Git-native attestation；内部 verifier 校验 commit/tree/task/policy/result digest |
+| Enforcement audit | 验证目标 remote/ref 或发布入口确实强制 verifier；平台 snapshot 仅作 adapter 证据 |
+| Provider lifecycle | 本地最多 ready/review；终态消费受控接受点生成的 acceptance attestation |
 
 ## 8. Progressive Disclosure
 

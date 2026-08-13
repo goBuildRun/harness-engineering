@@ -5,9 +5,6 @@ required_files:
   - AGENTS.md
   - ARCHITECTURE.md
   - CLAUDE.md
-  - .github/workflows/harness-required.yml
-  - .github/workflows/release.yml
-  - .github/workflows/harness-provider-complete.yml
   - .github/pull_request_template.md
   - .harness/README.md
   - .harness/harness-manifest.yaml
@@ -57,7 +54,7 @@ required_files:
   - .harness/scripts/harness_runtime.py
   - .harness/scripts/harness_tier.py
   - .harness/scripts/harness_commands.py
-  - .harness/scripts/harness_enforcement.py
+  - .harness/scripts/harness_attestation.py
   - .harness/scripts/harness_assurance.py
   - .harness/scripts/harness_scope.py
   - .harness/scripts/harness_state.py
@@ -70,14 +67,12 @@ required_files:
   - .harness/scripts/harness_migration.py
   - .harness/scripts/harness_migration_commands.py
   - .harness/scripts/provider_lifecycle.py
-  - .harness/scripts/release_eligibility.py
   - .harness/scripts/work_item_contract.py
   - .harness/scripts/work_item_feishu.py
   - .harness/scripts/work_item_feishu_payload.py
   - .harness/scripts/work_item_jira.py
   - .harness/scripts/work_item_teambition.py
   - .harness/scripts/work_item_teambition_support.py
-  - .harness/scripts/ci_binding.py
   - .harness/scripts/sandbox_exec.py
   - .harness/scripts/sandbox_acceptance.py
   - .harness/scripts/browser_qa.py
@@ -150,7 +145,7 @@ required_files:
   - tests/test_ci_gc_review.py
   - tests/test_harness_gc_context.py
   - tests/test_harness_runtime.py
-  - tests/test_harness_enforcement.py
+  - tests/test_harness_attestation.py
   - tests/test_harness_assurance.py
   - tests/test_harness_schema.py
   - tests/test_harness_cache.py
@@ -164,9 +159,6 @@ required_files:
   - tests/test_sandbox_exec.py
   - tests/test_browser_scenarios.py
   - tests/test_agent_review.py
-  - .harness/templates/github/release.yml
-  - .harness/templates/github/harness-provider-complete.yml
-  - tests/test_ci_binding.py
   - tests/fixtures/lean-cost-baseline.json
   - docs/design-docs/capability-migration-map.md
   - tests/test_business_paths.py

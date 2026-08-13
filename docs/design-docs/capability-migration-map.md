@@ -10,9 +10,9 @@
 | Flow-X：CONTEXT / LESSONS / evidence | workspace 原位兼容，不批量迁移 | 已承载；真实 workspace audit 会区分 completed legacy 与活动任务 | `workspace audit` / `migrate-task` / migration tests |
 | GStack / 浏览器 QA | standard 前端 diff 自动触发；strict 使用 subject-bound receipt | 已承载，缺 URL/receipt 时阻断 | browser gate 与 gate coverage tests |
 | Ralph / Agent Review、独立 QA | standard/strict 将 QA evidence 写入独立 check | 已承载且缺失时阻断 | `checks.qa_evidence` 与 gate coverage tests |
-| GC sweeper | `finish` 机械扫描并按 tier/信号要求一次独立结果；CI 对目标 commit 按需调用 HTTPS reviewer | 已接入，receipt 绑定 role/task/subject/policy，缺 runner fail closed | `test_harness_runtime.py`、`test_harness_gc_context.py`、`test_ci_gc_review.py` |
+| GC sweeper | `finish` 机械扫描并按 tier/信号要求一次独立结果；接受端对目标 commit 复核绑定 | 已接入，receipt 绑定 role/task/subject/policy，缺 runner fail closed | `test_harness_runtime.py`、`test_harness_gc_context.py`、`test_ci_gc_review.py` |
 | Brownfield Intake | 首次接入或事实漂移时独立调用 | 保留，不进入每任务固定链 | 既有 intake tests |
-| Work Item provider | 本地最多 ready；终态要求 merge/release CI receipt | 已机械封堵本地终态；GitHub 模板只消费绑定 merge commit 的成功 required run，真实 provider 待产品接线 | provider lifecycle / enforcement tests |
-| CI commit 接受 | 共享 schema 的 `ci-check` + artifact | GitHub PR 与 merge commit 双阶段模板已接入；其他平台复用同一判定器 | `harness-commit-acceptance` |
+| Work Item provider | 本地最多 ready；终态要求受控接受 receipt | 已机械封堵本地终态；receipt 绑定 Git attestation、commit、ref 与 authority | provider lifecycle / attestation tests |
+| Git commit 接受 | canonical Git object + `refs/harness/attestations/<commit>` | local/guarded 已实现；受控接收端完整接线待验收 | `harness_attestation.py` |
 
-升级到 `guarded` 需要版本化 guards/CI 对正常 Git 工作流机械阻断并报告显式绕过边界；升级到 `enforced` 仍要求 live audit 证明受保护权威接受点、required check、发布依赖和 provider done 链全部通过。任何一项未验证、证据过期或只提供 snapshot 时，兼容状态必须显示 `NOT_ENFORCED`。
+升级到 `guarded` 需要版本化 Git hooks 对正常工作流机械阻断并报告显式绕过边界；升级到 `enforced` 要求受控 `pre-receive` 或 release gate 对正式 ref/制品强制 verifier，并由 provider done 消费对应 acceptance receipt。缺少该权限边界时不能宣称 enforced。

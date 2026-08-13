@@ -30,7 +30,8 @@ def validate_result(data: dict[str, Any]) -> list[str]:
     if assurance.get("task_execution") not in {"complete", "incomplete"}:
         issues.append("assurance.task_execution")
     if assurance.get("acceptance_authority") not in {
-        "worktree", "git-guards+ci", "protected-authority",
+        "worktree", "git-hooks", "git-receive", "release-gate",
+        "git-guards+ci", "protected-authority",
     }:
         issues.append("assurance.acceptance_authority")
     if not isinstance(assurance.get("bypassable"), bool):

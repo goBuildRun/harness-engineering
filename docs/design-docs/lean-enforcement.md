@@ -1,6 +1,6 @@
 # Harness 精简强制执行设计
 
-> 状态：shadow 实现中；共享结果、三入口、GC 判定、迁移审计和 commit 判定器已落地，平台 enforcement 尚未验证
+> 状态：Git-native core 实现中；共享结果、三入口、GC 判定、迁移审计和 attestation 已落地，受控接收端 enforcement 尚未验证
 > 日期：2026-08-11
 > 适用范围：所有通过 harness-engineering 接入的产品迭代  
 > 当前命令实态仍以 [USAGE.md](../USAGE.md) 为准。
@@ -110,9 +110,11 @@ harness-workspace/runs/tasks/<task-id>/result.json
 
 外部 Agent/provider 通过 `HARNESS_USAGE_RECEIPT` 注入成本时，receipt 必须同时绑定 `task_id`、`subject_digest` 和 `policy_digest`，声明非空 `provider`、`model`，并分别提供 implementation/harness 的 Token、上下文字符数和 Agent 调用数。缺失遥测保持 `unknown`；已提供但绑定错误或来源身份缺失的 receipt 必须 block，不能跨任务、diff 或策略复用。
 
-`result.json` 使用任务级单写锁和“临时文件 + 原子替换”更新；中断后可恢复，多个 Agent 不得并发覆盖。它是当前任务的物化状态，不是可由开发者提交后让 CI 盲信的证明。
+`result.json` 使用任务级单写锁和“临时文件 + 原子替换”更新；中断后可恢复，多个 Agent 不得并发覆盖。它是当前任务的物化状态，不是可由开发者提交后让接受端盲信的证明。
 
-CI 必须对目标 commit 独立运行同一结果 schema，并把 `commit SHA + policy_digest + decision` 发布为 required check 和 CI artifact。合并/发布以该 commit 绑定的 CI check 为接受真相；本地 `result.json` 只能证明当前工作区已验证。二者共用一个 schema 和判定器，不新增第二套报告协议。
+Harness core 的唯一事实源是 Git 对象库。`finish` 验证工作区后，为目标 commit 生成 canonical attestation，至少绑定 `commit SHA + tree SHA + task_id + policy_digest + result_digest + decision`，并写入 `refs/harness/attestations/<commit>`。attestation 使用共享 result schema 的稳定子集，不新增平行完成态。`status` 和接受端 verifier 只从 Git object/ref 读取并重算绑定关系；工作区 `result.json` 只是可恢复的物化视图。
+
+代码托管和 CI 不参与 Harness 生命周期。它们可以运行或展示 verifier，但接受真相始终是“目标 Git commit 拥有由相应权限边界生成的有效 attestation”；任何展示层都不得引入第二个状态机。
 
 代码、计划、测试输入、相关配置、工具版本或 Harness policy 改变后，依赖旧 fingerprint 的结果自动失效。Markdown 只承担必要的人类摘要，不再默认按每个 T 复制 TEST、REVIEW、SUMMARY 和 QA 结论。
 
@@ -141,7 +143,7 @@ CI 必须对目标 commit 独立运行同一结果 schema，并把 `commit SHA +
 1. 正式迭代绑定一个可追踪任务身份；`standard` / `strict` 使用产品 Work Item，`lite` 可使用 Harness 生成的本地任务 ID，不得无 ID 执行。
 2. 实际改动没有越过声明的产品和任务范围。
 3. 已运行与实际风险匹配的验证。
-4. 本地 `finish` 返回 `pass` 后才能发起合并；目标 commit 的 CI required check 返回 `pass` 后才能合并或发布，外部 Work Item 只能由合并/发布自动化关闭。
+4. `finish` 必须为目标 commit 生成有效 attestation；合并、推送或发布入口验证通过后才能接受该 commit，外部 Work Item 只能由成功接受/发布动作关闭。
 
 人工 Gate 不能由 Agent 自行签署。未通过 `finish` 的直接编辑属于未受管变更，可以保留在工作区，但不能成为有效完成态。
 
@@ -155,10 +157,10 @@ CI 必须对目标 commit 独立运行同一结果 schema，并把 `commit SHA +
 | Assurance level | 最小环境 | 接受权威 | 保证与边界 |
 |-----------------|----------|----------|------------|
 | `local` | Git + Python + `start/status/finish` | 当前工作区/本地 Git | 结果真实、可复现、可审计；防漏主要依赖正常入口，不能承诺不可绕过 |
-| `guarded` | `local` + 版本化 Git guards 和/或 CI commit check | 正常 Git 工作流 + CI | 对常规 commit/push/PR 机械阻断并暴露显式绕过；hook 可被 `--no-verify` 或本机管理员绕过，因此不等于 enforced |
-| `enforced` | `guarded` + 受保护的权威接受点和发布/provider 门禁 | protected branch、受控 bare repository、发布/制品 gate 等 | 缺少绑定目标 commit 的有效 Harness 结果不能成为正式交付；管理员应急 bypass 必须独立审计 |
+| `guarded` | `local` + 版本化 Git hooks | 本地 Git refs + hooks | 对常规 commit/push 机械阻断并暴露显式绕过；hook 可被 `--no-verify` 或本机管理员绕过，因此不等于 enforced |
+| `enforced` | `guarded` + 服务端 `pre-receive` 或发布入口 verifier | 受控 Git remote 或制品发布入口 | 缺少有效 Git attestation 的 commit 不能进入受保护 ref 或正式制品；不要求特定托管平台 |
 
-轻量推广路径是“先完整执行，再逐级增强接受保障”：五分钟进入 `local`，启用低成本 guards 后进入 `guarded`，只有确有不可绕过合规需求的团队才接入 `enforced`。默认采用不要求自建 Git 服务、数据库或常驻编排器；GitHub、GitLab、Gitea 都只是可选的 enforced 承载平台，不是 Harness core 依赖。平台无关的 HTTPS authority probe 使用同一 snapshot evaluator 验证目标 commit、shared judger、发布依赖和 provider 完成态，让受控 bare repository 或发布 gate 能接入而不复制 Harness 状态机。
+轻量推广路径是“Git-only core，按需增强接受保障”：五分钟进入 `local`，安装 repo-local hooks 后进入 `guarded`；只有确需防本机绕过时，才在任意 Git remote 的 `pre-receive` 或发布脚本挂载同一个 verifier。默认不要求 GitHub、CI、数据库、HTTPS authority 服务或常驻编排器。GitHub、GitLab、Gitea 只是可选 UI/托管 adapter。
 
 目标 `result.json` 在现有字段之外增加结构化保障快照：
 
@@ -167,7 +169,7 @@ CI 必须对目标 commit 独立运行同一结果 schema，并把 `commit SHA +
   "assurance": {
     "level": "local|guarded|enforced",
     "task_execution": "complete|incomplete",
-    "acceptance_authority": "worktree|git-guards+ci|protected-authority",
+    "acceptance_authority": "worktree|git-hooks|git-receive|release-gate",
     "bypassable": true,
     "verified_at": "...",
     "blockers": []
@@ -182,11 +184,11 @@ CI 必须对目标 commit 独立运行同一结果 schema，并把 `commit SHA +
 1. **导航层**：告诉 Agent 正确入口和最小规则。
 2. **CLI 层**：`start/status/finish` 提供唯一正常路径。
 3. **状态层**：本地状态只允许 `active → blocked|validated`；任何输入变化都把 `validated` 失效回待验证状态。
-4. **合并层**：CI/MR 对目标 commit 重新判定并发布 required check，阻止未受管变更合并或发布；provider 在本地 `finish` 后最多进入 ready/review，合并或发布成功后才能进入 `done`。
+4. **接受层**：本地 hook、服务端 `pre-receive` 或发布脚本调用同一 commit verifier；provider 在 `finish` 后最多进入 ready/review，只有 commit 被受控 ref 或发布入口接受后才能进入 `done`。
 
 保障重点是“绕过后不能被接受”，而不是假设所有工具都能阻止用户直接编辑文件。
 
-“已安装”不等于 `enforced`。产品只有同时满足以下条件才可标记 `assurance.level: enforced`：权威接受点使用共享判定器、目标分支或等价发布入口要求 Harness check、发布依赖该 check、外部 Work Item 的 `done` 只由合并/发布自动化写入，并且 live probe 能证明成功运行绑定当前目标 commit。GitHub 实现通过目标 commit 的 workflow、branch protection 和 Actions run 验证这些条件；其他平台必须提供等价的受保护接受证据。未完成或无法验证任一条件时只能是 `local` 或 `guarded`，兼容字段继续写 `enforcement: shadow`，不得宣称流程不可绕过。
+“已安装”不等于 `enforced`。只有当受控 Git remote 的 `pre-receive` 或发布入口对所有进入正式 ref/制品的 commit 强制执行同一 verifier，且 provider `done` 只消费对应 acceptance attestation 时，产品才可标记 `assurance.level: enforced`。单用户完全控制的本地仓库最多是 `guarded`，因为同一用户能改 refs、hooks 和对象；这是 Git 权限边界。GitHub branch protection 仅是一种可选实现证据。
 
 仓库管理员仍可能使用平台级紧急 bypass；该动作位于 Harness 本身权限边界之外，必须由平台审计记录并被视为显式例外，不能生成有效 Harness `pass`。
 
@@ -201,13 +203,13 @@ CI 必须对目标 commit 独立运行同一结果 schema，并把 `commit SHA +
 - Growth 仅在发现新失败模式、架构边界、默认行为或明确技术债候选时触发。
 - 外部 Work Item 使用批量差异同步，不逐项重复 close/pull。
 - 超出 execution tier 预算时先停止自动扩张上下文或 Agent 调用，并返回 `BUDGET_APPROVAL_REQUIRED`；人工批准只能增加预算或升级 tier，不能跳过必要 gate。
-- CI required check 对目标 commit 重算 GC 信号；需要独立 GC 时通过 subject-bound HTTPS reviewer 获取 receipt，并把精确调用次数、上下文字符数与耗时写入统一成本字段。缺 reviewer 配置或无效 receipt 不能降级为机械 pass。
+- commit verifier 对目标 commit 重算机械 GC 信号；需要独立 Agent GC 时消费由 `finish` 生成、与 task/subject/policy 绑定的 receipt，不在每个托管平台重复调用模型。可选 CI adapter 可以代执行，但不得成为 core 前提。精确调用次数、上下文字符数与耗时写入统一成本字段。
 
 成本优化不能取消四个不变式，也不能降低高风险任务的证据质量。
 
 ## 8. 证据精简规则
 
-- `result.json` 是本地任务状态真相源；commit 的合并/发布判定以同 schema 的 CI required check 为准。
+- `result.json` 是本地任务物化状态；commit 的接受判定以 Git object/ref 中的 canonical attestation 为准。
 - `04-实施记录.md` 只记录关键决策、异常和最终结果，不复制完整命令输出。
 - `TEST.md`、`REVIEW.md`、`SUMMARY.md` 只在 execution tier 或人工阅读需求要求时生成。
 - 多个 T 可以共享同一验证批次；只有风险和所有权独立时才拆证据。
@@ -221,15 +223,15 @@ CI 必须对目标 commit 独立运行同一结果 schema，并把 `commit SHA +
 1. 先为四个不变式补可执行验收测试，并记录当前任务耗时、Token、上下文和产物数量基线。
 2. 实现共享 result schema、原子状态写入和成本遥测，以 shadow mode 包装现有 `check.sh`；此阶段结果不改变当前准入判定。
 3. 让 execution tier 分类器在 shadow mode 同时读取计划与实际 diff，验证升级、未知分类和 policy digest，不先开放降本路径。
-4. 提供 `start/status/finish` 门面，初期默认 `standard` 并调用现有 gate；CI 使用同一判定器对 commit 独立生成 required check。
-5. CI 权威链和 provider 状态流转稳定后，再启用 `lite` 精简、`strict` 加强与确定性 gate 缓存。
+4. 提供 `start/status/finish` 门面，`finish` 生成 commit-bound attestation；内部 verifier 可由 hooks、`pre-receive`、发布脚本或可选 CI adapter 调用。
+5. Git-native 接受链和 provider 状态流转稳定后，再删除 GitHub 专属 core 假设并启用更多可选 adapter。
 6. 最后迁移活动任务，隐藏被门面替代的 Agent 可见命令链，并删除冗余证据要求。
 
 每增加一个新入口或产物，必须同时说明它替代什么；不能证明替代关系的新增内容不进入 Harness core。
 
 上线使用单一 feature flag 支持按产品灰度和回退；回退只恢复旧入口，不删除新格式或历史数据。
 
-首版只使用现有 Python/shell、JSON/YAML、文件锁和 CI 能力，不引入数据库、常驻服务、事件总线或新的工作流引擎。
+首版只使用现有 Python/shell、JSON/YAML、文件锁和 Git plumbing，不引入数据库、常驻服务、事件总线、CI 前提或新的工作流引擎。
 
 ## 10. 历史数据与兼容升级
 
@@ -272,8 +274,8 @@ harness migrate-task <task-id>
 
 ## 11. 成功判定
 
-- 未经过 Harness 的变更无法关闭 Work Item、通过 required check 或发布。
-- 本地伪造、复制或提交 `result.json` 不能让其他 commit 通过 required check。
+- 未经过 Harness 的变更无法获得有效 attestation、关闭 Work Item 或进入正式 ref/制品。
+- 本地伪造、复制或提交 `result.json` 不能让其他 commit 通过 verifier。
 - `lite` 任务不再承担 `strict` 的证据数量和命令链。
 - 相同输入的 gate 不重复运行。
 - 单任务可以区分实现成本与 Harness 固定成本。

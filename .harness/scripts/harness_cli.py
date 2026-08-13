@@ -6,9 +6,7 @@ import argparse
 import os
 from pathlib import Path
 
-from harness_commands import (
-    cmd_ci_check, cmd_enforcement, cmd_finish, cmd_start, cmd_status,
-)
+from harness_commands import cmd_ci_check, cmd_finish, cmd_start, cmd_status
 from harness_migration_commands import cmd_audit, cmd_migrate
 from harness_runtime import TIERS
 
@@ -43,13 +41,6 @@ def build_parser() -> argparse.ArgumentParser:
     ci.add_argument("--scope", action="append", required=True)
     ci.add_argument("--gc-result", default="")
     ci.add_argument("--output", default="")
-    enforcement = sub.add_parser("enforcement")
-    enforcement.add_argument("action", choices=("audit",))
-    enforcement.add_argument("--snapshot", default="")
-    enforcement.add_argument("--authority-url", default=os.environ.get("HARNESS_AUTHORITY_URL", ""))
-    enforcement.add_argument("--repository", default="")
-    enforcement.add_argument("--branch", default="")
-    enforcement.add_argument("--required-check", default="")
     return parser
 
 
@@ -58,6 +49,5 @@ def main() -> int:
     handlers = {
         "start": cmd_start, "status": cmd_status, "finish": cmd_finish,
         "workspace": cmd_audit, "migrate-task": cmd_migrate, "ci-check": cmd_ci_check,
-        "enforcement": cmd_enforcement,
     }
     return handlers[args.command](args)

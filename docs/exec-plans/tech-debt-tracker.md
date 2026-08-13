@@ -20,9 +20,9 @@
 | TD-016 | 产品侧 `quality.commands` 接入 CI/check | — | **已偿还** 2026-06-21 · `quality_commands.py` + Harness allowlist/危险 env 拦截 |
 | TD-017 | 开源发布前防泄漏预检 | — | **已偿还** 2026-06-21 · `release_preflight.sh` |
 | TD-018 | 实现统一 `start/status/finish` 门面、原子 `result.json` 与实现/Harness 分项成本遥测；内部复用现有 gate，不新增并行流程 | 高 | partially done：tier-aware 结构化 runner、本地/CI 共享 checks、task/subject/policy-bound usage receipt、预算阻断与确定性缓存已落地；仍需真实 provider usage receipt 联调 |
-| TD-019 | CI 对目标 commit 使用共享判定器生成 required check；本地 `finish` 只进入 ready/review，合并或发布后才能关闭 Work Item | 高 | partially done：GitHub PR/merge commit 双阶段 check、release/provider root workflows 与 terminal receipt gate 已落地；其他平台可复用共享判定器，目标分支 required 与真实 workflow run 尚未实测 |
+| TD-019 | 以 Git object/ref attestation 作为唯一 commit 接受真相；`finish` 只进入 ready/review，受控接受或发布后才能关闭 Work Item | 高 | in progress：canonical attestation、refs、verifier 与 provider acceptance receipt 已落地；受控接收端验收待完成 |
 | TD-020 | 建立能力迁移验收：逐项证明 BMAD、TDD、QA、安全、知识、浏览器、协同能力已被统一门面承载或按需触发 | 高 | partially done：见 [能力迁移映射](../design-docs/capability-migration-map.md)；`capability_contract.py` 已机械检查承载入口/tier gate，前端 diff 自动触发 browser gate 已落地，provider 生命周期仍待真实端到端验证 |
-| TD-021 | 建立 `shadow → enforced` 接入探针与绕过测试；required check、发布依赖或 provider 生命周期任一未验证时必须显示 `NOT_ENFORCED` | 高 | partially done：live GitHub probe、平台无关 HTTPS authority probe、远端目标 commit workflow 读取、过期/伪造/本地 dirty 绕过阻断、默认分支 merge-only workflows 及 release/provider 成功运行 subject 绑定已落地；branch protection/API 权限和真实 run 尚无外部证据，因此仍为 shadow |
+| TD-021 | 建立 Git-native `local → guarded → enforced` 验收与绕过测试 | 高 | redesigned：本地 hooks 只能证明 guarded；enforced 必须证明受控 remote `pre-receive` 或发布入口对所有正式 commit 强制 verifier。GitHub live probe 降为可选 adapter，不再阻塞 core 完成 |
 | TD-022 | 拆分超过 400 行的 `work_item.py`，保持 provider CLI、诊断和同步契约不变 | — | **已偿还** 2026-08-11 · provider 网络诊断与能力矩阵迁入 `work_item_diagnostics.py`；核心 CLI 降至 400 行内 |
 | TD-023 | 拆分超过 1000 行的 brownfield intake，隔离扫描策略、信号采集、报告渲染与知识沉淀 | — | **已偿还** 2026-08-11 · `harness_intake_{policy,scan,review}.py` 按职责拆分，入口和各模块均不超过 400 行并保留 CLI/import 契约 |
 | TD-024 | 拆分超过 1700 行的 Work Item provider 单体，隔离 facade、BMAD contract、provider 与 transport/payload helper | — | **已偿还** 2026-08-11 · Teambition、Feishu、Jira adapter 独立，旧 `work_item_providers` export 保持兼容，所有 Work Item 模块不超过 400 行 |
@@ -30,6 +30,7 @@
 | TD-026 | Scope-change / hotfix 使用显式风险升级且不能绕过共同不变式 | — | **已偿还** 2026-08-11 · 复用 `harness start --kind ... --reason ...`；scope-change 最低 standard、hotfix 强制 strict，kind floor 有 CLI 与分类器测试 |
 | TD-027 | Agent Review 生成结构化 checklist 并与 MR diff 绑定 | — | **已偿还** 2026-08-11 · `mr_ready` 输出四视角 checklist；required 模式校验 runs 内 subject-bound 独立 reviewer receipt，旧 diff 或实现角色自签均阻断 |
 | TD-028 | 将部署保障从二态兼容字段演进为 `local|guarded|enforced`，并实现轻量 guarded guards | 中 | partially done：结构化 assurance、历史兼容、repo-local hooks 与审计已落地；临时仓库已跑通 finish → pre-commit → commit → pre-push commit check，并覆盖含空格安装路径；待真实团队试运行、显式绕过审计和更多平台验证 |
+| TD-029 | 实现 Git-native attestation 对象、refs、verifier 与 pre-receive 接受端 | 高 | in progress：对象/ref/verifier 已实现；接受端必须自行重跑 commit gates，不能信任客户端自签 attestation |
 
 ## 已偿还（Harness 强化）
 

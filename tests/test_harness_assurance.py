@@ -111,9 +111,11 @@ class HarnessAssuranceTest(unittest.TestCase):
             subprocess.run([str(product / ".githooks/pre-commit")], cwd=product, check=True)
             subprocess.run(["git", "add", "docs/note.md"], cwd=product, check=True)
             subprocess.run(["git", "commit", "-qm", "change"], cwd=product, check=True)
+            head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=product, text=True).strip()
             pushed = subprocess.run(
                 [str(product / ".githooks/pre-push")], cwd=product,
-                text=True, capture_output=True,
+                text=True, input=f"refs/heads/main {head} refs/heads/main {'0' * 40}\n",
+                capture_output=True,
             )
             self.assertEqual(pushed.returncode, 0, pushed.stderr)
             self.assertIn("HARNESS_PUSH_GUARD_PASS", pushed.stderr)

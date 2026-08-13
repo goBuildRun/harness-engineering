@@ -74,9 +74,7 @@ class HarnessInitTest(unittest.TestCase):
 
             self.assertTrue((product_root / "harness-workspace" / "bmad-output" / "design-artifacts").is_dir())
             self.assertIn("harness-workspace/bmad-output/design-artifacts", created)
-            self.assertTrue((product_root / ".github/workflows/release.yml").is_file())
-            self.assertTrue((product_root / ".github/workflows/harness-provider-complete.yml").is_file())
-            self.assertTrue((product_root / ".github/workflows/harness-required.yml").is_file())
+            self.assertFalse((product_root / ".github").exists())
 
     def test_generic_workspace_templates_do_not_leak_product_identity(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

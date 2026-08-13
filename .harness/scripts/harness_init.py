@@ -181,20 +181,6 @@ def ensure_product_workspace(product: dict[str, Any], overwrite: bool = False) -
         "# Local Harness runtime state. Evidence that must be reviewed belongs in ../evidence/.\n*\n!.gitignore\n",
         created,
     )
-    for name in ("release.yml", "harness-provider-complete.yml"):
-        source = harness_root() / ".harness" / "templates" / "github" / name
-        target = root / ".github" / "workflows" / name
-        if source.is_file() and not target.exists():
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source, target)
-            created.append(str(target.relative_to(root)))
-    required_source = harness_root() / ".github" / "workflows" / "harness-required.yml"
-    required_target = root / ".github" / "workflows" / "harness-required.yml"
-    if required_source.is_file() and not required_target.exists():
-        required_target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(required_source, required_target)
-        created.append(str(required_target.relative_to(root)))
-
     return created
 
 

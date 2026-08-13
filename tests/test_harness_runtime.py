@@ -156,7 +156,7 @@ class HarnessRuntimeTest(unittest.TestCase):
             subprocess.run(["git", "commit", "-qm", "binding"], cwd=product, check=True)
             (product / "docs" / "note.md").write_text("changed\n")
             status = json.loads(subprocess.check_output([*command, "status"], text=True))
-            self.assertEqual(status["result"]["enforcement_notice"], "NOT_ENFORCED")
+            self.assertEqual(status["result"]["enforcement_notice"], "LOCAL_ONLY")
             finished = json.loads(subprocess.check_output(
                 [*command, "finish", "--skip-legacy-gates"], text=True,
                 env={**os.environ, "HARNESS_PRODUCT_ROOT": str(product)},

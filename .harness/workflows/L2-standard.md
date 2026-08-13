@@ -19,7 +19,7 @@
 3. `feedback_planner.sh`（须含 TDD + `[ ]` + **业务路径**）→ 子代理沙箱 TDD
 4. 写前 `structure_guard.sh --path`；写后 `--diff` + `plan_sync_check.sh`
 5. L2 QA **按需**；触发时先确保任务包有 `05-QA验收.md`，再执行 `qa-evaluator` + `qa_sign_off` + `subagent-pr-gate`
-6. `memory-sweep.sh` → `check.sh` → `mr_ready.sh`；目标生命周期中本地 `finish` 最多进入 ready/review，只有目标 commit 的 required check 通过且合并或发布成功后才能关闭 Work Item
+6. `memory-sweep.sh` → `check.sh` → `mr_ready.sh`；本地 `finish` 最多进入 ready/review，只有受控 Git 接收点或发布入口接受目标 commit 后才能关闭 Work Item
 
 ## 参考
 

@@ -12,9 +12,8 @@ import uuid
 from pathlib import Path
 
 from harness_output import dump_json
-from harness_enforcement import (evaluate_enforcement, git_identity, load_snapshot,
-                                 probe_live, save_snapshot)
-from harness_assurance import audit_report, finalize, refresh_result
+from harness_assurance import audit_guards, finalize, sync_task_execution
+from harness_attestation import verify_attestation
 from harness_cache import executed_check, reuse_check, tool_digest
 from harness_gates import committed_work_item, run_gate_plan
 from harness_telemetry import apply_gc_telemetry, apply_usage_receipt, enforce_budget
@@ -27,7 +26,6 @@ from harness_runtime import (
 )
 from harness_scope import paths_within_scope
 from harness_state import invalidate_if_stale
-from product_context import product_config
 from worktree_baseline import capture_baseline, changed_since_baseline
 
 def commit_sha(repo: Path, value: str) -> str:
@@ -95,18 +93,17 @@ def cmd_status(args: argparse.Namespace) -> int:
     current_policy = policy_for(Path(args.harness_root).resolve(), product)
     if invalidate_if_stale(result, current_subject, current_policy):
         atomic_write_result(path, result)
-    config = product_config(product).get("enforcement") or {}
-    discovered_repository, _ = git_identity(product)
-    repository = str(config.get("repository") or discovered_repository)
-    branch = os.environ.get("HARNESS_TARGET_BRANCH", str(config.get("target_branch") or "main"))
-    required_check = os.environ.get(
-        "HARNESS_REQUIRED_CHECK", str(config.get("required_check") or "harness-commit-acceptance")
+    guards = audit_guards(product)
+    attestation = verify_attestation(product, commit="HEAD", policy_digest=current_policy)
+    level = "guarded" if guards["level"] == "guarded" else "local"
+    result["assurance"].update(
+        level=level, acceptance_authority="git-hooks" if level == "guarded" else "worktree",
+        bypassable=True, verified_at=now(), blockers=guards["blockers"],
+        guard_audit=guards, head_attestation=attestation,
     )
-    enforcement = evaluate_enforcement(
-        load_snapshot(product), repository=repository, branch=branch,
-        required_check=required_check,
-    )
-    refresh_result(result, product, enforcement)
+    result["enforcement"] = "shadow"
+    result["enforcement_notice"] = "GUARDED" if level == "guarded" else "LOCAL_ONLY"
+    sync_task_execution(result)
     atomic_write_result(path, result)
     dump_json({"decision": "pass", "reason": "TASK_STATUS", "result": result})
     return 0
@@ -137,7 +134,7 @@ def cmd_finish(args: argparse.Namespace) -> int:
     subject = subject_for(product, changed)
     current_policy = policy_for(harness, product)
     invalidate_if_stale(result, subject, current_policy)
-    result["subject"] = {"kind": "worktree", "digest": subject}
+    result["subject"] = {"kind": "worktree", "digest": subject, "paths": changed}
     result["policy_digest"] = current_policy
     result["blockers"] = [
         blocker for blocker in result.get("blockers", []) if blocker != "INPUT_CHANGED"
@@ -200,7 +197,7 @@ def cmd_finish(args: argparse.Namespace) -> int:
             changed, subject = changed_after, subject_after
             effective = classify_tier(changed, floor=effective)
             result["tier"]["effective"] = effective
-            result["subject"] = {"kind": "worktree", "digest": subject}
+            result["subject"] = {"kind": "worktree", "digest": subject, "paths": changed}
             tier_fingerprint = fingerprint(
                 "tier", subject, current_policy, changed, tier_floor, tools,
             )
@@ -324,45 +321,4 @@ def cmd_ci_check(args: argparse.Namespace) -> int:
     if args.output:
         atomic_write_result(Path(args.output), result)
     dump_json({"decision": result["decision"], "reason": "CI_SHADOW_RESULT", "result": result})
-    return 0
-
-def cmd_enforcement(args: argparse.Namespace) -> int:
-    product = Path(args.product_root).resolve()
-    config = product_config(product).get("enforcement") or {}
-    discovered_repository, current_branch = git_identity(product)
-    repository = args.repository or str(config.get("repository") or discovered_repository)
-    branch = args.branch or os.environ.get(
-        "HARNESS_TARGET_BRANCH", str(config.get("target_branch") or "main")
-    ) or current_branch
-    required_check = args.required_check or str(
-        config.get("required_check") or "harness-commit-acceptance"
-    )
-    if args.snapshot:
-        try:
-            snapshot = json.loads(Path(args.snapshot).read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            dump_json({"decision": "block", "reason": "ENFORCEMENT_SNAPSHOT_INVALID"})
-            return 0
-        snapshot["source"] = "snapshot"
-    else:
-        try:
-            snapshot = probe_live(
-                product, authority_url=args.authority_url,
-                credentials={"authority": os.environ.get("HARNESS_AUTHORITY_TOKEN", ""),
-                             "github": os.environ.get("GITHUB_TOKEN", "")},
-                repository=repository,
-                branch=branch, required_check=required_check,
-            )
-        except Exception as exc:
-            dump_json({"decision": "block", "reason": f"ENFORCEMENT_LIVE_PROBE_FAILED: {exc}"})
-            return 0
-    save_snapshot(product, snapshot)
-    evaluated = evaluate_enforcement(
-        snapshot, repository=repository, branch=branch, required_check=required_check,
-    )
-    dump_json({
-        "decision": "pass" if evaluated["enforcement"] == "enforced" else "block",
-        "reason": evaluated["notice"], "enforcement": evaluated,
-        "assurance": audit_report(product, evaluated),
-    })
     return 0

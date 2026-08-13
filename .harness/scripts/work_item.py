@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 from harness_knowledge import sync_planning
-from harness_enforcement import TERMINAL_STATUSES, trusted_ci_context, validate_lifecycle_receipt
+from provider_lifecycle import TERMINAL_STATUSES, validate_receipt
 from harness_output import dump_json
 from work_item_diagnostics import cmd_capabilities, cmd_diagnose
 from workspace_paths import load_layout
@@ -110,12 +110,7 @@ def cmd_close(args: argparse.Namespace) -> int:
                 receipt = json.loads(Path(args.lifecycle_receipt).read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
                 pass
-        ci, repository, commit_sha, run_id = trusted_ci_context(os.environ)
-        required_check = os.environ.get("HARNESS_REQUIRED_CHECK", "harness-commit-acceptance")
-        ok, reason = validate_lifecycle_receipt(
-            receipt, work_item_id=args.id, ci=ci, required_check=required_check,
-            repository=repository, commit_sha=commit_sha, run_id=run_id,
-        )
+        ok, reason = validate_receipt(receipt, work_item_id=args.id)
         if not ok:
             emit("block", reason, work_item_id=args.id)
             return 0

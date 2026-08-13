@@ -82,7 +82,7 @@ flowchart LR
 | 产品 workspace 如何组织 | 产品 `harness-workspace/project.yaml` |
 | 产品规格和任务范围 | 产品 `harness-workspace/planning/` |
 | 本地任务状态 | 目标 `runs/tasks/<task-id>/result.json` |
-| 某个 commit 是否允许合并/发布 | commit + policy 绑定的 CI required check |
+| 某个 commit 是否允许接收/发布 | `refs/harness/attestations/<commit>` 指向的 canonical Git attestation |
 | 产品长期知识 | 产品 `harness-workspace/knowledge/` |
 
 本地 `finish pass` 只代表可以进入 review，不能直接关闭外部 Work Item。
@@ -189,9 +189,9 @@ Agent 的通用代码放置规则始终先解析产品 `project.yaml` 和 active
 1. **导航层**：Agent 只看到正确入口和最小规则。
 2. **CLI 层**：`start/status/finish` 是唯一正常操作面。
 3. **状态层**：输入变化会使旧验证结果失效；确定性 gate 只在 fingerprint 相同时复用。
-4. **合并层**：CI 对目标 commit 重新判定，分支保护和发布依赖阻止未受管变更被接受。
+4. **接受层**：Git hooks、受控 remote `pre-receive` 或发布入口调用同一 commit verifier。
 
-任务验证深度使用 `lite|standard|strict`，部署保障使用 `local|guarded|enforced`。只有 required check、受保护权威接受点、发布依赖和 provider 完成态写入链全部接线并可验证后，才能标记 `enforced`；`local` 与 `guarded` 在旧 schema 中仍映射为 `shadow`，不能宣称流程不可绕过。
+任务验证深度使用 `lite|standard|strict`，接受保障使用 `local|guarded|enforced`。只有受控 Git remote 的 `pre-receive` 或发布入口强制运行 verifier，且 provider 终态只消费对应 acceptance receipt 时，才能标记 `enforced`；`local` 与 `guarded` 在旧 schema 中仍映射为 `shadow`，不能宣称流程不可绕过。
 
 ## 11. 历史数据升级
 

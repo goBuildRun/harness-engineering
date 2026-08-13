@@ -4,7 +4,7 @@ Team Product R&D Harness **不绑定**某一个协同系统。BMAD Planning 与 
 
 Work Item 的职责是协同，不是保存 BMAD 产物本体。产品规格、执行计划和任务包的真相源始终是产品仓库的 `harness-workspace/planning/`；Teambition、飞书、Jira 只保存负责人、状态、讨论、摘要和链接。完整契约见 [../../docs/BMAD_Work_Item_Contract.md](../../docs/BMAD_Work_Item_Contract.md)。
 
-> 目标状态由 `harness start/finish` 绑定并同步 Work Item：本地 `finish` 最多进入 ready/review，只有目标 commit 的 CI required check 通过且合并或发布成功后才能写 `done`。下面 `work_item.sh` 是当前 adapter 与兼容命令参考，不是目标公开操作面。
+> 目标状态由 `harness start/finish` 绑定并同步 Work Item：本地 `finish` 最多进入 ready/review，只有受控 Git 接收点或发布入口接受目标 commit 后才能写 `done`。下面 `work_item.sh` 是当前 adapter 与兼容命令参考，不是目标公开操作面。
 
 同一个 harness-engineering 可以同时管理多个产品：
 

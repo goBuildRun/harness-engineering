@@ -5,16 +5,16 @@
 
 ## 质量执行原则
 
-- 本地 `finish` 结果只允许发起合并；没有绑定目标 commit 和 policy 的 CI required check，任务不能合并、发布或关闭外部 Work Item。
+- 本地 `finish` 结果只允许进入提交和 review；没有绑定目标 commit/tree/task/policy/result 的有效 Git attestation，任务不能被正式接收、发布或关闭外部 Work Item。
 - `lite`、`standard`、`strict` 都执行共同不变式，但不共享同一条最长命令链。
 - 已由相同 fingerprint 验证的确定性机械 gate 应复用结果；人工签署、生产副作用和 strict 部署/回滚证据不得跨 commit 复用。
-- `result.json` 落地后作为本地任务状态真相源；合并/发布以同 schema 的 CI required check 为准。Markdown 证据按风险和人工阅读需要生成。
+- `result.json` 是本地任务执行快照；commit 准入以 Git object/ref 中的 canonical attestation 为准。Markdown 证据按风险和人工阅读需要生成。
 - 精简只能删除重复成本，不能取消范围检查、风险匹配验证或必要人工 Gate。
 - execution tier 在 `start` 时只是初值，`finish` 必须按实际 diff 重算，且任务生命周期内只能升级。
-- CI 必须解析出唯一任务绑定：新 `lite` 使用最小 `task.json`，`standard` / `strict` 使用现有任务包；不得按“最近任务”猜测。
+- commit verifier 必须解析出唯一任务绑定：新 `lite` 使用最小 `task.json`，`standard` / `strict` 使用现有任务包；不得按“最近任务”猜测。
 - BMAD 验收语义、Superpowers TDD、GStack 真实环境验证、QA 分离和 GC 继续作为可选或强制 gate 保留；execution tier 决定何时运行，不要求使用者手工串联。
 
-## 机械门禁（本地 + CI）
+## 机械门禁（本地 + 接受端）
 
 下列是当前 runtime 的门禁能力索引，不是每个任务固定执行的总清单。目标 `finish` 按 execution tier、实际 diff 和缓存 fingerprint 选择必要检查；共同不变式始终强制。
 

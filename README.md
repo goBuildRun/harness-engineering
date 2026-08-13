@@ -68,13 +68,13 @@ harness-engineering 不保存产品 PRD、任务实例、测试报告或产品�
 - 历史 workspace、Planning Gate、QA 与 evidence 的兼容读取基础。
 - `harness start/status/finish` 统一门面、原子 `result.json` 和 execution tier 分类。
 - 成本遥测、确定性 gate fingerprint 缓存、GC 判定与活动任务迁移审计。
-- commit 绑定共享判定器、GitHub required/release eligibility/provider completion workflow 模板和 enforced live probe。
+- commit/tree/task/policy/result 绑定的 Git attestation、版本化 Git hooks 和共享 verifier。
 
 尚未完成：
 
 - guarded hooks 的真实团队试运行、显式绕过审计与跨平台安装验证。
-- GitHub required check、受保护分支、release eligibility 和 provider completion 的真实环境端到端验收。
-- 非 GitHub 平台的等价受保护接受点 live probe，以及更多 provider usage/lifecycle 实测。
+- 受控 bare Git `pre-receive` 或 release gate 的真实环境端到端验收。
+- 更多 provider usage 和 Git-native acceptance lifecycle 实测。
 
 任务风险使用 `lite|standard|strict`，部署保障使用 `local|guarded|enforced`，两者互不替代。结果已提供结构化 `assurance`；兼容字段仍将 `local`/`guarded` 映射为 `shadow`。仅安装 workspace 不代表流程不可绕过。成熟度与实施顺序见 [Harness_成熟度评估.md](./docs/Harness_成熟度评估.md)。
 

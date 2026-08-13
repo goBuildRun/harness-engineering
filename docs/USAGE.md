@@ -647,23 +647,11 @@ bash .harness/scripts/browser_qa_setup.sh check
 
 `mr_ready` 始终输出绑定当前 diff 的 `review_checklist`（correctness/security/tests/scope）。独立 reviewer receipt 必须位于产品 `harness-workspace/runs/`、绑定相同 subject digest、包含四视角结论，且 reviewer 不能是实现或 Lead 角色。设置 `HARNESS_AGENT_REVIEW_RECEIPT=<path>` 提交 receipt；设置 `HARNESS_AGENT_REVIEW_REQUIRED=true` 后，缺少有效 receipt 会返回 `AGENT_REVIEW_REQUIRED`。未启用 required 时 checklist 仅用于 shadow 数据采集，不能宣称已完成独立 Agent Review。
 
-其他 Git 平台不需要复制一套 Harness 状态机；CI 只需调用同一个 `harness_runtime.py ci-check` 判定器并把结果绑定目标 commit。平台接入未验证 required check、发布依赖和 provider 生命周期前，只能声明 `local` 或 `guarded`。
+Harness core 不安装或要求托管平台 workflow。GitHub 可作为普通 Git remote、代码浏览和备份通道，但不参与任务状态、commit 准入、发布资格或 Work Item 完成态。
 
-GitHub 使用 `.github/workflows/harness-required.yml` 生成 `harness-commit-acceptance` check。PR 描述必须包含唯一绑定：
+`finish` 验证当前任务并把结果写入 `result.json`。guarded 仓库在 commit 后将该结果与目标 commit 的 tree、task、policy 和 result digest 绑定，写入 `refs/harness/attestations/<commit>`；创建时会从 commit tree 重算 subject，不能把旧结果贴到内容不同的 commit。`status` 只读验证当前 HEAD 的 attestation 与 hooks，不访问网络。
 
-```text
-Harness-Task: <task-id>
-Harness-Scope: <repo-relative-root-or-.>
-Harness-Tier: lite|standard|strict
-```
-
-缺失、重复、路径穿越或非法 tier 会直接 block。required workflow 在 PR 阶段判定分支保护所见 commit；PR 合并后再对真实 merge commit 使用同一判定器生成 `harness-result.json` artifact，不读取开发者本地结果。关闭但未合并的 PR 会生成明确失败的 Required run，不能通过跳过 job 触发含糊的下游成功链。`harness init` 只在目标文件缺失时安装 required、release 和 provider-complete workflows，不覆盖产品已有 workflow。
-
-首次接线应先用无 GC 信号的 `lite` PR 取得真实 `harness-commit-acceptance` context，再将该 context 配置为目标分支 required check。需要独立 GC 的 `standard` / `strict` PR 在 reviewer secrets 和服务尚未就绪时必须保持失败，不能临时降级来建立分支保护。
-
-`Harness Release Eligibility` 在成功 Required run 确认属于默认分支唯一 merge commit 后，只下载该 run 的 `harness-result.json`，生成并上传绑定 repository、commit SHA、required run ID、task ID、policy/binding/result digest 的 `release-eligibility.json`。该 receipt 是发布自动化或人工发布流程可消费的准入凭证；workflow 本身不创建 GitHub Release，也不能阻止拥有仓库管理权限的人手工发布。要声明 `enforced`，权威发布入口必须实际要求该凭证，并由 live audit 验证成功运行绑定当前目标 commit。
-
-真正执行发布的权威入口必须先调用内部 `release_eligibility.py verify --receipt ... --repository ... --commit ... --required-run-id ...`；知道目标任务和 policy 时同时传入 `--task-id`、`--policy-digest`。校验器会拒绝目标不匹配、缺任务身份或非十六进制 policy/binding/result digest。只检查 artifact/文件存在不构成 release enforcement。
+attestation 是共享协议，不是新的任务完成态。local/guarded 仓库所有者仍可修改 hooks、refs 和对象，因此只能防陈旧与误操作。需要不可绕过准入时，受控 bare Git remote 的 `pre-receive` 或正式发布入口必须自行重跑 verifier/gates，并由该受控边界生成 acceptance receipt；不能直接信任客户端提交的 ref。
 
 ---
 
@@ -675,11 +663,11 @@ execution tier 与 assurance level 必须分开理解：前者决定任务需要
 |----------|----------|----------|----------|
 | `local` | 个人、本地 Git、快速试用 | `start/status/finish` | 已可用；结果可审计但可被显式绕过 |
 | `guarded` | 小团队、希望低成本阻止误提交/误推送 | `harness_init.sh init --assurance guarded ...` 安装版本化 `.githooks` | 已实现；hooks 可被 `--no-verify` 或管理员绕过，不等于 enforced |
-| `enforced` | 合规、发布或组织级不可绕过准入 | 日常入口不变，平台或受控接受点执行 required check | GitHub live probe 已实现；需按实际平台完成接线验收 |
+| `enforced` | 合规、发布或组织级不可绕过准入 | 日常入口不变，受控 `pre-receive` 或 release gate 执行 verifier | 接收端协议实施中；完整接线验收前不得声明 enforced |
 
 `guarded` 是轻量推广的默认目标，不要求自建 Gitea/GitLab 或购买 GitHub 套餐；它不能因方便而伪称不可绕过。需要绝对准入时，再选择 protected branch、受控 bare repository、发布 gate 等 `enforced` 承载方式。
 
-Guarded 接入会把 `pre-commit` / `pre-push` 写入产品 `.githooks/`，并在 repo-local `.git/config` 中设置 `core.hooksPath` 和 Harness 安装根；本机绝对路径不会进入提交内容。`pre-commit` 校验当前 worktree 的有效 `finish` 结果，`pre-push` 针对 `HEAD` 使用任务绑定重新执行共享 `ci-check`，不会在 commit 后复用旧 worktree fingerprint。Guard audit 要求两个 hooks 已纳入 Git、内容与当前 Harness 模板一致且本机配置未偏移。首次提交 `.githooks` 和任务绑定属于 bootstrap，可显式使用 `--no-verify`；Git 不记录该参数本身，因此 guarded 不能证明所有绕过，只能由后续 CI/权威接受点判定 commit 是否有效，这也是它保持 `bypassable: true` 的原因。
+Guarded 接入会把 `pre-commit` / `post-commit` / `pre-push` 写入产品 `.githooks/`，并在 repo-local `.git/config` 中设置 `core.hooksPath` 和 Harness 安装根；本机绝对路径不会进入提交内容。`pre-commit` 校验有效 `finish` 结果，`post-commit` 创建 commit-bound attestation，`pre-push` 只读验证将要推送的 commit。Guard audit 要求三个 hooks 已纳入 Git、内容与当前 Harness 模板一致且本机配置未偏移。hooks 可被仓库所有者绕过，因此始终保持 `bypassable: true`。
 
 目标公开路径只有三步；当前 `local` 接入入口如下（旧结果字段仍显示 `shadow`）：
 
@@ -693,21 +681,14 @@ bash .harness/scripts/harness finish demo-login-task
 
 `standard` / `strict` 命中 GC 要求而没有有效独立结果时，`finish` 返回 `GC_REQUIRED`。`gc_result.json` 必须包含 `role: gc-sweeper`、`independent: true`，并绑定当前 `task_id`、`subject_digest`、`policy_digest`；任一不匹配都不可复用。配置 `HARNESS_GC_AGENT_ARGV`（JSON argv 数组）后可自动调用一次 runner；runner 只接收任务 scope、`changed_since_baseline` 文件的真实 patch/新增文件内容、变更文件列表、一层直接依赖、触发信号、限制和结果契约。上下文超过 `HARNESS_GC_CONTEXT_MAX_CHARS`（默认 200000）或超过一次 Agent 调用预算都返回 `BUDGET_APPROVAL_REQUIRED`，不会静默截断或扩读全仓。
 
-GitHub required workflow 使用内部 `ci_gc_review.py` 对目标 commit 重算 tier 与 GC 信号。lite 或 standard 无信号时返回 `GC_NOT_REQUIRED`，不调用远端；需要独立 GC 时必须配置 repository secrets `HARNESS_GC_REVIEW_URL`（HTTPS）和 `HARNESS_GC_REVIEW_TOKEN`。reviewer 接收任务契约、目标 commit 相对第一父提交的 `commit^1..commit` patch、一层依赖和 subject/policy 绑定；因此 merge commit 不会因默认 diff-tree 行为漏掉实际合入内容。reviewer 返回同一 `gc_result.json` receipt；缺配置、网络失败、receipt 不匹配或上下文超预算都会让 required check fail closed。调用次数、上下文字符数和耗时写入统一 `result.json.cost.harness`。
-
 workspace 兼容命令：
 
 ```bash
 bash .harness/scripts/harness workspace audit
 bash .harness/scripts/harness migrate-task <task-id> --reason '<复核原因>'
-bash .harness/scripts/harness enforcement audit
 ```
 
 `migrate-task` 只接受 audit 已归入 `needs_migration` 的进行中、且拥有 Planning Gate 凭证的任务。已完成 legacy、缺凭证或不存在的任务分别返回 `COMPLETED_LEGACY_MIGRATION_FORBIDDEN`、`MIGRATION_CREDENTIAL_MISSING`、`MIGRATION_TASK_NOT_FOUND`，且不得创建 runs 或 baseline；已有 `result.json` 仅允许兼容身份修复，不批量重写历史 workspace。
-
-`enforcement audit` 默认使用 `GITHUB_TOKEN` 实时检查目标分支 required check 与远端当前 commit，并通过 Contents API 从该 commit 读取 required/release/provider workflow，禁止用本地 dirty 文件影响判断。repository 可从 GitHub HTTPS、`git@github.com:` 或 `ssh.github.com:443` remote 严格解析，也可由产品 enforcement 配置显式覆盖；非 GitHub host 不会被猜测。随后通过 Actions API 要求 release/provider 成功运行的 `head_sha` 都等于该 commit。目标分支推进后旧运行失效；Required 失败、非目标分支或非 merge 运行都会让下游 workflow 显式失败，不能用 job skip 产生可误认的成功运行。
-
-非 GitHub 的受控 bare repository、发布 gate 或其他接受权威可设置 `HARNESS_AUTHORITY_URL=https://...` 与 `HARNESS_AUTHORITY_TOKEN`，继续调用同一个 `enforcement audit`。Harness 以 bearer-authenticated POST 发送 repository、目标分支和 required check，服务返回同一 enforcement snapshot；只允许无内嵌凭据的 HTTPS URL，且返回值仍必须满足目标 commit、有效期、shared judger、发布依赖和 provider 完成态全部条件。authority adapter 不创建第二套状态机，也不会把不完整响应直接认定为 enforced。`--snapshot` 仅用于离线诊断，会被强制标记为非 live，永远不能升级状态。`status` 每次重新评价一小时有效期的 live probe，不信任旧结果中的 `enforcement` 字符串。
 
 `status` 同时重算当前 worktree subject 与 policy digest。任一输入变化都会把 `validated` 退回 `active`，标记旧 checks 为 stale、增加 rerun 计数并返回 `INPUT_CHANGED`；下一次 `finish` 重新执行当前 tier 所需检查并重算派生 blockers。`result.json` 在原子写入和读取时都执行共享 schema 校验，非法 state/tier/check/cost 或伪造的完整遥测会返回 `RESULT_SCHEMA_INVALID`。
 
@@ -717,7 +698,7 @@ bash .harness/scripts/harness enforcement audit
 
 结构化 gate runner 按 tier 将 planning、structure、QA、knowledge、growth 和 quality 分别写入 `checks`。standard 命中 `.tsx/.jsx/.vue/.svelte/.html/.css/.scss` 或 frontend/web/ui/pages/components 路径时自动要求 `HARNESS_BROWSER_QA_URL` 并执行浏览器审计；strict 还要求 `HARNESS_STRICT_EVIDENCE` 指向绑定当前 subject、包含 browser/deployment/rollback pass 的 JSON receipt。产品可在 `quality.commands.lint` 使用 `python-import-boundaries` builtin 声明 `paths` 和 `boundaries: [{from, forbid}]`，通用默认值不内置产品目录。
 
-本地 `work_item.sh close` 默认只写 `ready_to_release`。`done`、`implemented`、`released` 等终态必须在 CI 中传入绑定 work item、task ID、policy/binding/result digest、merge commit SHA、成功 required run 和 merge/release event 的 `--lifecycle-receipt`；provider workflow 只消费触发它的成功 run artifact，并验证该 SHA 恰好关联一个已合并 PR。普通 Agent 调用会返回 `PROVIDER_TERMINAL_STATUS_FORBIDDEN`。
+本地 `work_item.sh close` 默认只写 `ready_to_release`。`done`、`implemented`、`released` 等终态必须传入由受控 `git-receive` 或 `release-gate` 生成的 `--lifecycle-receipt`；receipt 绑定 work item、task、policy/result digest、commit、attestation object 和 accepted ref。普通本地结果或未知 authority 会返回阻断。
 
 | 公开动作 | 使用者看到的结果 | 过渡期内部能力参考 |
 |----------|------------------|--------------------|
@@ -725,7 +706,7 @@ bash .harness/scripts/harness enforcement audit
 | `status` | 当前有效 tier、通过项、阻塞项、实现成本和 Harness 开销 | `task_workspace.sh`、各 gate 的 JSON 结果 |
 | `finish` | 重新按实际 diff 分级，执行或复用必要检查，写入 `result.json` | 第 4–8 节按角色和风险选择的 gate + `check.sh` / `mr_ready.sh` |
 
-过渡期需要直接调用脚本时，从上表进入对应章节，只执行当前 planning level、角色和风险要求的命令。不要复制一条固定 L2/L3 链给所有任务，也不要在本地验证后直接把外部 Work Item 置为 `done`；目标生命周期是本地 `finish` 最多进入 ready/review，目标 commit 的 CI required check 通过且合并或发布成功后才关闭任务。
+过渡期需要直接调用脚本时，从上表进入对应章节，只执行当前 planning level、角色和风险要求的命令。不要复制一条固定 L2/L3 链给所有任务，也不要在本地验证后直接把外部 Work Item 置为 `done`；本地 `finish` 最多进入 ready/review，目标 commit 被受控 Git 接收点或发布入口接受后才关闭任务。
 
 ---
 
@@ -754,8 +735,8 @@ bash .harness/scripts/harness enforcement audit
 | `QA_NOT_PASSED` | 凭证为 fail，须修复后重新 QA |
 | `QA_EVIDENCE_*` | 补齐 `qa_approved_<Tn>.json`、TEST 报告、REVIEW 报告，并确保报告结论为通过 |
 | `GC_DIRTY` | gc-sweeper 按 reason 清理后重跑 `memory-sweep.sh` |
-| `PROVIDER_TERMINAL_STATUS_FORBIDDEN` | 本地不能关闭 Work Item；等待 merge/release CI 使用 lifecycle receipt 写终态 |
-| `NOT_ENFORCED` | 查看 `status.result.enforcement_probe.blockers`；required check、release dependency、provider completion 或 live probe 至少一项未验证 |
+| `PROVIDER_TERMINAL_STATUS_FORBIDDEN` | 本地不能关闭 Work Item；等待受控接受点生成 lifecycle receipt |
+| `ATTESTATION_*` | 当前 commit 缺少有效 attestation，或 commit/tree/policy/result 绑定不匹配；重新 `finish` 后提交 |
 | `INPUT_CHANGED` | 上次 validated 后代码或 policy 已变化；重新运行 `finish`，旧 fingerprint 不再有效 |
 | `RESULT_SCHEMA_INVALID` | result 字段、枚举、check 最小字段或成本类型不符合共享 schema；须由 Harness 重建或迁移 |
 | `HARNESS_INVALID` | 按 reason 补齐 manifest 缺失项 |

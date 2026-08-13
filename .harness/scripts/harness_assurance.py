@@ -17,8 +17,8 @@ def snapshot(level: str = "local", *, blockers: list[str] | None = None) -> dict
         level = "local"
     authorities = {
         "local": "worktree",
-        "guarded": "git-guards+ci",
-        "enforced": "protected-authority",
+        "guarded": "git-hooks",
+        "enforced": "git-receive",
     }
     return {
         "level": level,
@@ -57,8 +57,8 @@ def audit_report(product: Path, enforcement: dict[str, Any]) -> dict[str, Any]:
     return {
         "level": "enforced" if enforced else guards["level"],
         "acceptance_authority": (
-            "protected-authority" if enforced
-            else ("git-guards+ci" if guards["level"] == "guarded" else "worktree")
+            "git-receive" if enforced
+            else ("git-hooks" if guards["level"] == "guarded" else "worktree")
         ),
         "bypassable": not enforced,
         "guard_audit": guards,
@@ -93,28 +93,31 @@ python3 -c 'import json,sys; d=json.loads(sys.argv[1]); r=d.get("result",{}); ok
 
 def pre_push_script() -> str:
     return guard_prelude() + """\
+ATTEST="$CONFIGURED_ROOT/.harness/scripts/harness_attestation.py"
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [[ "$local_sha" =~ ^0+$ ]] && continue
+  python3 "$ATTEST" verify --repo "$PRODUCT_ROOT" --commit "$local_sha" >/dev/null || {
+    echo "HARNESS_PUSH_GUARD_BLOCKED: $local_sha has no valid attestation" >&2
+    exit 1
+  }
+done
+echo 'HARNESS_PUSH_GUARD_PASS' >&2
+"""
+
+
+def post_commit_script() -> str:
+    return guard_prelude() + """\
 ACTIVE="$PRODUCT_ROOT/harness-workspace/runs/active_task.json"
-if [[ ! -f "$ACTIVE" ]]; then
-  echo 'HARNESS_GUARD_ACTIVE_TASK_MISSING' >&2
+[[ -f "$ACTIVE" ]] || exit 0
+TASK_ID="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("task_id", ""))' "$ACTIVE")"
+RESULT="$PRODUCT_ROOT/harness-workspace/runs/tasks/$TASK_ID/result.json"
+[[ -f "$RESULT" ]] || exit 0
+python3 "$CONFIGURED_ROOT/.harness/scripts/harness_attestation.py" create \
+  --repo "$PRODUCT_ROOT" --commit HEAD --result "$RESULT" >/dev/null || {
+  echo 'HARNESS_ATTESTATION_CREATE_FAILED: run harness finish before commit' >&2
   exit 1
-fi
-OUTPUT="$(HARNESS_BIN="$HARNESS_BIN" PRODUCT_ROOT="$PRODUCT_ROOT" python3 - <<'PY'
-import json, os, subprocess
-product = os.environ["PRODUCT_ROOT"]
-active = json.load(open(f"{product}/harness-workspace/runs/active_task.json"))
-task_id = active.get("task_id", "")
-result = json.load(open(f"{product}/harness-workspace/runs/tasks/{task_id}/result.json"))
-task, tier = result.get("task", {}), result.get("tier", {}).get("effective", "standard")
-argv = [os.environ["HARNESS_BIN"], "--product-root", product, "ci-check",
-        "--task-id", task_id, "--commit", "HEAD", "--tier", tier]
-for scope in task.get("scope", []):
-    argv.extend(["--scope", scope])
-completed = subprocess.run(argv, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-print(completed.stdout, end="")
-raise SystemExit(completed.returncode)
-PY
-)" || { echo "$OUTPUT" >&2; exit 1; }
-python3 -c 'import json,sys; d=json.loads(sys.argv[1]); ok=d.get("decision")=="pass"; print("HARNESS_PUSH_GUARD_PASS" if ok else "HARNESS_PUSH_GUARD_BLOCKED", file=sys.stderr); raise SystemExit(0 if ok else 1)' "$OUTPUT"
+}
+echo 'HARNESS_ATTESTATION_CREATED' >&2
 """
 
 
@@ -125,7 +128,8 @@ def install_guards(product: Path) -> dict[str, Any]:
     hooks = product / ".githooks"
     hooks.mkdir(parents=True, exist_ok=True)
     created: list[str] = []
-    scripts = {"pre-commit": pre_commit_script(), "pre-push": pre_push_script()}
+    scripts = {"pre-commit": pre_commit_script(), "post-commit": post_commit_script(),
+               "pre-push": pre_push_script()}
     for name, text in scripts.items():
         path = hooks / name
         path.write_text(text, encoding="utf-8")
@@ -187,14 +191,16 @@ def audit_guards(product: Path) -> dict[str, Any]:
         ).strip()
     except (FileNotFoundError, subprocess.CalledProcessError):
         runtime_root = ""
-    expected = {"pre-commit": pre_commit_script(), "pre-push": pre_push_script()}
+    expected = {"pre-commit": pre_commit_script(), "post-commit": post_commit_script(),
+                "pre-push": pre_push_script()}
     missing = [name for name in expected if not os.access(product / ".githooks" / name, os.X_OK)]
     mismatched = [name for name, text in expected.items()
                   if (product / ".githooks" / name).is_file()
                   and (product / ".githooks" / name).read_text(encoding="utf-8") != text]
     try:
         tracked_output = subprocess.check_output(
-            ["git", "ls-files", "--", ".githooks/pre-commit", ".githooks/pre-push"],
+            ["git", "ls-files", "--", ".githooks/pre-commit", ".githooks/post-commit",
+             ".githooks/pre-push"],
             cwd=product, text=True, stderr=subprocess.DEVNULL,
         ).splitlines()
     except (FileNotFoundError, subprocess.CalledProcessError):

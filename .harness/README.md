@@ -31,7 +31,7 @@
 
 > 下列接口是当前实现期稳定能力，不是未来公共命令清单。统一门面落地后，除初始化、诊断和 runtime 开发外，它们由 `start/status/finish` 内部调用；能力和 JSON 判定语义继续保留。
 
-Shadow 统一入口：`.harness/scripts/harness start|status|finish`。workspace 审计、活动任务迁移和 CI commit 判定作为管理/CI 子命令存在，不扩展日常公共操作面。平台 required check、发布依赖和 provider 生命周期未验证前始终显示 `NOT_ENFORCED`。
+统一入口：`.harness/scripts/harness start|status|finish`。workspace 审计、活动任务迁移和 commit 判定作为内部管理能力存在，不扩展日常公共操作面。受控 Git 接收点或发布入口未验证前只能显示 `local` 或 `guarded`。
 
 | 接口 | 用途 |
 |------|------|

@@ -33,8 +33,8 @@ CAPABILITIES: dict[str, dict[str, Any]] = {
                            "files": [".harness/scripts/work_item.py", ".harness/scripts/provider_lifecycle.py",
                                      "tests/test_provider_lifecycle.py"]},
     "commit-acceptance": {"mode": "authority-triggered", "gates": {},
-                          "files": [".harness/scripts/harness_enforcement.py", ".github/workflows/harness-required.yml",
-                                    "tests/test_harness_enforcement.py"]},
+                          "files": [".harness/scripts/harness_attestation.py",
+                                    "tests/test_harness_attestation.py"]},
 }
 
 TIER_INHERITANCE = {"lite": ("lite", "standard", "strict"),
