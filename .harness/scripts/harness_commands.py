@@ -306,7 +306,7 @@ def cmd_ci_check(args: argparse.Namespace) -> int:
     gates = run_gate_plan(
         harness, product, tier=result["tier"]["effective"], subject_digest=sha,
         policy_digest=result["policy_digest"], ci_task_id=args.task_id,
-        changed_files=changed, read_only=True,
+        changed_files=changed, read_only=True, self_maintenance=product == harness,
     )
     result["checks"].update(gates["checks"])
     if gates["missing"]:
