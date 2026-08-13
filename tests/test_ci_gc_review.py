@@ -88,7 +88,7 @@ class CiGcReviewTest(unittest.TestCase):
             with patch.dict(os.environ, {}, clear=True):
                 result = review(args)
             self.assertEqual(result["decision"], "block")
-            self.assertEqual(result["reason"], "GC_REVIEW_CONFIG_MISSING")
+            self.assertEqual(result["reason"], "GC_REVIEWER_UNAVAILABLE")
             (product / "notes.md").write_text("docs only\n")
             subprocess.run(["git", "add", "."], cwd=product, check=True)
             subprocess.run(["git", "commit", "-qm", "docs"], cwd=product, check=True)
@@ -100,6 +100,38 @@ class CiGcReviewTest(unittest.TestCase):
                 lite = review(args)
             self.assertEqual(lite["decision"], "pass")
             self.assertFalse(lite["required"])
+
+    def test_openai_runner_is_default_and_returns_bound_receipt(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = self._repo(Path(tmp))
+            sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=product, text=True).strip()
+            captured = {}
+
+            def respond(request, **_kwargs):
+                captured["url"] = request.full_url
+                captured["body"] = json.loads(request.data)
+                return Response({"output_text": json.dumps({
+                    "decision": "pass", "findings": 0, "remediated": 0,
+                    "deferred_findings": 0, "deferred_work_items": [],
+                    "triggers": ["dead-code"],
+                })})
+
+            args = type("Args", (), {
+                "product_root": str(product), "harness_root": str(ROOT),
+                "task_id": "task-openai", "commit": sha, "tier": "standard", "scope": ["."],
+            })()
+            with patch.dict(os.environ, {
+                "OPENAI_API_KEY": "test-key", "HARNESS_GC_MODEL": "test-model",
+            }, clear=True), patch("urllib.request.urlopen", side_effect=respond):
+                result = review(args)
+            self.assertEqual(result["decision"], "pass")
+            self.assertEqual(result["role"], "gc-sweeper")
+            self.assertTrue(result["independent"])
+            self.assertEqual(result["subject_digest"], sha)
+            self.assertEqual(captured["url"], "https://api.openai.com/v1/responses")
+            self.assertEqual(captured["body"]["model"], "test-model")
+            self.assertTrue(captured["body"]["text"]["format"]["strict"])
+            self.assertIn("unused_helper", captured["body"]["input"])
 
 
 if __name__ == "__main__":
