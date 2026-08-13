@@ -26,6 +26,13 @@ class HarnessTelemetryTest(unittest.TestCase):
                 "policy_digest": "policy-a", "provider": "openai", "model": "codex",
                 "implementation": {"input_tokens": 10, "output_tokens": 4, "context_chars": 30, "agent_calls": 1},
                 "harness": {"input_tokens": 3, "output_tokens": 1, "context_chars": 8, "agent_calls": 1},
+                "source": {
+                    "kind": "codex-rollout-token-count-v1", "session_id": "session-1",
+                    "rollout_sha256": "a" * 64, "rollout_size_bytes": 42,
+                    "usage_event_at": "2026-08-13T00:00:00Z", "cached_input_tokens": 6,
+                    "reasoning_output_tokens": 2, "total_tokens": 14,
+                    "prompt": "must not be persisted",
+                },
             }))
             result = default_result("cost-task")
             self.assertTrue(apply_usage_receipt(
@@ -35,6 +42,8 @@ class HarnessTelemetryTest(unittest.TestCase):
             self.assertTrue(result["cost"]["telemetry_complete"])
             self.assertEqual(result["cost"]["implementation"]["input_tokens"], 10)
             self.assertEqual(result["cost"]["receipt"]["provider"], "openai")
+            self.assertEqual(result["cost"]["receipt"]["source"]["session_id"], "session-1")
+            self.assertNotIn("prompt", result["cost"]["receipt"]["source"])
 
     def test_stale_receipt_blocks_without_faking_zero(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

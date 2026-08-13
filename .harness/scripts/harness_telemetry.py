@@ -9,6 +9,8 @@ from typing import Any
 
 
 USAGE_FIELDS = ("input_tokens", "output_tokens", "context_chars", "agent_calls")
+SOURCE_TEXT_FIELDS = ("kind", "session_id", "originator", "rollout_sha256", "usage_event_at")
+SOURCE_INT_FIELDS = ("rollout_size_bytes", "cached_input_tokens", "reasoning_output_tokens", "total_tokens")
 
 
 def _non_negative_int(value: Any) -> bool:
@@ -61,6 +63,23 @@ def apply_usage_receipt(result: dict[str, Any], *, task_id: str,
         "subject_digest": subject_digest,
         "policy_digest": policy_digest,
     }
+    source = receipt.get("source")
+    if isinstance(source, dict):
+        sanitized = {
+            key: str(source[key]).strip()
+            for key in SOURCE_TEXT_FIELDS
+            if str(source.get(key) or "").strip()
+        }
+        sanitized.update({
+            key: source[key]
+            for key in SOURCE_INT_FIELDS
+            if _non_negative_int(source.get(key))
+        })
+        digest = sanitized.get("rollout_sha256", "")
+        if digest and (len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest.lower())):
+            sanitized.pop("rollout_sha256", None)
+        if sanitized:
+            result["cost"]["receipt"]["source"] = sanitized
     return True
 
 
