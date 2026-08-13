@@ -41,6 +41,34 @@ class HarnessMigrationTest(unittest.TestCase):
                 (True, "TASK_MIGRATION_ELIGIBLE"),
             )
 
+    def test_prefixed_task_directory_matches_stable_result_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            task = product / "harness-workspace/planning/tasks/2026-08-07-task-123-title"
+            task.mkdir(parents=True)
+            (task / "00-任务卡.md").write_text(
+                "- 任务编号：task-123\n- 当前状态：实施中\n"
+            )
+            result = product / "harness-workspace/runs/tasks/task-123/result.json"
+            result.parent.mkdir(parents=True)
+            result.write_text("{}")
+            report = audit_workspace(product)
+            self.assertEqual(report["new_format"], ["task-123"])
+            self.assertEqual(report["needs_migration"], [])
+
+    def test_backlog_or_ambiguous_history_stays_legacy_until_activated(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            tasks = product / "harness-workspace/planning/tasks"
+            for task_id, status in (("backlog", "backlog"), ("paused", "paused-by-owner")):
+                task = tasks / task_id
+                task.mkdir(parents=True)
+                (task / "00-任务卡.md").write_text(f"- 当前状态：{status}\n")
+                (task / "planning_gate_pass.json").write_text('{"decision":"pass"}')
+            report = audit_workspace(product)
+            self.assertEqual(report["legacy"], ["backlog", "paused"])
+            self.assertEqual(report["needs_migration"], [])
+
     def test_only_active_credentialed_tasks_are_migration_eligible(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product = Path(tmp)

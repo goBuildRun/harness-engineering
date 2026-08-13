@@ -10,18 +10,40 @@ from typing import Any
 from harness_runtime import atomic_write_result, canonical_digest, load_result, workspace_root
 
 
-COMPLETED = re.compile(
-    r"当前状态\s*[:：]\s*(?:已完成|完成|done|completed)|status\s*[:：]\s*(?:done|completed)",
+TASK_ID = re.compile(r"(?:Harness Task ID|任务编号)\s*[:：]\s*([^\s]+)", re.IGNORECASE)
+STATUS = re.compile(r"(?:当前状态|status)\s*[:：]\s*([^\r\n]+)", re.IGNORECASE)
+COMPLETED = re.compile(r"^(?:已完成|完成|done|complete|completed)\b", re.IGNORECASE)
+ACTIVE = re.compile(
+    r"^(?:进行中|实施中|in[_ -]?progress|open\b|testing\b|verification\b|"
+    r"implementation-complete\b|semantic-continuity implementation-complete\b|"
+    r"ready-for-(?:dev|qa)\b|awaiting-real-device-acceptance\b)",
     re.IGNORECASE,
 )
 
 
-def task_is_completed(task_dir: Path) -> bool:
-    card = task_dir / "00-任务卡.md"
+def task_card(task_dir: Path) -> str:
     try:
-        return bool(COMPLETED.search(card.read_text(encoding="utf-8", errors="ignore")))
+        return (task_dir / "00-任务卡.md").read_text(encoding="utf-8", errors="ignore")
     except OSError:
-        return False
+        return ""
+
+
+def stable_task_id(task_dir: Path) -> str:
+    match = TASK_ID.search(task_card(task_dir))
+    return match.group(1).strip("`'") if match else task_dir.name
+
+
+def task_status(task_dir: Path) -> str:
+    match = STATUS.search(task_card(task_dir))
+    return match.group(1).strip() if match else ""
+
+
+def task_is_completed(task_dir: Path) -> bool:
+    return bool(COMPLETED.search(task_status(task_dir)))
+
+
+def task_is_active(task_dir: Path) -> bool:
+    return bool(ACTIVE.search(task_status(task_dir)))
 
 
 def has_valid_credential(task_dir: Path) -> bool:
@@ -44,15 +66,19 @@ def audit_workspace(product: Path) -> dict[str, list[str]]:
     if not tasks.is_dir():
         return report
     for task in sorted(path for path in tasks.iterdir() if path.is_dir() and not path.name.startswith("_")):
-        task_id = task.name
+        task_id = stable_task_id(task)
         if (runs / task_id / "result.json").is_file():
             report["new_format"].append(task_id)
         elif task_is_completed(task):
             report["legacy"].append(task_id)
-        elif has_valid_credential(task):
+        elif task_is_active(task) and has_valid_credential(task):
             report["needs_migration"].append(task_id)
-        else:
+        elif task_is_active(task):
             report["missing_credentials"].append(task_id)
+        else:
+            # Backlog, paused and ambiguous historical cards stay readable in place.
+            # They become migration candidates only after an explicit active status.
+            report["legacy"].append(task_id)
     return report
 
 
