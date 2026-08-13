@@ -12,7 +12,7 @@ import uuid
 from pathlib import Path
 
 from harness_output import dump_json
-from harness_assurance import audit_guards, finalize, sync_task_execution
+from harness_assurance import finalize, refresh_result
 from harness_attestation import verify_attestation
 from harness_cache import executed_check, reuse_check, tool_digest
 from harness_gates import committed_work_item, run_gate_plan
@@ -45,6 +45,12 @@ def execution_paths(product: Path, task_id: str, changed: list[str]) -> list[str
         generated_rel = ""
     runs = str((workspace_root(product) / "runs").relative_to(product)).rstrip("/") + "/"
     return [path for path in changed if path != generated_rel and not path.startswith(runs)]
+
+
+def refresh_assurance(result: dict, product: Path, policy_digest: str, *, phase: str) -> None:
+    attestation = verify_attestation(product, commit="HEAD", policy_digest=policy_digest)
+    refresh_result(result, product, policy_digest, phase=phase, verified_at=now(),
+                   attestation=attestation)
 
 
 def cmd_start(args: argparse.Namespace) -> int:
@@ -161,16 +167,7 @@ def cmd_status(args: argparse.Namespace) -> int:
     )
     if not committed_current and invalidate_if_stale(result, current_subject, current_policy):
         atomic_write_result(path, result)
-    guards = audit_guards(product)
-    level = "guarded" if guards["level"] == "guarded" else "local"
-    result["assurance"].update(
-        level=level, acceptance_authority="git-hooks" if level == "guarded" else "worktree",
-        bypassable=True, verified_at=now(), blockers=guards["blockers"],
-        guard_audit=guards, head_attestation=attestation,
-    )
-    result["enforcement"] = "shadow"
-    result["enforcement_notice"] = "GUARDED" if level == "guarded" else "LOCAL_ONLY"
-    sync_task_execution(result)
+    refresh_assurance(result, product, current_policy, phase="status-head")
     atomic_write_result(path, result)
     dump_json({"decision": "pass", "reason": "TASK_STATUS", "result": result})
     return 0
@@ -313,6 +310,7 @@ def cmd_finish(args: argparse.Namespace) -> int:
                         policy_digest=result["policy_digest"])
     enforce_budget(result)
     finalize(result, finish_decision)
+    refresh_assurance(result, product, result["policy_digest"], phase="pre-commit-head")
     atomic_write_result(path, result)
     reason = result["blockers"][0] if result["blockers"] else "FINISH_OK"
     dump_json({"decision": result["decision"], "reason": reason, "result": result})

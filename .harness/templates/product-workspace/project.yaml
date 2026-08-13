@@ -117,6 +117,7 @@ quality:
   commands:
     # 每个产品按自己的技术栈配置。严格 CI 下未配置会 block。
     # 安全边界由 harness-engineering 控制：禁止 shell 绕行、PATH/NODE_OPTIONS 等危险 env、未 allowlist 的可执行文件。
+    # 每条命令可声明产品根内的相对 cwd；绝对路径、父目录和符号链接逃逸会 block。
     lint: []
     # Example product-owned import boundary (do not put domain paths in generic defaults):
     # - builtin: python-import-boundaries

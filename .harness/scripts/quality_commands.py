@@ -84,13 +84,15 @@ def product_project_config(product_root: Path) -> dict[str, Any]:
     return {}
 
 
-def normalize_command(item: Any) -> tuple[str, list[str], dict[str, str]]:
+def normalize_command(item: Any) -> tuple[str, list[str], dict[str, str], str]:
     env: dict[str, str] = {}
     name = ""
+    cwd = ""
     raw = item
     if isinstance(item, dict):
         name = str(item.get("name") or "")
         env = {str(k): str(v) for k, v in (item.get("env") or {}).items()}
+        cwd = str(item.get("cwd") or "").strip()
         raw = item.get("cmd") or item.get("command") or []
     if isinstance(raw, str):
         if SHELL_CONTROL.search(raw):
@@ -104,7 +106,20 @@ def normalize_command(item: Any) -> tuple[str, list[str], dict[str, str]]:
         raise ValueError("QUALITY_COMMAND_EMPTY")
     if not name:
         name = shlex.join(argv)
-    return name, argv, env
+    return name, argv, env, cwd
+
+
+def command_cwd(product_root: Path, raw: str) -> tuple[Path | None, str | None]:
+    root = product_root.resolve()
+    value = Path(raw or ".")
+    if value.is_absolute() or ".." in value.parts:
+        return None, "QUALITY_COMMAND_UNSAFE_CWD: cwd 必须是产品根内的相对路径"
+    resolved = (root / value).resolve()
+    if resolved != root and root not in resolved.parents:
+        return None, "QUALITY_COMMAND_UNSAFE_CWD: cwd 解析后逃逸产品根"
+    if not resolved.is_dir():
+        return None, f"QUALITY_COMMAND_CWD_NOT_FOUND: {raw}"
+    return resolved, None
 
 
 def allowed_executables() -> set[str]:
@@ -183,13 +198,17 @@ def commands_for(config: dict[str, Any], kind: str) -> tuple[list[Any], dict[str
     return list(raw), env, required
 
 
-def run_command(product_root: Path, name: str, argv: list[str], extra_env: dict[str, str], timeout: int) -> dict[str, Any]:
+def run_command(product_root: Path, name: str, argv: list[str], extra_env: dict[str, str],
+                timeout: int, cwd: str = "") -> dict[str, Any]:
     env = os.environ.copy()
     env.update(extra_env)
+    working_dir, cwd_violation = command_cwd(product_root, cwd)
+    if cwd_violation:
+        return {"name": name, "argv": argv, "cwd": cwd, "ok": False, "reason": cwd_violation}
     try:
         proc = subprocess.run(
             argv,
-            cwd=product_root,
+            cwd=working_dir,
             env=env,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -207,6 +226,7 @@ def run_command(product_root: Path, name: str, argv: list[str], extra_env: dict[
     return {
         "name": name,
         "argv": argv,
+        "cwd": str(working_dir.relative_to(product_root.resolve())) if working_dir != product_root.resolve() else ".",
         "ok": proc.returncode == 0,
         "exit": proc.returncode,
         "log": " ".join(output)[:2000],
@@ -329,7 +349,7 @@ def main() -> int:
                 return 0
             continue
         try:
-            name, argv, item_env = normalize_command(item)
+            name, argv, item_env, cwd = normalize_command(item)
         except ValueError as exc:
             emit("block", str(exc), command=item)
             return 0
@@ -342,7 +362,7 @@ def main() -> int:
         if argv_violation:
             emit("block", argv_violation, command=name, argv=argv)
             return 0
-        result = run_command(layout.product_root, name, argv, merged_env, args.timeout)
+        result = run_command(layout.product_root, name, argv, merged_env, args.timeout, cwd)
         results.append(result)
         if not result["ok"]:
             emit("block", f"QUALITY_{args.kind.upper()}_FAILED: {name}", results=results)

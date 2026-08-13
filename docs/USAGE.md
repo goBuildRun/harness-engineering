@@ -189,8 +189,11 @@ quality:
         paths: [services, tests]
     test:
       - name: service scaffold unittest
+        cwd: services
         cmd: [python3, -m, unittest, discover, -s, tests]
 ```
+
+每条命令可声明产品根内的相对 `cwd`。Harness 在执行前解析真实路径并拒绝绝对路径、`..`、不存在目录及符号链接逃逸；`cwd` 不改变 argv allowlist、环境变量限制或 shell 禁令。
 
 知识沉淀目录：
 
@@ -649,7 +652,7 @@ bash .harness/scripts/browser_qa_setup.sh check
 
 Harness core 不安装或要求托管平台 workflow。GitHub 可作为普通 Git remote、代码浏览和备份通道，但不参与任务状态、commit 准入、发布资格或 Work Item 完成态。
 
-`finish` 验证当前任务并把结果写入 `result.json`。guarded 仓库在 commit 后由 `post-commit` 将该结果作为 canonical Git blob，与目标 commit 的 tree、task、policy 和 result digest 绑定，写入 `refs/harness/attestations/<commit>`；创建时会从 commit tree 重算 subject。`status` 只读验证当前 HEAD 的 attestation、result object 与 hooks，不访问网络。
+`finish` 验证当前任务并把结果写入 `result.json`，同时刷新当前 guard audit；其 `head_attestation.phase: pre-commit-head` 明确表示验证的是提交前 HEAD，而不是尚未创建的目标提交。guarded 仓库在 commit 后由 `post-commit` 将该结果作为 canonical Git blob，与目标 commit 的 tree、task、policy 和 result digest 绑定，写入 `refs/harness/attestations/<commit>`；创建时会从 commit tree 重算 subject。`status` 只读验证当前 HEAD 的 attestation、result object 与 hooks，不访问网络。
 
 attestation 是共享协议，不是新的任务完成态。local/guarded 仓库所有者仍可修改 hooks、refs 和对象，因此只能防陈旧与误操作。内部 `harness_receive.py` 读取 receive 更新集合，在 bare Git 中逐个验证受保护 ref 的全部新增 commit，并从 commit tree 重算 tier、scope、policy 与机械 code-health；范围解析失败会 fail closed，`pre-receive` 校验不修改 bare 仓库或产品 workspace。attestation ref 与 `refs/harness/results/<commit>` 只保证 canonical result Git object 可达，服务端仍重新验证其绑定。`post-receive` 仅为实际接受的 commit 签发 receipt；receipt 物化失败时 provider 因缺少有效 receipt 不能进入终态。
 

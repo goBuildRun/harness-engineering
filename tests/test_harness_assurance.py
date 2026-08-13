@@ -17,6 +17,7 @@ sys.path.insert(0, str(SCRIPTS))
 
 from harness_assurance import audit_guards, install_guards, pre_push_script  # noqa: E402
 from harness_runtime import default_result, load_result  # noqa: E402
+from harness_commands import refresh_assurance  # noqa: E402
 from harness_schema import validate_result  # noqa: E402
 
 
@@ -57,6 +58,20 @@ class HarnessAssuranceTest(unittest.TestCase):
             path.write_text(json.dumps(legacy))
             loaded = load_result(path)
         self.assertEqual(loaded["assurance"]["level"], "local")
+
+    def test_finish_assurance_refresh_reports_guarded_pre_commit_head(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            subprocess.run(["git", "init", "-q"], cwd=product, check=True)
+            install_guards(product)
+            subprocess.run(["git", "add", ".githooks"], cwd=product, check=True)
+            result = default_result("task")
+            result.update(state="validated", decision="pass")
+            refresh_assurance(result, product, "policy", phase="pre-commit-head")
+            self.assertEqual(result["assurance"]["level"], "guarded")
+            self.assertEqual(result["assurance"]["acceptance_authority"], "git-hooks")
+            self.assertEqual(result["assurance"]["head_attestation"]["phase"], "pre-commit-head")
+            self.assertTrue(result["assurance"]["bypassable"])
 
     def test_guard_install_is_repo_local_versioned_and_auditable(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

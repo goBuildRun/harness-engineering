@@ -218,3 +218,17 @@ def audit_guards(product: Path) -> dict[str, Any]:
         "bypassable": True,
         "blockers": blockers,
     }
+
+
+def refresh_result(result: dict[str, Any], product: Path, policy_digest: str, *,
+                   phase: str, verified_at: str, attestation: dict[str, Any]) -> None:
+    guards = audit_guards(product)
+    level = "guarded" if guards["level"] == "guarded" else "local"
+    result["assurance"].update(
+        level=level, acceptance_authority="git-hooks" if level == "guarded" else "worktree",
+        bypassable=True, verified_at=verified_at, blockers=guards["blockers"],
+        guard_audit=guards, head_attestation={**attestation, "phase": phase},
+    )
+    result["enforcement"] = "shadow"
+    result["enforcement_notice"] = "GUARDED" if level == "guarded" else "LOCAL_ONLY"
+    sync_task_execution(result)
