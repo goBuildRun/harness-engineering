@@ -693,7 +693,9 @@ bash .harness/scripts/harness finish demo-login-task
 
 `standard` / `strict` 命中 GC 要求而没有有效独立结果时，`finish` 返回 `GC_REQUIRED`。`gc_result.json` 必须包含 `role: gc-sweeper`、`independent: true`，并绑定当前 `task_id`、`subject_digest`、`policy_digest`；任一不匹配都不可复用。配置 `HARNESS_GC_AGENT_ARGV`（JSON argv 数组）后可自动调用一次 runner；runner 只接收任务 scope、`changed_since_baseline` 文件的真实 patch/新增文件内容、变更文件列表、一层直接依赖、触发信号、限制和结果契约。上下文超过 `HARNESS_GC_CONTEXT_MAX_CHARS`（默认 200000）或超过一次 Agent 调用预算都返回 `BUDGET_APPROVAL_REQUIRED`，不会静默截断或扩读全仓。
 
-GitHub required workflow 使用内部 `ci_gc_review.py` 对目标 commit 重算 tier 与 GC 信号。lite 或 standard 无信号时返回 `GC_NOT_REQUIRED`，不调用远端；需要独立 GC 时必须配置 repository secrets `HARNESS_GC_REVIEW_URL`（HTTPS）和 `HARNESS_GC_REVIEW_TOKEN`。reviewer 接收任务契约、目标 commit 相对第一父提交的 `commit^1..commit` patch、一层依赖和 subject/policy 绑定；因此 merge commit 不会因默认 diff-tree 行为漏掉实际合入内容。reviewer 返回同一 `gc_result.json` receipt；缺配置、网络失败、receipt 不匹配或上下文超预算都会让 required check fail closed。调用次数、上下文字符数和耗时写入统一 `result.json.cost.harness`。
+GitHub required workflow 使用内部 `ci_gc_review.py` 对目标 commit 重算 tier 与 GC 信号。默认不部署额外 reviewer 服务：lite 或 standard 无信号时只做机械扫描并返回 `GC_NOT_REQUIRED`；standard 命中信号或 strict 时，Actions runner 最多调用一次独立 gc-sweeper。第三方 OpenAI-compatible provider 使用 repository secret `HARNESS_GC_API_KEY`，以及 repository variables `HARNESS_GC_API_BASE`、`HARNESS_GC_MODEL`；`HARNESS_GC_API_MODE` 可设为覆盖面更广的默认值 `chat_completions` 或 `responses`。base 必须显式提供 HTTPS 地址，不会隐式访问官方 OpenAI。已有集中式服务的组织仍可配置 `HARNESS_GC_REVIEW_URL` 和 `HARNESS_GC_REVIEW_TOKEN`，该远程后端优先但不是推荐安装前提。
+
+两种后端都只接收任务契约、目标 commit 相对第一父提交的 `commit^1..commit` patch、变更文件和一层依赖，并返回同一个 subject/policy-bound `gc_result.json` receipt；因此 merge commit 不会因默认 diff-tree 行为漏掉实际合入内容。需要 Agent 而 compatible provider 的 base/key/model 与完整远程配置均不可用时返回 `GC_REVIEWER_UNAVAILABLE`；调用失败、receipt 不匹配或上下文超预算仍让 required check fail closed。调用次数、上下文字符数和耗时写入统一 `result.json.cost.harness`。
 
 workspace 兼容命令：
 

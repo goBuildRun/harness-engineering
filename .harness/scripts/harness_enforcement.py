@@ -260,6 +260,10 @@ def probe_github(product: Path, *, repository: str, branch: str,
             and "ci-check" in workflow_text
             and "Reject closed unmerged pull request" in workflow_text
             and "github.event.pull_request.merged != true" in workflow_text
+            and "pull_request.merge_commit_sha" in workflow_text
+            and "ref: ${{ env.TARGET_COMMIT }}" in workflow_text
+            and '--commit "$TARGET_COMMIT"' in workflow_text
+            and "harness-result-${{ env.TARGET_COMMIT }}" in workflow_text
         ),
         "branch_required_checks": [str(item) for item in contexts if item],
         "release_dependencies": [required_check] if release_guard else [],

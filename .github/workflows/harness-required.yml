@@ -11,12 +11,15 @@ jobs:
   harness-commit-acceptance:
     name: harness-commit-acceptance
     runs-on: ubuntu-latest
+    env:
+      TARGET_COMMIT: ${{ github.event.action == 'closed' && github.event.pull_request.merged == true && github.event.pull_request.merge_commit_sha || github.sha }}
     steps:
       - name: Reject closed unmerged pull request
         if: github.event.action == 'closed' && github.event.pull_request.merged != true
         run: exit 1
       - uses: actions/checkout@v4
         with:
+          ref: ${{ env.TARGET_COMMIT }}
           fetch-depth: 2
       - uses: actions/setup-python@v5
         with:
@@ -28,6 +31,10 @@ jobs:
         run: python3 .harness/scripts/ci_binding.py --event "$GITHUB_EVENT_PATH" --github-output "$GITHUB_OUTPUT"
       - name: Run subject-bound GC review
         env:
+          HARNESS_GC_API_KEY: ${{ secrets.HARNESS_GC_API_KEY }}
+          HARNESS_GC_API_BASE: ${{ vars.HARNESS_GC_API_BASE }}
+          HARNESS_GC_API_MODE: ${{ vars.HARNESS_GC_API_MODE }}
+          HARNESS_GC_MODEL: ${{ vars.HARNESS_GC_MODEL }}
           HARNESS_GC_REVIEW_URL: ${{ secrets.HARNESS_GC_REVIEW_URL }}
           HARNESS_GC_REVIEW_TOKEN: ${{ secrets.HARNESS_GC_REVIEW_TOKEN }}
           TASK_ID: ${{ steps.binding.outputs.task_id }}
@@ -36,7 +43,7 @@ jobs:
         run: |
           python3 .harness/scripts/ci_gc_review.py \
             --harness-root "$GITHUB_WORKSPACE" --product-root "$GITHUB_WORKSPACE" \
-            --task-id "$TASK_ID" --commit "$GITHUB_SHA" --tier "$TASK_TIER" \
+            --task-id "$TASK_ID" --commit "$TARGET_COMMIT" --tier "$TASK_TIER" \
             --scope "$TASK_SCOPE" --output gc-result.json | tee gc-review-output.json
           python3 -c "import json; d=json.load(open('gc-review-output.json')); assert d['decision']=='pass', d"
       - name: Evaluate target commit
@@ -49,7 +56,7 @@ jobs:
           if [ -s gc-result.json ]; then GC_ARGS="--gc-result gc-result.json"; fi
           python3 .harness/scripts/harness_runtime.py \
             --product-root "$GITHUB_WORKSPACE" ci-check \
-            --task-id "$TASK_ID" --commit "$GITHUB_SHA" \
+            --task-id "$TASK_ID" --commit "$TARGET_COMMIT" \
             --tier "$TASK_TIER" --scope "$TASK_SCOPE" \
             $GC_ARGS \
             --output harness-result.json | tee harness-result-output.json
@@ -58,6 +65,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: harness-result-${{ github.sha }}
+          name: harness-result-${{ env.TARGET_COMMIT }}
           path: harness-result.json
           if-no-files-found: warn

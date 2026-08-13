@@ -88,7 +88,7 @@ class CiGcReviewTest(unittest.TestCase):
             with patch.dict(os.environ, {}, clear=True):
                 result = review(args)
             self.assertEqual(result["decision"], "block")
-            self.assertEqual(result["reason"], "GC_REVIEW_CONFIG_MISSING")
+            self.assertEqual(result["reason"], "GC_REVIEWER_UNAVAILABLE")
             (product / "notes.md").write_text("docs only\n")
             subprocess.run(["git", "add", "."], cwd=product, check=True)
             subprocess.run(["git", "commit", "-qm", "docs"], cwd=product, check=True)
@@ -100,6 +100,81 @@ class CiGcReviewTest(unittest.TestCase):
                 lite = review(args)
             self.assertEqual(lite["decision"], "pass")
             self.assertFalse(lite["required"])
+
+    def test_compatible_runner_defaults_to_chat_completions_and_binds_receipt(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = self._repo(Path(tmp))
+            sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=product, text=True).strip()
+            captured = {}
+
+            def respond(request, **_kwargs):
+                captured["url"] = request.full_url
+                captured["body"] = json.loads(request.data)
+                return Response({"choices": [{"message": {"content": json.dumps({
+                    "decision": "pass", "findings": 0, "remediated": 0,
+                    "deferred_findings": 0, "deferred_work_items": [],
+                    "triggers": ["dead-code"],
+                })}}]})
+
+            args = type("Args", (), {
+                "product_root": str(product), "harness_root": str(ROOT),
+                "task_id": "task-openai", "commit": sha, "tier": "standard", "scope": ["."],
+            })()
+            with patch.dict(os.environ, {
+                "HARNESS_GC_API_BASE": "https://compatible.example/v1",
+                "HARNESS_GC_API_KEY": "test-key", "HARNESS_GC_MODEL": "test-model",
+            }, clear=True), patch("urllib.request.urlopen", side_effect=respond):
+                result = review(args)
+            self.assertEqual(result["decision"], "pass")
+            self.assertEqual(result["role"], "gc-sweeper")
+            self.assertTrue(result["independent"])
+            self.assertEqual(result["subject_digest"], sha)
+            self.assertEqual(captured["url"], "https://compatible.example/v1/chat/completions")
+            self.assertEqual(captured["body"]["model"], "test-model")
+            self.assertEqual(captured["body"]["response_format"], {"type": "json_object"})
+            self.assertIn("unused_helper", captured["body"]["messages"][1]["content"])
+
+    def test_bound_gc_block_is_not_misreported_as_invalid_receipt(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = self._repo(Path(tmp))
+            sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=product, text=True).strip()
+
+            def respond(_request, **_kwargs):
+                return Response({"choices": [{"message": {"content": json.dumps({
+                    "decision": "block", "findings": 1, "remediated": 0,
+                    "deferred_findings": 0, "deferred_work_items": [],
+                    "triggers": ["dead-code"],
+                })}}]})
+
+            args = type("Args", (), {
+                "product_root": str(product), "harness_root": str(ROOT),
+                "task_id": "task-block", "commit": sha, "tier": "standard", "scope": ["."],
+            })()
+            with patch.dict(os.environ, {
+                "HARNESS_GC_API_BASE": "https://compatible.example/v1",
+                "HARNESS_GC_API_KEY": "test-key", "HARNESS_GC_MODEL": "test-model",
+            }, clear=True), patch("urllib.request.urlopen", side_effect=respond):
+                result = review(args)
+            self.assertEqual(result["decision"], "block")
+            self.assertEqual(result["reason"], "GC_REVIEW_BLOCKED")
+            self.assertEqual(result["findings"], 1)
+
+    def test_non_object_compatible_response_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = self._repo(Path(tmp))
+            sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=product, text=True).strip()
+            args = type("Args", (), {
+                "product_root": str(product), "harness_root": str(ROOT),
+                "task_id": "task-invalid", "commit": sha, "tier": "standard", "scope": ["."],
+            })()
+            response = Response({"choices": [{"message": {"content": "[]"}}]})
+            with patch.dict(os.environ, {
+                "HARNESS_GC_API_BASE": "https://compatible.example/v1",
+                "HARNESS_GC_API_KEY": "test-key", "HARNESS_GC_MODEL": "test-model",
+            }, clear=True), patch("urllib.request.urlopen", return_value=response):
+                result = review(args)
+            self.assertEqual(result["decision"], "block")
+            self.assertEqual(result["reason"], "GC_REVIEW_FAILED")
 
 
 if __name__ == "__main__":
