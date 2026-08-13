@@ -10,7 +10,10 @@ from typing import Any
 from harness_runtime import atomic_write_result, canonical_digest, load_result, workspace_root
 
 
-STATUS = re.compile(r"(?:当前状态|状态|status)\s*[:：]\s*([^\n\r]+)", re.IGNORECASE)
+STATUS = re.compile(
+    r"^[ \t]*(?:[-*][ \t]+)?(?:当前状态|状态|status)\s*[:：]\s*([^\n\r]+)",
+    re.IGNORECASE | re.MULTILINE,
+)
 COMPLETED = re.compile(r"^(?:已完成|完成|done|complete(?:d)?|closed)(?:\b|[（(；;，,。/ ]|$)", re.IGNORECASE)
 ACTIVE = re.compile(
     r"(?:进行中|执行中|实施中|待验收|待部署|待完成|待同步|待回写|待复测|重开|"

@@ -107,6 +107,17 @@ class HarnessMigrationTest(unittest.TestCase):
                 (False, "MIGRATION_STATUS_UNKNOWN"),
             )
 
+    def test_provider_substatus_does_not_define_task_lifecycle(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            task = product / "harness-workspace/planning/tasks/ambiguous-task"
+            task.mkdir(parents=True)
+            (task / "00-任务卡.md").write_text("- 外部系统状态：done\n")
+            (task / "planning_gate_pass.json").write_text('{"decision":"pass"}')
+            report = audit_workspace(product)
+            self.assertEqual(report["unknown_status"], ["ambiguous-task"])
+            self.assertEqual(report["legacy"], [])
+
     def test_malformed_or_failed_credentials_are_not_migration_eligible(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product = Path(tmp)
