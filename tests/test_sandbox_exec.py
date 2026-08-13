@@ -12,7 +12,8 @@ from pathlib import Path
 SCRIPTS = Path(__file__).resolve().parents[1] / ".harness" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
-from sandbox_exec import run_remote  # noqa: E402
+from sandbox_exec import docker_command, run_remote  # noqa: E402
+from sandbox_acceptance import accept  # noqa: E402
 
 
 class Response:
@@ -30,6 +31,22 @@ class Response:
 
 
 class SandboxExecTest(unittest.TestCase):
+    def test_docker_command_mounts_cwd_disables_network_and_preserves_argv(self) -> None:
+        cwd = Path("/tmp/product root")
+        argv = ["python3", "-c", "print('ok')", "value with spaces", "$literal"]
+        with patch.dict(os.environ, {}, clear=True):
+            command = docker_command(argv, cwd)
+        self.assertEqual(command[0:5], ["docker", "run", "--rm", "--network", "none"])
+        self.assertIn(f"{cwd}:/workspace", command)
+        self.assertEqual(command[-len(argv):], argv)
+
+    def test_live_acceptance_fails_if_any_probe_breaks(self) -> None:
+        with patch("sandbox_acceptance.run_probe", side_effect=[(True, ""), (False, "connected"), (True, "")]):
+            result = accept(Path("/tmp/product"), 10)
+        self.assertEqual(result["decision"], "block")
+        self.assertEqual(result["probes"][1]["name"], "network-isolated")
+        self.assertEqual(result["probes"][1]["decision"], "block")
+
     def remote_env(self) -> dict[str, str]:
         return {
             "HARNESS_SANDBOX_REMOTE_URL": "https://executor.example.invalid/v1/run",

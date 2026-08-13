@@ -483,6 +483,12 @@ bash .harness/scripts/run_in_sandbox.sh 'python3 -m unittest discover -s tests'
 
 Docker 后端默认 `HARNESS_SANDBOX_DOCKER_NETWORK=none`，并把当前解析出的 product 根挂载到容器 `/workspace`。远程执行器使用同一入口：设置 `HARNESS_SANDBOX_BACKEND=remote`、HTTPS `HARNESS_SANDBOX_REMOTE_URL`、`HARNESS_SANDBOX_WORKSPACE_REF`、`HARNESS_SANDBOX_REMOTE_TOKEN` 和可选 `HARNESS_SANDBOX_SUBJECT_DIGEST`。客户端只发送 JSON argv 与 workspace ref，不发送 shell 字符串或本机目录；返回 subject 不匹配时 fail closed。remote 协议已接入，但 Firecracker/远程 executor 实机隔离仍需部署验证。
 
+首次启用 Docker backend 或更换 Docker/image 配置后，可运行显式环境验收。该验收检查产品根可见、默认网络隔离和 argv 边界；它依赖本机 Docker，因此不进入默认 `validate_harness`：
+
+```bash
+python3 .harness/scripts/sandbox_acceptance.py --cwd "$PWD"
+```
+
 ### 5.3 调试纪律
 
 ```bash

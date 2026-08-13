@@ -84,10 +84,10 @@ def run_controlled(argv: list[str], cwd: Path, timeout: int) -> tuple[bool, str]
     return True, "CONTROLLED_EXEC_SUCCESS: argv 受控命令执行成功（非容器隔离）"
 
 
-def run_docker(argv: list[str], cwd: Path, timeout: int) -> tuple[bool, str]:
+def docker_command(argv: list[str], cwd: Path) -> list[str]:
     image = os.environ.get("HARNESS_SANDBOX_IMAGE") or "python:3.11-slim"
     network = os.environ.get("HARNESS_SANDBOX_DOCKER_NETWORK") or "none"
-    docker_argv = [
+    return [
         "docker",
         "run",
         "--rm",
@@ -100,6 +100,12 @@ def run_docker(argv: list[str], cwd: Path, timeout: int) -> tuple[bool, str]:
         image,
         *argv,
     ]
+
+
+def run_docker(argv: list[str], cwd: Path, timeout: int) -> tuple[bool, str]:
+    docker_argv = docker_command(argv, cwd)
+    image = docker_argv[9]
+    network = docker_argv[4]
     print(f"[DockerSandbox] image={image} network={network} cwd={cwd} 执行: {shlex.join(argv)}", file=sys.stderr)
     try:
         proc = subprocess.run(

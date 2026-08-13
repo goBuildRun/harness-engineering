@@ -79,6 +79,7 @@ required_files:
   - .harness/scripts/work_item_teambition_support.py
   - .harness/scripts/ci_binding.py
   - .harness/scripts/sandbox_exec.py
+  - .harness/scripts/sandbox_acceptance.py
   - .harness/scripts/browser_qa.py
   - .harness/scripts/browser_scenarios.py
   - .harness/scripts/browser_qa_setup.py
