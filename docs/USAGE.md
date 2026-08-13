@@ -698,6 +698,7 @@ workspace 兼容命令：
 bash .harness/scripts/harness workspace audit
 bash .harness/scripts/harness migrate-task <task-id> --reason '<复核原因>'
 bash .harness/scripts/harness amend-task <task-id> --scope <path> --reason '<修订原因>'
+bash .harness/scripts/harness usage-baseline <task-id> --reason '<忽略此前用量的明确原因>'
 ```
 
 `migrate-task` 只接受 audit 已归入 `needs_migration` 的进行中、且拥有 Planning Gate 凭证的任务。已完成 legacy、缺凭证或不存在的任务分别返回 `COMPLETED_LEGACY_MIGRATION_FORBIDDEN`、`MIGRATION_CREDENTIAL_MISSING`、`MIGRATION_TASK_NOT_FOUND`，且不得创建 runs 或 baseline；已有 `result.json` 仅允许兼容身份修复，不批量重写历史 workspace。

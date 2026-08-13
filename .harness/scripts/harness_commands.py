@@ -17,6 +17,8 @@ from harness_attestation import verify_attestation
 from harness_cache import executed_check, reuse_check, tool_digest
 from harness_gates import checks_for_tier, committed_work_item, run_gate_plan
 from harness_telemetry import apply_automatic_usage, apply_gc_telemetry, apply_usage_receipt, enforce_budget
+from codex_usage_receipt import automatic_receipt
+from harness_usage_ledger import apply_story_usage, capture_usage_baseline
 from harness_runtime import (
     active_task_path, apply_code_health, atomic_write_result,
     canonical_digest, classify_tier, default_result, task_kind_tier,
@@ -80,6 +82,9 @@ def cmd_start(args: argparse.Namespace) -> int:
     result["binding_digest"] = canonical_digest(binding)
     result["invariants"]["task_identity"] = "pass"
     result["task"] = binding
+    capture_usage_baseline(
+        result, automatic_receipt(task_id, result["subject"]["digest"], result["policy_digest"]),
+    )
     if initial == "lite":
         binding_path = workspace_root(product) / "planning" / "tasks" / task_id / "task.json"
         binding_path.parent.mkdir(parents=True, exist_ok=True)
@@ -141,6 +146,38 @@ def cmd_amend(args: argparse.Namespace) -> int:
         check["stale"] = True
     atomic_write_result(path, result)
     dump_json({"decision": "pass", "reason": "TASK_BINDING_AMENDED", "result": result})
+    return 0
+
+
+def cmd_usage_baseline(args: argparse.Namespace) -> int:
+    product, harness = Path(args.product_root).resolve(), Path(args.harness_root).resolve()
+    path = result_path(product, args.task_id)
+    reason = str(args.reason or "").strip()
+    if not path.is_file():
+        dump_json({"decision": "block", "reason": "TASK_NOT_FOUND"})
+        return 0
+    if not reason:
+        dump_json({"decision": "block", "reason": "USAGE_BASELINE_REASON_REQUIRED"})
+        return 0
+    result = load_result(path)
+    changed = changed_since_baseline(product, path.parent / "worktree_baseline.json")
+    subject = subject_for(product, changed)
+    policy = policy_for(harness, product)
+    receipt = automatic_receipt(args.task_id, subject, policy)
+    if receipt is None:
+        dump_json({"decision": "block", "reason": "USAGE_BASELINE_ENDPOINT_MISSING"})
+        return 0
+    previous = result.get("cost", {}).get("story_usage_baseline")
+    if previous:
+        result.setdefault("cost", {}).setdefault("story_usage_baseline_revisions", []).append({
+            "replaced_at": now(), "reason": reason, "previous": previous,
+        })
+    capture_usage_baseline(result, receipt)
+    result["cost"]["story_usage_baseline_reason"] = reason
+    result["cost"].pop("story", None)
+    atomic_write_result(path, result)
+    dump_json({"decision": "pass", "reason": "USAGE_BASELINE_CAPTURED",
+               "baseline": result["cost"]["story_usage_baseline"]})
     return 0
 
 
@@ -315,6 +352,8 @@ def cmd_finish(args: argparse.Namespace) -> int:
     result["cost"]["harness"]["gate_duration_ms"] += int((time.monotonic() - started) * 1000)
     apply_automatic_usage(result, task_id=task_id, subject_digest=subject,
                           policy_digest=result["policy_digest"])
+    receipt = automatic_receipt(task_id, subject, result["policy_digest"])
+    apply_story_usage(result, receipt)
     enforce_budget(result)
     finalize(result, finish_decision)
     refresh_assurance(result, product, result["policy_digest"], phase="pre-commit-head")

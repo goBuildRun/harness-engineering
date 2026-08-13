@@ -6,7 +6,7 @@ import argparse
 import os
 from pathlib import Path
 
-from harness_commands import cmd_amend, cmd_ci_check, cmd_finish, cmd_start, cmd_status
+from harness_commands import cmd_amend, cmd_ci_check, cmd_finish, cmd_start, cmd_status, cmd_usage_baseline
 from harness_assurance import create_bootstrap
 from harness_migration_commands import cmd_audit, cmd_migrate
 from harness_runtime import TIERS
@@ -40,6 +40,9 @@ def build_parser() -> argparse.ArgumentParser:
     amend.add_argument("--scope", action="append", required=True)
     amend.add_argument("--reason", required=True)
     amend.add_argument("--kind", choices=("implementation", "debt-maintenance", "scope-change", "hotfix", "harness-maintenance"), default="")
+    usage = sub.add_parser("usage-baseline")
+    usage.add_argument("task_id")
+    usage.add_argument("--reason", required=True)
     bootstrap = sub.add_parser("bootstrap-guarded")
     bootstrap.add_argument("--task-id", required=True)
     bootstrap.add_argument("--reason", required=True)
@@ -58,6 +61,7 @@ def main() -> int:
     handlers = {
         "start": cmd_start, "status": cmd_status, "finish": cmd_finish,
         "workspace": cmd_audit, "migrate-task": cmd_migrate, "amend-task": cmd_amend,
+        "usage-baseline": cmd_usage_baseline,
         "ci-check": cmd_ci_check,
     }
     if args.command == "bootstrap-guarded":
