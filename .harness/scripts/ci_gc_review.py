@@ -166,9 +166,13 @@ def review(args: argparse.Namespace) -> dict:
     receipt["telemetry"] = {"context_chars": context_chars,
                              "duration_ms": int((time.monotonic() - started) * 1000),
                              "agent_calls": 1}
-    if not valid_gc_result(receipt, result, sha, policy):
+    identity_probe = dict(receipt, decision="pass")
+    if receipt.get("decision") not in {"pass", "block"} or not valid_gc_result(
+            identity_probe, result, sha, policy):
         return {"decision": "block", "reason": "GC_REVIEW_RECEIPT_INVALID",
                 "subject_digest": sha}
+    if receipt["decision"] == "block":
+        receipt["reason"] = "GC_REVIEW_BLOCKED"
     return receipt
 
 

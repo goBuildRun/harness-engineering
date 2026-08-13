@@ -134,6 +134,31 @@ class CiGcReviewTest(unittest.TestCase):
             self.assertEqual(captured["body"]["response_format"], {"type": "json_object"})
             self.assertIn("unused_helper", captured["body"]["messages"][1]["content"])
 
+    def test_bound_gc_block_is_not_misreported_as_invalid_receipt(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = self._repo(Path(tmp))
+            sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=product, text=True).strip()
+
+            def respond(_request, **_kwargs):
+                return Response({"choices": [{"message": {"content": json.dumps({
+                    "decision": "block", "findings": 1, "remediated": 0,
+                    "deferred_findings": 0, "deferred_work_items": [],
+                    "triggers": ["dead-code"],
+                })}}]})
+
+            args = type("Args", (), {
+                "product_root": str(product), "harness_root": str(ROOT),
+                "task_id": "task-block", "commit": sha, "tier": "standard", "scope": ["."],
+            })()
+            with patch.dict(os.environ, {
+                "HARNESS_GC_API_BASE": "https://compatible.example/v1",
+                "HARNESS_GC_API_KEY": "test-key", "HARNESS_GC_MODEL": "test-model",
+            }, clear=True), patch("urllib.request.urlopen", side_effect=respond):
+                result = review(args)
+            self.assertEqual(result["decision"], "block")
+            self.assertEqual(result["reason"], "GC_REVIEW_BLOCKED")
+            self.assertEqual(result["findings"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()
