@@ -15,6 +15,8 @@ from typing import Any
 
 from harness_attestation import verify_attestation
 from harness_gates import run_gate_plan
+from harness_gc_context import build_gc_context
+from harness_gc_receipt import verify_receipt as verify_gc_receipt
 from harness_output import dump_json
 from harness_runtime import classify_tier, git_changed, mechanical_code_health, policy_for
 from harness_scope import paths_within_scope
@@ -106,7 +108,8 @@ def _checkout_commit(repo: Path, commit: str, destination: Path) -> None:
     )
 
 
-def verify_commit(repo: Path, harness: Path, commit: str) -> dict[str, Any]:
+def verify_commit(repo: Path, harness: Path, commit: str, *,
+                  gc_allowed_signers: Path | None = None) -> dict[str, Any]:
     attested = verify_attestation(repo, commit=commit)
     if attested.get("decision") != "pass":
         return {"decision": "block", "reason": "RECEIVE_ATTESTATION_INVALID", "commit": commit,
@@ -142,8 +145,23 @@ def verify_commit(repo: Path, harness: Path, commit: str) -> dict[str, Any]:
         if health["decision"] != "pass":
             return {"decision": "block", "reason": "RECEIVE_CODE_HEALTH_BLOCK", "commit": commit}
         if health.get("agent_required"):
-            return {"decision": "block", "reason": "RECEIVE_GC_AUTHORITY_REQUIRED",
-                    "commit": commit, "triggers": health.get("triggers", [])}
+            if gc_allowed_signers is None:
+                return {"decision": "block", "reason": "RECEIVE_GC_AUTHORITY_REQUIRED",
+                        "commit": commit, "triggers": health.get("triggers", [])}
+            try:
+                context, _ = build_gc_context(
+                    result, health, changed, checkout, base_ref="HEAD^",
+                )
+            except ValueError:
+                return {"decision": "block", "reason": "BUDGET_APPROVAL_REQUIRED",
+                        "commit": commit}
+            gc = verify_gc_receipt(
+                repo, commit=commit, task_id=str(result.get("task_id") or ""),
+                policy_digest=policy, context=context, triggers=health.get("triggers", []),
+                allowed_signers=gc_allowed_signers,
+            )
+            if gc["decision"] != "pass":
+                return {"decision": "block", "reason": gc["reason"], "commit": commit}
         gates = run_gate_plan(
             harness, checkout, tier=effective, subject_digest=commit, policy_digest=policy,
             ci_task_id=str(result.get("task_id") or ""), changed_files=changed, read_only=True,
@@ -160,7 +178,8 @@ def verify_commit(repo: Path, harness: Path, commit: str) -> dict[str, Any]:
 
 
 def verify_updates(repo: Path, harness: Path, updates: list[tuple[str, str, str]], *,
-                   protected_refs: tuple[str, ...] = ("refs/heads/main",)) -> dict[str, Any]:
+                   protected_refs: tuple[str, ...] = ("refs/heads/main",),
+                   gc_allowed_signers: Path | None = None) -> dict[str, Any]:
     verified: list[dict[str, Any]] = []
     for old, new, ref in updates:
         if ref not in protected_refs:
@@ -177,7 +196,7 @@ def verify_updates(repo: Path, harness: Path, updates: list[tuple[str, str, str]
             return {"decision": "block", "reason": "RECEIVE_RANGE_INVALID", "ref": ref,
                     "verified_commits": verified}
         for commit in commits:
-            outcome = verify_commit(repo, harness, commit)
+            outcome = verify_commit(repo, harness, commit, gc_allowed_signers=gc_allowed_signers)
             if outcome["decision"] != "pass":
                 return {**outcome, "ref": ref, "verified_commits": verified}
             outcome["ref"] = ref
@@ -187,9 +206,11 @@ def verify_updates(repo: Path, harness: Path, updates: list[tuple[str, str, str]
 
 
 def accept_updates(repo: Path, harness: Path, updates: list[tuple[str, str, str]], *,
-                   signing_key: Path, protected_refs: tuple[str, ...] = ("refs/heads/main",)
+                   signing_key: Path, protected_refs: tuple[str, ...] = ("refs/heads/main",),
+                   gc_allowed_signers: Path | None = None,
                    ) -> dict[str, Any]:
-    outcome = verify_updates(repo, harness, updates, protected_refs=protected_refs)
+    outcome = verify_updates(repo, harness, updates, protected_refs=protected_refs,
+                             gc_allowed_signers=gc_allowed_signers)
     if outcome["decision"] != "pass":
         return outcome
     bindings: list[tuple[dict[str, Any], str, str]] = []
@@ -232,6 +253,7 @@ def main() -> int:
     parser.add_argument("--protected-ref", action="append", default=[])
     parser.add_argument("--signing-key", default="")
     parser.add_argument("--receipt-dir", default="")
+    parser.add_argument("--gc-allowed-signers", default="")
     args = parser.parse_args()
     try:
         updates = parse_updates(sys.stdin)
@@ -249,6 +271,7 @@ def main() -> int:
             outcome = accept_updates(
                 repo, harness, updates, signing_key=Path(args.signing_key),
                 protected_refs=configured,
+                gc_allowed_signers=Path(args.gc_allowed_signers) if args.gc_allowed_signers else None,
             )
             if outcome["decision"] == "pass":
                 receipt_dir = Path(args.receipt_dir)
@@ -269,7 +292,10 @@ def main() -> int:
                     finally:
                         temporary.unlink(missing_ok=True)
     else:
-        outcome = verify_updates(repo, harness, updates, protected_refs=configured)
+        outcome = verify_updates(
+            repo, harness, updates, protected_refs=configured,
+            gc_allowed_signers=Path(args.gc_allowed_signers) if args.gc_allowed_signers else None,
+        )
     dump_json(outcome)
     return 0 if outcome["decision"] == "pass" else 1
 

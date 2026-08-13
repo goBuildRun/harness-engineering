@@ -30,12 +30,13 @@ set -euo pipefail
 REPO="$(pwd -P)"
 HARNESS_ROOT="$(git config --local --get harness.enforcedRoot)"
 PROTECTED_REFS="$(git config --local --get harness.protectedRefs)"
+ALLOWED_SIGNERS="$(git config --local --get harness.acceptanceAllowedSigners || true)"
 SIGNING_KEY="$(git config --local --get harness.acceptanceSigningKey || true)"
 RECEIPT_DIR="$(git config --local --get harness.acceptanceReceiptDir || true)"
 [[ -n "$HARNESS_ROOT" && -n "$PROTECTED_REFS" ]] || {{ echo 'HARNESS_ENFORCED_CONFIG_MISSING' >&2; exit 1; }}
 {f'[[ -f "$SIGNING_KEY" && -d "$RECEIPT_DIR" ]] || {{ echo \'HARNESS_ACCEPTANCE_CONFIG_MISSING\' >&2; exit 1; }}' if post else ''}
 HARNESS_PROTECTED_REFS="$PROTECTED_REFS" python3 "$HARNESS_ROOT/.harness/scripts/harness_receive.py" \\
-  --repo "$REPO" --harness-root "$HARNESS_ROOT"{extra}
+  --repo "$REPO" --harness-root "$HARNESS_ROOT" --gc-allowed-signers "$ALLOWED_SIGNERS"{extra}
 echo 'HARNESS_{action.upper().replace('-', '_')}_PASS' >&2
 '''
 

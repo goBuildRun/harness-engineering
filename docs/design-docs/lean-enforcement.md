@@ -1,6 +1,6 @@
 # Harness 精简强制执行设计
 
-> 状态：Git-native core 与受控 bare Git enforcement 已完成端到端验证；独立 authority GC receipt 仍是触发 Agent GC 的正式接收前置
+> 状态：Git-native core、受控 bare Git enforcement 与独立 authority GC receipt 已完成机械验证
 > 日期：2026-08-11
 > 适用范围：所有通过 harness-engineering 接入的产品迭代  
 > 当前命令实态仍以 [USAGE.md](../USAGE.md) 为准。
@@ -274,7 +274,7 @@ harness migrate-task <task-id>
 
 ## 11. 成功判定
 
-当前实施按 [Git-native Harness Upgrade](../exec-plans/active/git-native-harness-upgrade.md) 的 Epic/Story 顺序推进。bare receive verifier、SSH acceptance receipt、受控安装与 audit 已用真实 Git push 验证拒绝、接受、签发和 provider 消费。三遍信任边界审核进一步确认：receive authority 必须重跑 gates，且不能信任客户端自报的独立 GC 结果；当前一旦触发 Agent GC 会 fail closed。独立 GC receipt 尚未纳入 authority SSH 信任链，因此框架 enforced 能力当前只覆盖无该信号的 commit，不能宣称所有 execution tier 已闭合。
+当前实施按 [Git-native Harness Upgrade](../exec-plans/active/git-native-harness-upgrade.md) 的 Epic/Story 顺序推进。bare receive verifier、SSH acceptance receipt、受控安装与 audit 已用真实 Git push 验证拒绝、接受、签发和 provider 消费。receive authority 会重跑 gates，不信任客户端自报的独立 GC 结果；触发 Agent GC 时，必须提供 `harness-gc-review` namespace 签名、commit/task/policy/context/triggers/telemetry 完整绑定且 Agent 调用次数为一的 receipt。GC 与 acceptance 共用 allowed-signers trust root，但可使用独立私钥。
 
 - 未经过 Harness 的变更无法获得有效 attestation、关闭 Work Item 或进入正式 ref/制品。
 - 本地伪造、复制或提交 `result.json` 不能让其他 commit 通过 verifier。

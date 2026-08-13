@@ -177,7 +177,7 @@ Harness 使用两个正交分层：`lite|standard|strict` 决定任务验证深�
 | Quality commands | 产品侧 lint/test 命令真实执行，严格模式下缺配置即 block |
 | Doc gardening | 文档链接、旧路径和信息架构约束 |
 | Final check | 发布前完整链路 |
-| Code health | `finish` 始终执行 diff 机械扫描，并按 tier/信号要求独立 gc-sweeper 结果 |
+| Code health | `finish` 始终执行 diff 机械扫描，并按 tier/信号要求独立 gc-sweeper；receive authority 只接受同一 SSH trust root 验证且重算绑定一致的 GC receipt |
 | Commit acceptance | `finish` 生成 validated result；`post-commit` 绑定 commit/tree，并原子创建 attestation ref 与 canonical result-object ref；两者只是 Git 对象可达性索引，不是平行任务状态 |
 | Enforcement audit | 验证目标 remote/ref 或发布入口安装接收端 verifier、强制逐 commit 重验，并持有独立签名私钥 |
 | Provider lifecycle | 本地最多 ready/review；终态校验受控接受点签名且未过期的 acceptance receipt，签名信任根支持多公钥轮换 |

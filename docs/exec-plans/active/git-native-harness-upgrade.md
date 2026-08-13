@@ -74,7 +74,7 @@ Implementation note: 内部 `harness_enforced.py` 为受控 bare Git 安装和�
 
 ### E1-S4 Authority-trusted GC receipts
 
-Status: in-progress
+Status: completed (2026-08-13)
 
 Acceptance criteria:
 
@@ -83,6 +83,8 @@ Acceptance criteria:
 - GC receipt 必须绑定 commit、task、policy、触发信号、上下文摘要和 Agent telemetry，并纳入与 acceptance receipt 相同的 SSH trust root。
 - strict 缺 receipt、receipt 被篡改、跨 commit/policy 复用或 Agent 调用超过一次均阻断。
 - 完成前，enforced 只能声明覆盖无 GC Agent 信号的 commit；不得声称所有 execution tier 已闭合。
+
+Implementation note: `harness_gc_receipt.py` 使用独立 `harness-gc-review` SSH namespace 签署最小 receipt，并通过 `refs/harness/gc/<commit>` 传输。receive authority 从目标 commit 重建受限 context，重算 context digest 和 triggers，校验 task/policy/telemetry，且只允许一次 Agent 调用。GC reviewer 可使用独立私钥，其公钥与 acceptance authority 一并由同一个 `allowed_signers` trust root 管理。
 
 ## Epic 2: Lightweight Adoption And Migration
 

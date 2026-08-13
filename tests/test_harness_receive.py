@@ -14,8 +14,10 @@ SCRIPTS = ROOT / ".harness" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 from harness_attestation import create_attestation  # noqa: E402
+from harness_gc_context import build_gc_context  # noqa: E402
+from harness_gc_receipt import build_receipt, store_receipt  # noqa: E402
 from harness_receive import accept_updates, commits_for_update, verify_updates  # noqa: E402
-from harness_runtime import default_result, policy_for  # noqa: E402
+from harness_runtime import default_result, mechanical_code_health, policy_for  # noqa: E402
 from provider_lifecycle import validate_receipt  # noqa: E402
 
 
@@ -177,6 +179,33 @@ class HarnessReceiveTest(unittest.TestCase):
             create_attestation(repo, result, commit=new)
             outcome = verify_updates(repo, ROOT, [(old, new, "refs/heads/main")])
             self.assertEqual(outcome["reason"], "RECEIVE_GC_AUTHORITY_REQUIRED")
+
+            key, allowed = self.keys(repo)
+            mechanical = mechanical_code_health(repo, ["src/a.py"], tier="standard")
+            context_result = result | {"task": {"scope": ["src"], "tier_floor": "standard"}}
+            context, context_chars = build_gc_context(
+                context_result, mechanical, ["src/a.py"], repo, base_ref=f"{new}^",
+            )
+            gc_result = {
+                "decision": "pass", "role": "gc-sweeper", "independent": True,
+                "task_id": "receive-task", "subject_digest": new,
+                "policy_digest": result["policy_digest"], "findings": 1, "remediated": 1,
+                "deferred_work_items": [],
+                "telemetry": {"agent_calls": 1, "context_chars": context_chars, "duration_ms": 10},
+            }
+            receipt = build_receipt(
+                commit=new, task_id="receive-task", policy_digest=result["policy_digest"],
+                context=context, triggers=mechanical["triggers"], gc_result=gc_result,
+                signing_key=key,
+            )
+            store_receipt(repo, receipt)
+            with mock.patch("harness_receive.run_gate_plan", return_value={
+                "decision": "pass", "checks": {}, "missing": [],
+            }):
+                accepted = verify_updates(
+                    repo, ROOT, [(old, new, "refs/heads/main")], gc_allowed_signers=allowed,
+                )
+            self.assertEqual(accepted["decision"], "pass", accepted)
 
     def test_receive_reruns_gates_instead_of_trusting_client_checks(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

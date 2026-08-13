@@ -82,6 +82,9 @@ while read -r local_ref local_sha remote_ref remote_sha; do
     }
     ATTEST_REFS+=("refs/harness/attestations/$commit:refs/harness/attestations/$commit")
     ATTEST_REFS+=("refs/harness/results/$commit:refs/harness/results/$commit")
+    if git show-ref --verify --quiet "refs/harness/gc/$commit"; then
+      ATTEST_REFS+=("refs/harness/gc/$commit:refs/harness/gc/$commit")
+    fi
   done <<< "$COMMITS"
 done
 if (( ${#ATTEST_REFS[@]} )); then
