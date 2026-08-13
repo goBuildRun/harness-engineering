@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 
 from harness_output import dump_json
-from provider_lifecycle import build_receipt
+from provider_lifecycle import validated_result_binding
 
 
 def main() -> int:
@@ -20,15 +20,15 @@ def main() -> int:
     args = parser.parse_args()
     try:
         result = json.loads(Path(args.result).read_text(encoding="utf-8"))
-        receipt = build_receipt(
-            result, event="release", commit=args.commit,
-            repository=args.repository, run_id=args.required_run_id,
-        )
+        binding = validated_result_binding(result, commit=args.commit)
     except (OSError, json.JSONDecodeError, ValueError) as exc:
         dump_json({"decision": "block", "reason": str(exc)})
         return 1
-    receipt.update({"kind": "release-eligibility", "decision": "pass",
-                    "required_run_id": str(args.required_run_id)})
+    receipt = {
+        "schema_version": 1, "kind": "release-eligibility", "decision": "pass",
+        "repository": args.repository, "commit_sha": args.commit,
+        "required_run_id": str(args.required_run_id), **binding,
+    }
     target = Path(args.output)
     target.write_text(json.dumps(receipt, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     dump_json({"decision": "pass", "reason": "RELEASE_ELIGIBILITY_READY", "receipt": receipt})

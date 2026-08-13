@@ -54,6 +54,19 @@ class ReleaseEligibilityTest(unittest.TestCase):
         self.assertNotEqual(completed.returncode, 0)
         self.assertFalse(target.exists())
 
+    def test_lite_result_without_work_item_can_be_release_eligible(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            source, target = Path(tmp) / "result.json", Path(tmp) / "receipt.json"
+            result = self.result()
+            result["work_item"] = None
+            source.write_text(json.dumps(result))
+            completed = subprocess.run([
+                "python3", str(SCRIPT), "--result", str(source), "--commit", "a" * 40,
+                "--repository", "org/repo", "--required-run-id", "123", "--output", str(target),
+            ], text=True, stdout=subprocess.PIPE, check=False)
+            self.assertEqual(completed.returncode, 0)
+            self.assertTrue(target.is_file())
+
 
 if __name__ == "__main__":
     unittest.main()

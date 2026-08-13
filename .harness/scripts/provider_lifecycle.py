@@ -14,10 +14,8 @@ from harness_runtime import canonical_digest
 from harness_schema import validate_result
 
 
-def build_receipt(result: dict[str, Any], *, event: str, commit: str,
-                  repository: str, run_id: str) -> dict[str, Any]:
+def validated_result_binding(result: dict[str, Any], *, commit: str) -> dict[str, str]:
     issues = validate_result(result)
-    work_item = result.get("work_item") or {}
     subject = result.get("subject") or {}
     if issues:
         raise ValueError("RESULT_SCHEMA_INVALID: " + ",".join(issues))
@@ -25,21 +23,28 @@ def build_receipt(result: dict[str, Any], *, event: str, commit: str,
         raise ValueError("HARNESS_RESULT_NOT_PASS")
     if subject.get("kind") != "commit" or subject.get("digest") != commit:
         raise ValueError("HARNESS_RESULT_SUBJECT_MISMATCH")
-    if not isinstance(work_item, dict) or not work_item.get("id") or not work_item.get("provider"):
-        raise ValueError("WORK_ITEM_BINDING_MISSING")
-    if event not in {"merge", "release"}:
-        raise ValueError("LIFECYCLE_EVENT_INVALID")
     task_id = str(result.get("task_id") or "")
     policy_digest = str(result.get("policy_digest") or "")
     binding_digest = str(result.get("binding_digest") or "")
     if not task_id or not policy_digest or not binding_digest:
         raise ValueError("HARNESS_RESULT_BINDING_MISSING")
+    return {"task_id": task_id, "policy_digest": policy_digest,
+            "binding_digest": binding_digest, "result_digest": canonical_digest(result)}
+
+
+def build_receipt(result: dict[str, Any], *, event: str, commit: str,
+                  repository: str, run_id: str) -> dict[str, Any]:
+    binding = validated_result_binding(result, commit=commit)
+    work_item = result.get("work_item") or {}
+    if not isinstance(work_item, dict) or not work_item.get("id") or not work_item.get("provider"):
+        raise ValueError("WORK_ITEM_BINDING_MISSING")
+    if event not in {"merge", "release"}:
+        raise ValueError("LIFECYCLE_EVENT_INVALID")
     now = datetime.now(timezone.utc)
     return {
         "schema_version": 1, "source": "live", "event": event,
         "work_item_id": str(work_item["id"]), "provider": str(work_item.get("provider") or ""),
-        "task_id": task_id, "policy_digest": policy_digest, "binding_digest": binding_digest,
-        "result_digest": canonical_digest(result),
+        **binding,
         "commit_sha": commit, "repository": repository, "run_id": str(run_id),
         "required_check": "harness-commit-acceptance", "check_status": "success",
         "probed_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
