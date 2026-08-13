@@ -106,7 +106,7 @@
 | HDC-004 | 强沙箱 | `run_in_sandbox.sh` 已支持 controlled 与 Docker backend；Firecracker/远程隔离执行器仍是后续项 |
 | HDC-005 | 精简执行门面与结果 schema | `start/status/finish`、原子 `result.json`、tier-aware gate、assurance 快照与 commit 绑定 CI 结果已实现；`shadow|enforced` 继续作为兼容字段 |
 | HDC-006 | 成本与缓存 | implementation / harness 分项 schema、task/subject/policy-bound usage receipt、fingerprint 安全边界和 `tier` / `scope` 确定性缓存已落地；code-health、QA、GC Agent 与生产证据不缓存。真实 Agent token 注入仍待 provider adapter，未知成本继续记为 `unknown` |
-| HDC-007 | Legacy workspace 兼容 | `workspace audit` 只读分类，`migrate-task` 机械拒绝已完成 legacy、缺凭证和不存在任务；仅活动凭证任务可逐项迁移，已有结果只做身份修复，不批量改写 |
+| HDC-007 | Legacy workspace 兼容 | `workspace audit` 只读分类并单列 `unknown_status`，`migrate-task` 机械拒绝已完成 legacy、状态不明、缺凭证和不存在任务；仅明确活动且有凭证的任务可逐项迁移，已有结果只做身份修复，不批量改写 |
 | HDC-010 | 三级保障接入验收 | local/guarded schema、Git hooks、GitHub 与平台无关 HTTPS authority probe 已实现；guarded 实战和真实 enforced 接线仍待完成 |
 | HDC-011 | 能力迁移验收 | `capability_contract.py` 已将能力迁移映射的 BMAD/TDD/QA/知识/浏览器/GC/协同/CI 承载关系接入 `validate_harness`；真实 provider 生命周期仍由 HDC-003/HDC-010 跟踪 |
 

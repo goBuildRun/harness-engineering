@@ -10,18 +10,30 @@ from typing import Any
 from harness_runtime import atomic_write_result, canonical_digest, load_result, workspace_root
 
 
-COMPLETED = re.compile(
-    r"当前状态\s*[:：]\s*(?:已完成|完成|done|completed)|status\s*[:：]\s*(?:done|completed)",
+STATUS = re.compile(r"(?:当前状态|状态|status)\s*[:：]\s*([^\n\r]+)", re.IGNORECASE)
+COMPLETED = re.compile(r"^(?:已完成|完成|done|complete(?:d)?|closed)(?:\b|[（(；;，,。/ ]|$)", re.IGNORECASE)
+ACTIVE = re.compile(
+    r"(?:进行中|执行中|实施中|待验收|待部署|待完成|待同步|待回写|待复测|重开|"
+    r"active|in[-_ ]progress|reopen(?:ed)?|testing|verification|pending|awaiting)",
     re.IGNORECASE,
 )
 
 
-def task_is_completed(task_dir: Path) -> bool:
+def task_status(task_dir: Path) -> str:
     card = task_dir / "00-任务卡.md"
     try:
-        return bool(COMPLETED.search(card.read_text(encoding="utf-8", errors="ignore")))
+        body = card.read_text(encoding="utf-8", errors="ignore")
     except OSError:
-        return False
+        return "unknown"
+    match = STATUS.search(body)
+    if not match:
+        return "unknown"
+    value = match.group(1).strip().strip("`*_ ").lower()
+    if ACTIVE.search(value):
+        return "active"
+    if COMPLETED.search(value):
+        return "completed"
+    return "unknown"
 
 
 def has_valid_credential(task_dir: Path) -> bool:
@@ -39,18 +51,22 @@ def audit_workspace(product: Path) -> dict[str, list[str]]:
     tasks = workspace_root(product) / "planning" / "tasks"
     runs = workspace_root(product) / "runs" / "tasks"
     report: dict[str, list[str]] = {
-        "new_format": [], "legacy": [], "needs_migration": [], "missing_credentials": [],
+        "new_format": [], "legacy": [], "needs_migration": [],
+        "missing_credentials": [], "unknown_status": [],
     }
     if not tasks.is_dir():
         return report
     for task in sorted(path for path in tasks.iterdir() if path.is_dir() and not path.name.startswith("_")):
         task_id = task.name
+        status = task_status(task)
         if (runs / task_id / "result.json").is_file():
             report["new_format"].append(task_id)
-        elif task_is_completed(task):
+        elif status == "completed":
             report["legacy"].append(task_id)
-        elif has_valid_credential(task):
+        elif status == "active" and has_valid_credential(task):
             report["needs_migration"].append(task_id)
+        elif status == "unknown":
+            report["unknown_status"].append(task_id)
         else:
             report["missing_credentials"].append(task_id)
     return report
@@ -64,6 +80,8 @@ def migration_eligibility(product: Path, task_id: str) -> tuple[bool, str]:
         return False, "COMPLETED_LEGACY_MIGRATION_FORBIDDEN"
     if task_id in report["missing_credentials"]:
         return False, "MIGRATION_CREDENTIAL_MISSING"
+    if task_id in report["unknown_status"]:
+        return False, "MIGRATION_STATUS_UNKNOWN"
     if task_id in report["new_format"]:
         return False, "TASK_ALREADY_MIGRATED"
     return False, "MIGRATION_TASK_NOT_FOUND"

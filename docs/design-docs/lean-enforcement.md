@@ -264,7 +264,7 @@ harness workspace audit
 harness migrate-task <task-id>
 ```
 
-- `workspace audit` 只报告新格式任务、legacy 已完成任务、需要迁移的进行中任务和缺失关键凭证的任务，不修改数据。
+- `workspace audit` 只报告新格式任务、legacy 已完成任务、明确需要迁移的进行中任务、缺失关键凭证任务和 `unknown_status` 状态不明任务，不修改数据；状态不明不能凭 Planning 凭证推断为活动态。
 - `migrate-task` 只面向进行中或明确重开的任务。存在可靠旧 baseline 时沿用；不存在时以迁移时 merge-base/工作区建立新 baseline，记录 `baseline_source: migration`，废弃旧缓存并至少按 `standard` 完整验证，禁止声称恢复了不存在的历史 baseline。
 - 已完成历史任务只有在审计或重开时才按需生成 `decision: historical` 的只读结果。
 

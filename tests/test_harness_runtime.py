@@ -100,6 +100,7 @@ class HarnessRuntimeTest(unittest.TestCase):
             task_id = "legacy-task"
             task_dir = product / "harness-workspace" / "planning" / "tasks" / task_id
             task_dir.mkdir(parents=True)
+            (task_dir / "00-任务卡.md").write_text("- 当前状态：进行中\n")
             (task_dir / "planning_gate_pass.json").write_text(json.dumps({
                 "decision": "pass",
                 "work_item": {"id": "WI-42", "provider": "jira"},
