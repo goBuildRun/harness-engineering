@@ -2,6 +2,7 @@
 """Read-only legacy workspace classification for minimal task migration."""
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 from typing import Any
@@ -23,6 +24,17 @@ def task_is_completed(task_dir: Path) -> bool:
         return False
 
 
+def has_valid_credential(task_dir: Path) -> bool:
+    for name in ("planning_gate_pass.json", "phase0_pass.json"):
+        try:
+            credential = json.loads((task_dir / name).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(credential, dict) and credential.get("decision") == "pass":
+            return True
+    return False
+
+
 def audit_workspace(product: Path) -> dict[str, list[str]]:
     tasks = workspace_root(product) / "planning" / "tasks"
     runs = workspace_root(product) / "runs" / "tasks"
@@ -37,7 +49,7 @@ def audit_workspace(product: Path) -> dict[str, list[str]]:
             report["new_format"].append(task_id)
         elif task_is_completed(task):
             report["legacy"].append(task_id)
-        elif (task / "planning_gate_pass.json").is_file() or (task / "phase0_pass.json").is_file():
+        elif has_valid_credential(task):
             report["needs_migration"].append(task_id)
         else:
             report["missing_credentials"].append(task_id)

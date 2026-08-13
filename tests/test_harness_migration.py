@@ -23,7 +23,7 @@ class HarnessMigrationTest(unittest.TestCase):
             task = product / "harness-workspace/planning/tasks/done-task"
             task.mkdir(parents=True)
             (task / "00-任务卡.md").write_text("- 当前状态：已完成\n")
-            (task / "planning_gate_pass.json").write_text("{}")
+            (task / "planning_gate_pass.json").write_text('{"decision":"pass"}')
             report = audit_workspace(product)
             self.assertEqual(report["legacy"], ["done-task"])
             self.assertEqual(report["needs_migration"], [])
@@ -34,7 +34,7 @@ class HarnessMigrationTest(unittest.TestCase):
             task = product / "harness-workspace/planning/tasks/active-task"
             task.mkdir(parents=True)
             (task / "00-任务卡.md").write_text("- 当前状态：进行中\n")
-            (task / "planning_gate_pass.json").write_text("{}")
+            (task / "planning_gate_pass.json").write_text('{"decision":"pass"}')
             self.assertEqual(audit_workspace(product)["needs_migration"], ["active-task"])
             self.assertEqual(
                 migration_eligibility(product, "active-task"),
@@ -48,7 +48,7 @@ class HarnessMigrationTest(unittest.TestCase):
             done = tasks / "done-task"
             done.mkdir(parents=True)
             (done / "00-任务卡.md").write_text("- 当前状态：已完成\n")
-            (done / "planning_gate_pass.json").write_text("{}")
+            (done / "planning_gate_pass.json").write_text('{"decision":"pass"}')
             missing = tasks / "missing-credential"
             missing.mkdir()
             (missing / "00-任务卡.md").write_text("- 当前状态：进行中\n")
@@ -65,13 +65,27 @@ class HarnessMigrationTest(unittest.TestCase):
                 "MIGRATION_TASK_NOT_FOUND",
             )
 
+    def test_malformed_or_failed_credentials_are_not_migration_eligible(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            tasks = product / "harness-workspace/planning/tasks"
+            for task_id, payload in (("malformed", "{"), ("failed", '{"decision":"block"}')):
+                task = tasks / task_id
+                task.mkdir(parents=True)
+                (task / "00-任务卡.md").write_text("- 当前状态：进行中\n")
+                (task / "planning_gate_pass.json").write_text(payload)
+                self.assertEqual(
+                    migration_eligibility(product, task_id)[1],
+                    "MIGRATION_CREDENTIAL_MISSING",
+                )
+
     def test_migrate_command_rejects_ineligible_task_without_workspace_write(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product = Path(tmp)
             task = product / "harness-workspace/planning/tasks/done-task"
             task.mkdir(parents=True)
             (task / "00-任务卡.md").write_text("- 当前状态：已完成\n")
-            (task / "planning_gate_pass.json").write_text("{}")
+            (task / "planning_gate_pass.json").write_text('{"decision":"pass"}')
             captured = []
             with mock.patch.object(harness_migration_commands, "dump_json", side_effect=captured.append):
                 harness_migration_commands.cmd_migrate(SimpleNamespace(
