@@ -1,7 +1,7 @@
 # Team Product R&D Harness 成熟度评估
 
 > 初始评估日期：2026-06-21  
-> 最近复核：2026-08-12
+> 最近复核：2026-08-13
 > 评估对象：harness-engineering `harness-engineering/` 当前实现 + product-owned `harness-workspace/`  
 > 评估口径：以资深 Harness Engineering 工程师视角，区分「框架骨架成熟度」与「生产闭环成熟度」。
 
@@ -36,8 +36,8 @@ Team Product R&D Harness 已经从 embedded 项目脚手架升级为 **harness-e
 | QA 分离 | 4.6 | `qa_sign_off` + `subagent-pr-gate` + `qa_evidence_check` | 仍需更丰富的报告语义校验 |
 | 知识沉淀 | 4.7 | knowledge/evidence 已拆分，CONTEXT/LESSONS/GROWTH 已落地；全新项目 BMAD Planning 规划、已有项目 Intake、任务 Growth 三条知识入口已区分 | 需要团队例行 review，把候选转成规则 |
 | Work Item 协同 | 4.72 | Teambition provider 已联调；飞书已补离线契约测试、token 诊断、只读任务校验、显式 smoke 创建入口和配置任务清单后的 list-mine；Jira 基础 adapter 已接入；`draft-spec → 确认 → sync-spec --assignee` 与 `bmad-work-item-v1` 同步契约已落地 | 状态回写、Webhook 与更复杂租户搜索仍需增强 |
-| CI/MR 闭环 | 4.58 | validate/doc/check/MR gate 已有，QA evidence、`quality_commands` 与可选 browser QA job 已接入，quality 执行 allowlist 已收紧 | 仍需更多语言栈命令、import-linter 与真实 MR 压测 |
-| 运行时安全 | 4.05 | 默认 controlled argv 后端已禁止 shell 控制符；Docker backend 可用且默认无网络 | Firecracker/远程隔离执行器仍未接入 |
+| CI/MR 闭环 | 4.58 | validate/doc/check/MR gate 已有；2026-08-13 GitHub live audit 确认三个 workflow 已被识别且 Actions 已启用 | 尚无真实 workflow run，`main` 未配置保护规则，仍为 shadow |
+| 运行时安全 | 4.1 | 默认 controlled argv 后端已禁止 shell 控制符；Docker acceptance 已实机验证产品根挂载、默认断网和 argv 边界 | Firecracker/远程隔离执行器仍未接入 |
 | 前端/浏览器 QA | 4.25 | `browser_qa` 不再模拟成功，默认写入产品侧 runs，支持 setup/check、CI Playwright 镜像、trace、截图和 selector/script click-test | 仍需更多交互脚本库和 report 语义规范 |
 | 业务实战覆盖 | 3.8 | 框架已准备 | 业务服务首包还未大规模压测 |
 
