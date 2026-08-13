@@ -701,7 +701,7 @@ bash .harness/scripts/harness migrate-task <task-id> --reason '<复核原因>'
 bash .harness/scripts/harness enforcement audit
 ```
 
-`migrate-task` 只接受 audit 已归入 `needs_migration` 的进行中、且拥有 Planning Gate 凭证的任务。已完成 legacy、缺凭证或不存在的任务分别返回 `COMPLETED_LEGACY_MIGRATION_FORBIDDEN`、`MIGRATION_CREDENTIAL_MISSING`、`MIGRATION_TASK_NOT_FOUND`，且不得创建 runs 或 baseline；已有 `result.json` 仅允许兼容身份修复，不批量重写历史 workspace。
+`migrate-task` 只接受 audit 已归入 `needs_migration` 的明确进行中、且拥有 Planning Gate 凭证的任务。已完成 legacy、状态缺失或无法识别、缺凭证、不存在的任务分别返回 `COMPLETED_LEGACY_MIGRATION_FORBIDDEN`、`MIGRATION_STATUS_UNKNOWN`、`MIGRATION_CREDENTIAL_MISSING`、`MIGRATION_TASK_NOT_FOUND`，且不得创建 runs 或 baseline；已有 `result.json` 仅允许兼容身份修复，不批量重写历史 workspace。`workspace audit` 将状态不明确的任务单列为 `unknown_status`，禁止根据 Planning 凭证推断其仍在进行。
 
 `enforcement audit` 默认使用 `GITHUB_TOKEN` 实时检查目标分支 required check 与远端当前 commit，并通过 Contents API 从该 commit 读取 required/release/provider workflow，禁止用本地 dirty 文件影响判断。repository 可从 GitHub HTTPS、`git@github.com:` 或 `ssh.github.com:443` remote 严格解析，也可由产品 enforcement 配置显式覆盖；非 GitHub host 不会被猜测。随后通过 Actions API 要求 release/provider 成功运行的 `head_sha` 都等于该 commit。目标分支推进后旧运行失效；Required 失败、非目标分支或非 merge 运行都会让下游 workflow 显式失败，不能用 job skip 产生可误认的成功运行。
 
