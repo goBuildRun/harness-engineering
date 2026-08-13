@@ -20,6 +20,7 @@ class ProviderLifecycleTest(unittest.TestCase):
             "decision": "pass", "state": "validated",
             "subject": {"kind": "commit", "digest": "a" * 40},
             "work_item": {"id": "WI-42", "provider": "jira"},
+            "policy_digest": "b" * 64, "binding_digest": "c" * 64,
         })
         result["invariants"] = {name: "pass" for name in result["invariants"]}
         return result
@@ -32,6 +33,11 @@ class ProviderLifecycleTest(unittest.TestCase):
         self.assertEqual(receipt["work_item_id"], "WI-42")
         self.assertEqual(receipt["commit_sha"], "a" * 40)
         self.assertEqual(receipt["check_status"], "success")
+        self.assertEqual(receipt["task_id"], "task-1")
+        self.assertEqual(receipt["policy_digest"], "b" * 64)
+        self.assertEqual(len(receipt["result_digest"]), 64)
+        for field in ("task_id", "policy_digest", "binding_digest", "result_digest"):
+            self.assertIn(f'"{field}"', (SCRIPTS / "provider_lifecycle.py").read_text())
 
     def test_stale_subject_or_missing_work_item_blocks(self) -> None:
         with self.assertRaisesRegex(ValueError, "SUBJECT_MISMATCH"):
@@ -55,6 +61,16 @@ class ProviderLifecycleTest(unittest.TestCase):
                 result, event="merge", commit="a" * 40,
                 repository="org/repo", run_id="123",
             )
+
+    def test_missing_policy_or_binding_blocks_terminal_receipt(self) -> None:
+        for field in ("policy_digest", "binding_digest"):
+            result = self.passing_result()
+            result[field] = ""
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, "BINDING_MISSING"):
+                build_receipt(
+                    result, event="merge", commit="a" * 40,
+                    repository="org/repo", run_id="123",
+                )
         result = self.passing_result()
         result["work_item"] = {"id": "WI-42", "provider": ""}
         with self.assertRaisesRegex(ValueError, "WORK_ITEM_BINDING_MISSING"):

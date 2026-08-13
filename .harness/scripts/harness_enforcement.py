@@ -87,6 +87,11 @@ def validate_lifecycle_receipt(receipt: dict[str, Any] | None, *,
         return False, "PROVIDER_LIFECYCLE_RECEIPT_INVALID: live merge/release event required"
     if data.get("work_item_id") != work_item_id:
         return False, "PROVIDER_LIFECYCLE_RECEIPT_MISMATCH: work item"
+    for field in ("task_id", "policy_digest", "binding_digest", "result_digest"):
+        value = str(data.get(field) or "")
+        if (not value or (field.endswith("digest")
+                          and (len(value) != 64 or any(char not in "0123456789abcdefABCDEF" for char in value)))):
+            return False, f"PROVIDER_LIFECYCLE_RECEIPT_INVALID: {field}"
     commit = str(data.get("commit_sha") or "")
     if len(commit) != 40 or any(char not in "0123456789abcdefABCDEF" for char in commit):
         return False, "PROVIDER_LIFECYCLE_RECEIPT_INVALID: commit SHA"

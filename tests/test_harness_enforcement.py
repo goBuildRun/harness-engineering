@@ -389,12 +389,18 @@ class EnforcementTest(unittest.TestCase):
         receipt = live_snapshot()
         receipt.update({
             "event": "merge", "work_item_id": "WI-42", "commit_sha": "a" * 40,
-            "check_status": "success",
+            "check_status": "success", "task_id": "task-1",
+            "policy_digest": "b" * 64, "binding_digest": "c" * 64,
+            "result_digest": "d" * 64,
         })
         ok, _ = validate_lifecycle_receipt(receipt, work_item_id="WI-42", ci=True)
         self.assertTrue(ok)
         self.assertFalse(validate_lifecycle_receipt(receipt, work_item_id="WI-42", ci=False)[0])
         self.assertFalse(validate_lifecycle_receipt(receipt, work_item_id="WI-99", ci=True)[0])
+        del receipt["policy_digest"]
+        self.assertFalse(validate_lifecycle_receipt(receipt, work_item_id="WI-42", ci=True)[0])
+        receipt["policy_digest"] = "z" * 64
+        self.assertFalse(validate_lifecycle_receipt(receipt, work_item_id="WI-42", ci=True)[0])
 
     def test_only_supported_ci_platform_context_is_trusted(self) -> None:
         self.assertFalse(trusted_ci_context({"CI": "true"})[0])

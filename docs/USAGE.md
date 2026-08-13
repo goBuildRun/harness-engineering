@@ -707,7 +707,7 @@ bash .harness/scripts/harness enforcement audit
 
 结构化 gate runner 按 tier 将 planning、structure、QA、knowledge、growth 和 quality 分别写入 `checks`。standard 命中 `.tsx/.jsx/.vue/.svelte/.html/.css/.scss` 或 frontend/web/ui/pages/components 路径时自动要求 `HARNESS_BROWSER_QA_URL` 并执行浏览器审计；strict 还要求 `HARNESS_STRICT_EVIDENCE` 指向绑定当前 subject、包含 browser/deployment/rollback pass 的 JSON receipt。产品可在 `quality.commands.lint` 使用 `python-import-boundaries` builtin 声明 `paths` 和 `boundaries: [{from, forbid}]`，通用默认值不内置产品目录。
 
-本地 `work_item.sh close` 默认只写 `ready_to_release`。`done`、`implemented`、`released` 等终态必须在 CI 中传入绑定 work item、merge commit SHA、成功 required run 和 merge/release event 的 `--lifecycle-receipt`；provider workflow 只消费触发它的成功 run artifact，并验证该 SHA 恰好关联一个已合并 PR。普通 Agent 调用会返回 `PROVIDER_TERMINAL_STATUS_FORBIDDEN`。
+本地 `work_item.sh close` 默认只写 `ready_to_release`。`done`、`implemented`、`released` 等终态必须在 CI 中传入绑定 work item、task ID、policy/binding/result digest、merge commit SHA、成功 required run 和 merge/release event 的 `--lifecycle-receipt`；provider workflow 只消费触发它的成功 run artifact，并验证该 SHA 恰好关联一个已合并 PR。普通 Agent 调用会返回 `PROVIDER_TERMINAL_STATUS_FORBIDDEN`。
 
 | 公开动作 | 使用者看到的结果 | 过渡期内部能力参考 |
 |----------|------------------|--------------------|
