@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import argparse
+import json
 import stat
 import subprocess
 from pathlib import Path
@@ -10,6 +12,61 @@ from typing import Any
 
 
 ASSURANCE_LEVELS = {"local", "guarded", "enforced"}
+HOOK_PATHS = (".githooks/post-commit", ".githooks/pre-commit", ".githooks/pre-push")
+
+
+def _git(product: Path, *args: str) -> str:
+    return subprocess.check_output(["git", *args], cwd=product, text=True,
+                                   stderr=subprocess.DEVNULL).strip()
+
+
+def bootstrap_path(product: Path) -> Path:
+    path = Path(_git(product, "rev-parse", "--git-path", "harness/guarded-bootstrap.json"))
+    return path if path.is_absolute() else product.resolve() / path
+
+
+def create_bootstrap(product: Path, task_id: str, reason: str) -> dict[str, Any]:
+    reason = reason.strip()
+    staged = sorted(line for line in _git(product, "diff", "--cached", "--name-only").splitlines() if line)
+    tracked_hooks = _git(product, "ls-tree", "-r", "--name-only", "HEAD", "--", ".githooks").splitlines()
+    if not task_id.strip() or not reason:
+        return {"decision": "block", "reason": "GUARDED_BOOTSTRAP_IDENTITY_REQUIRED"}
+    if tracked_hooks:
+        return {"decision": "block", "reason": "GUARDED_BOOTSTRAP_ALREADY_INSTALLED"}
+    if not set(HOOK_PATHS).issubset(staged):
+        return {"decision": "block", "reason": "GUARDED_BOOTSTRAP_HOOKS_NOT_STAGED"}
+    receipt = {
+        "schema": "harness-guarded-bootstrap-v1", "task_id": task_id.strip(),
+        "reason": reason, "parent": _git(product, "rev-parse", "HEAD"),
+        "tree": _git(product, "write-tree"), "paths": staged,
+    }
+    path = bootstrap_path(product)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(receipt, ensure_ascii=False, indent=2) + "\n")
+    path.chmod(0o600)
+    return {"decision": "pass", "reason": "GUARDED_BOOTSTRAP_CREATED", "receipt": receipt}
+
+
+def check_bootstrap(product: Path, *, consume: bool = False) -> dict[str, Any]:
+    path = bootstrap_path(product)
+    try:
+        receipt = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return {"decision": "block", "reason": "GUARDED_BOOTSTRAP_MISSING"}
+    if receipt.get("schema") != "harness-guarded-bootstrap-v1":
+        return {"decision": "block", "reason": "GUARDED_BOOTSTRAP_INVALID"}
+    if consume:
+        valid = (_git(product, "rev-parse", "HEAD^1") == receipt.get("parent")
+                 and _git(product, "rev-parse", "HEAD^{tree}") == receipt.get("tree"))
+    else:
+        staged = sorted(line for line in _git(product, "diff", "--cached", "--name-only").splitlines() if line)
+        valid = (_git(product, "rev-parse", "HEAD") == receipt.get("parent")
+                 and _git(product, "write-tree") == receipt.get("tree") and staged == receipt.get("paths"))
+    if not valid:
+        return {"decision": "block", "reason": "GUARDED_BOOTSTRAP_BINDING_MISMATCH"}
+    if consume:
+        path.unlink()
+    return {"decision": "pass", "reason": "GUARDED_BOOTSTRAP_CONSUMED" if consume else "GUARDED_BOOTSTRAP_VALID"}
 
 
 def snapshot(level: str = "local", *, blockers: list[str] | None = None) -> dict[str, Any]:
@@ -52,7 +109,15 @@ OUTPUT="$("$HARNESS_BIN" --product-root "$PRODUCT_ROOT" status 2>&1)" || {
   echo "$OUTPUT" >&2
   exit 1
 }
-python3 -c 'import json,sys; d=json.loads(sys.argv[1]); r=d.get("result",{}); ok=d.get("decision")=="pass" and r.get("decision")=="pass" and r.get("state")=="validated"; print("HARNESS_GUARD_PASS" if ok else "HARNESS_GUARD_BLOCKED", file=sys.stderr); raise SystemExit(0 if ok else 1)' "$OUTPUT"
+python3 -c 'import json,sys; d=json.loads(sys.argv[1]); r=d.get("result",{}); ok=d.get("decision")=="pass" and r.get("decision")=="pass" and r.get("state")=="validated"; raise SystemExit(0 if ok else 1)' "$OUTPUT" || {
+  python3 "$CONFIGURED_ROOT/.harness/scripts/harness_assurance.py" bootstrap-check --repo "$PRODUCT_ROOT" >/dev/null || {
+    echo 'HARNESS_GUARD_BLOCKED' >&2
+    exit 1
+  }
+  echo 'HARNESS_GUARDED_BOOTSTRAP_PASS' >&2
+  exit 0
+}
+echo 'HARNESS_GUARD_PASS' >&2
 """
 
 
@@ -99,6 +164,10 @@ echo 'HARNESS_PUSH_GUARD_PASS' >&2
 
 def post_commit_script() -> str:
     return guard_prelude() + """\
+if python3 "$CONFIGURED_ROOT/.harness/scripts/harness_assurance.py" bootstrap-consume --repo "$PRODUCT_ROOT" >/dev/null 2>&1; then
+  echo 'HARNESS_GUARDED_BOOTSTRAP_CONSUMED' >&2
+  exit 0
+fi
 ACTIVE="$PRODUCT_ROOT/harness-workspace/runs/active_task.json"
 [[ -f "$ACTIVE" ]] || exit 0
 TASK_ID="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("task_id", ""))' "$ACTIVE")"
@@ -232,3 +301,19 @@ def refresh_result(result: dict[str, Any], product: Path, policy_digest: str, *,
     result["enforcement"] = "shadow"
     result["enforcement_notice"] = "GUARDED" if level == "guarded" else "LOCAL_ONLY"
     sync_task_execution(result)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    sub = parser.add_subparsers(dest="command", required=True)
+    for name in ("bootstrap-check", "bootstrap-consume"):
+        command = sub.add_parser(name)
+        command.add_argument("--repo", required=True)
+    args = parser.parse_args()
+    outcome = check_bootstrap(Path(args.repo), consume=args.command == "bootstrap-consume")
+    print(json.dumps(outcome, ensure_ascii=False))
+    return 0 if outcome["decision"] == "pass" else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

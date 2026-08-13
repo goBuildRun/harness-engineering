@@ -15,7 +15,8 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / ".harness" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
-from harness_assurance import audit_guards, install_guards, pre_push_script  # noqa: E402
+from harness_assurance import (audit_guards, check_bootstrap, create_bootstrap,
+                               install_guards, pre_push_script)  # noqa: E402
 from harness_runtime import default_result, load_result  # noqa: E402
 from harness_commands import refresh_assurance  # noqa: E402
 from harness_schema import validate_result  # noqa: E402
@@ -98,6 +99,28 @@ class HarnessAssuranceTest(unittest.TestCase):
                 self.assertIn("HARNESS_GUARD_RUNTIME_MISSING", hook.read_text())
             subprocess.run(["git", "add", ".githooks"], cwd=product, check=True)
             self.assertEqual(audit_guards(product)["level"], "guarded")
+
+    def test_guarded_bootstrap_is_bound_to_index_and_consumed_by_commit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            subprocess.run(["git", "init", "-q"], cwd=product, check=True)
+            subprocess.run(["git", "config", "user.email", "harness@example.invalid"], cwd=product, check=True)
+            subprocess.run(["git", "config", "user.name", "Harness Test"], cwd=product, check=True)
+            (product / "base.txt").write_text("base\n")
+            subprocess.run(["git", "add", "base.txt"], cwd=product, check=True)
+            subprocess.run(["git", "commit", "-qm", "base"], cwd=product, check=True)
+            install_guards(product)
+            subprocess.run(["git", "add", ".githooks"], cwd=product, check=True)
+            created = create_bootstrap(product, "adoption-task", "install guarded hooks")
+            self.assertEqual(created["decision"], "pass")
+            self.assertEqual(check_bootstrap(product)["decision"], "pass")
+            (product / "extra.txt").write_text("extra\n")
+            subprocess.run(["git", "add", "extra.txt"], cwd=product, check=True)
+            self.assertEqual(check_bootstrap(product)["reason"], "GUARDED_BOOTSTRAP_BINDING_MISMATCH")
+            renewed = create_bootstrap(product, "adoption-task", "include reviewed extra path")
+            self.assertEqual(renewed["decision"], "pass")
+            subprocess.run(["git", "commit", "-qm", "guarded bootstrap"], cwd=product, check=True)
+            self.assertEqual(check_bootstrap(product)["reason"], "GUARDED_BOOTSTRAP_MISSING")
 
     def test_guard_audit_rejects_untracked_or_modified_hooks(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
