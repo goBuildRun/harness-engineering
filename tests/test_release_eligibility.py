@@ -14,6 +14,7 @@ SCRIPT = ROOT / ".harness/scripts/release_eligibility.py"
 sys.path.insert(0, str(SCRIPT.parent))
 
 from harness_runtime import default_result  # noqa: E402
+from release_eligibility import validate_receipt  # noqa: E402
 
 
 class ReleaseEligibilityTest(unittest.TestCase):
@@ -33,7 +34,7 @@ class ReleaseEligibilityTest(unittest.TestCase):
             source, target = Path(tmp) / "result.json", Path(tmp) / "receipt.json"
             source.write_text(json.dumps(self.result()))
             completed = subprocess.run([
-                "python3", str(SCRIPT), "--result", str(source), "--commit", "a" * 40,
+                "python3", str(SCRIPT), "build", "--result", str(source), "--commit", "a" * 40,
                 "--repository", "org/repo", "--required-run-id", "123", "--output", str(target),
             ], text=True, stdout=subprocess.PIPE, check=False)
             receipt = json.loads(target.read_text())
@@ -48,7 +49,7 @@ class ReleaseEligibilityTest(unittest.TestCase):
             source, target = Path(tmp) / "result.json", Path(tmp) / "receipt.json"
             source.write_text(json.dumps(self.result()))
             completed = subprocess.run([
-                "python3", str(SCRIPT), "--result", str(source), "--commit", "d" * 40,
+                "python3", str(SCRIPT), "build", "--result", str(source), "--commit", "d" * 40,
                 "--repository", "org/repo", "--required-run-id", "123", "--output", str(target),
             ], text=True, stdout=subprocess.PIPE, check=False)
         self.assertNotEqual(completed.returncode, 0)
@@ -61,11 +62,51 @@ class ReleaseEligibilityTest(unittest.TestCase):
             result["work_item"] = None
             source.write_text(json.dumps(result))
             completed = subprocess.run([
-                "python3", str(SCRIPT), "--result", str(source), "--commit", "a" * 40,
+                "python3", str(SCRIPT), "build", "--result", str(source), "--commit", "a" * 40,
                 "--repository", "org/repo", "--required-run-id", "123", "--output", str(target),
             ], text=True, stdout=subprocess.PIPE, check=False)
             self.assertEqual(completed.returncode, 0)
             self.assertTrue(target.is_file())
+
+    def test_consumer_verifies_target_and_result_binding(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            source, receipt = Path(tmp) / "result.json", Path(tmp) / "receipt.json"
+            source.write_text(json.dumps(self.result()))
+            subprocess.run([
+                "python3", str(SCRIPT), "build", "--result", str(source), "--commit", "a" * 40,
+                "--repository", "org/repo", "--required-run-id", "123", "--output", str(receipt),
+            ], check=True, stdout=subprocess.PIPE, text=True)
+            base = [
+                "python3", str(SCRIPT), "verify", "--receipt", str(receipt),
+                "--repository", "org/repo", "--required-run-id", "123",
+                "--task-id", "task-1", "--policy-digest", "b" * 64,
+            ]
+            valid = subprocess.run([*base, "--commit", "a" * 40], text=True,
+                                   stdout=subprocess.PIPE, check=False)
+            stale = subprocess.run([*base, "--commit", "d" * 40], text=True,
+                                   stdout=subprocess.PIPE, check=False)
+            forged = json.loads(receipt.read_text())
+            forged["result_digest"] = "z" * 64
+            receipt.write_text(json.dumps(forged))
+            invalid = subprocess.run([*base, "--commit", "a" * 40], text=True,
+                                     stdout=subprocess.PIPE, check=False)
+        self.assertEqual(valid.returncode, 0)
+        self.assertNotEqual(stale.returncode, 0)
+        self.assertNotEqual(invalid.returncode, 0)
+        valid_receipt = {
+            "schema_version": 1, "kind": "release-eligibility", "decision": "pass",
+            "repository": "org/repo", "commit_sha": "a" * 40,
+            "required_run_id": "not-a-run", "task_id": "task-1",
+            "policy_digest": "b" * 64, "binding_digest": "c" * 64,
+            "result_digest": "d" * 64,
+        }
+        self.assertEqual(
+            validate_receipt(
+                valid_receipt, repository="org/repo", commit="a" * 40,
+                required_run_id="not-a-run",
+            )[1],
+            "RELEASE_ELIGIBILITY_RUN_ID_INVALID",
+        )
 
 
 if __name__ == "__main__":

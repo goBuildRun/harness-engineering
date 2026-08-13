@@ -54,7 +54,7 @@ jobs:
           REQUIRED_RUN_ID: ${{ github.event.workflow_run.id }}
           REPOSITORY: ${{ github.repository }}
         run: |
-          python3 .harness/scripts/release_eligibility.py \
+          python3 .harness/scripts/release_eligibility.py build \
             --result harness-artifacts/harness-result.json \
             --commit "$VERIFIED_COMMIT" --repository "$REPOSITORY" \
             --required-run-id "$REQUIRED_RUN_ID" --output release-eligibility.json

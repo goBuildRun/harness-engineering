@@ -151,6 +151,7 @@ class EnforcementTest(unittest.TestCase):
             self.assertIn("steps.lifecycle.outputs.eligible != 'true'", workflow)
         self.assertIn("name: Harness Release Eligibility", release)
         self.assertIn("release_eligibility.py", release)
+        self.assertIn("release_eligibility.py build", release)
         self.assertIn("--result harness-artifacts/harness-result.json", release)
         self.assertIn("run-id: ${{ github.event.workflow_run.id }}", release)
         self.assertIn("actions/upload-artifact@v4", release)

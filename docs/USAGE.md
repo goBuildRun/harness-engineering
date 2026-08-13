@@ -655,6 +655,8 @@ Harness-Tier: lite|standard|strict
 
 `Harness Release Eligibility` 在成功 Required run 确认属于默认分支唯一 merge commit 后，只下载该 run 的 `harness-result.json`，生成并上传绑定 repository、commit SHA、required run ID、task ID、policy/binding/result digest 的 `release-eligibility.json`。该 receipt 是发布自动化或人工发布流程可消费的准入凭证；workflow 本身不创建 GitHub Release，也不能阻止拥有仓库管理权限的人手工发布。要声明 `enforced`，权威发布入口必须实际要求该凭证，并由 live audit 验证成功运行绑定当前目标 commit。
 
+真正执行发布的权威入口必须先调用内部 `release_eligibility.py verify --receipt ... --repository ... --commit ... --required-run-id ...`；知道目标任务和 policy 时同时传入 `--task-id`、`--policy-digest`。校验器会拒绝目标不匹配、缺任务身份或非十六进制 policy/binding/result digest。只检查 artifact/文件存在不构成 release enforcement。
+
 ---
 
 ## 9. 接入保障等级与目标端到端路径
