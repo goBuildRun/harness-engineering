@@ -37,6 +37,15 @@ def commit_sha(repo: Path, value: str) -> str:
         return ""
 
 
+def execution_paths(product: Path, task_id: str, changed: list[str]) -> list[str]:
+    generated = workspace_root(product) / "planning" / "tasks" / task_id / "task.json"
+    try:
+        generated_rel = str(generated.relative_to(product))
+    except ValueError:
+        generated_rel = ""
+    return [path for path in changed if path != generated_rel]
+
+
 def cmd_start(args: argparse.Namespace) -> int:
     product, harness = Path(args.product_root).resolve(), Path(args.harness_root).resolve()
     task_id = args.task_id or f"task-{uuid.uuid4().hex[:12]}"
@@ -91,10 +100,18 @@ def cmd_status(args: argparse.Namespace) -> int:
     changed = changed_since_baseline(product, baseline) if baseline.is_file() else git_changed(product)
     current_subject = subject_for(product, changed)
     current_policy = policy_for(Path(args.harness_root).resolve(), product)
-    if invalidate_if_stale(result, current_subject, current_policy):
+    attestation = verify_attestation(product, commit="HEAD", policy_digest=current_policy)
+    committed_result = attestation.get("result") or {}
+    committed_current = (
+        attestation.get("decision") == "pass"
+        and committed_result.get("task_id") == task_id
+        and result.get("state") == "validated"
+        and result.get("decision") == "pass"
+        and not changed
+    )
+    if not committed_current and invalidate_if_stale(result, current_subject, current_policy):
         atomic_write_result(path, result)
     guards = audit_guards(product)
-    attestation = verify_attestation(product, commit="HEAD", policy_digest=current_policy)
     level = "guarded" if guards["level"] == "guarded" else "local"
     result["assurance"].update(
         level=level, acceptance_authority="git-hooks" if level == "guarded" else "worktree",
@@ -130,6 +147,7 @@ def cmd_finish(args: argparse.Namespace) -> int:
         ) + 1
     task_root, baseline = path.parent, path.parent / "worktree_baseline.json"
     changed = changed_since_baseline(product, baseline) if baseline.is_file() else git_changed(product)
+    effective_changed = execution_paths(product, task_id, changed)
     tier_floor = result["tier"]["effective"]
     subject = subject_for(product, changed)
     current_policy = policy_for(harness, product)
@@ -145,7 +163,7 @@ def cmd_finish(args: argparse.Namespace) -> int:
         harness / ".harness/scripts/harness_cache.py",
     ])
     tier_fingerprint = fingerprint(
-        "tier", subject, current_policy, changed, tier_floor, tools,
+        "tier", subject, current_policy, effective_changed, tier_floor, tools,
     )
     tier_check = reuse_check(
         previous_checks.get("tier"), gate="tier", fingerprint=tier_fingerprint,
@@ -157,7 +175,7 @@ def cmd_finish(args: argparse.Namespace) -> int:
             result["cost"]["harness"].get("cache_hits") or 0
         ) + 1
     else:
-        effective = classify_tier(changed, floor=tier_floor)
+        effective = classify_tier(effective_changed, floor=tier_floor)
         tier_check = executed_check(
             decision="pass", fingerprint=tier_fingerprint,
             subject_digest=subject, policy_digest=current_policy,
@@ -168,7 +186,7 @@ def cmd_finish(args: argparse.Namespace) -> int:
     declared = set(result.get("task", {}).get("scope") or [])
     result["invariants"]["task_identity"] = "pass" if result.get("task_id") else "block"
     scope_fingerprint = fingerprint(
-        "scope", subject, current_policy, changed, sorted(declared), tools,
+        "scope", subject, current_policy, effective_changed, sorted(declared), tools,
     )
     scope_check = reuse_check(
         previous_checks.get("scope"), gate="scope", fingerprint=scope_fingerprint,
@@ -179,7 +197,7 @@ def cmd_finish(args: argparse.Namespace) -> int:
             result["cost"]["harness"].get("cache_hits") or 0
         ) + 1
     else:
-        scope_pass = bool(declared) and paths_within_scope(changed, declared)
+        scope_pass = bool(declared) and paths_within_scope(effective_changed, declared)
         scope_check = executed_check(
             decision="pass" if scope_pass else "block",
             fingerprint=scope_fingerprint, subject_digest=subject,
@@ -187,28 +205,30 @@ def cmd_finish(args: argparse.Namespace) -> int:
         )
     result["checks"]["scope"] = scope_check
     result["invariants"]["scope"] = scope_check["decision"]
-    mechanical = mechanical_code_health(product, changed, tier=effective)
-    mechanical["fingerprint"] = fingerprint("code_health", subject, result["policy_digest"], changed, effective)
+    mechanical = mechanical_code_health(product, effective_changed, tier=effective)
+    mechanical["fingerprint"] = fingerprint(
+        "code_health", subject, result["policy_digest"], effective_changed, effective)
     gc_result = invoke_gc_once(result, task_root, mechanical, changed, product) if mechanical["agent_required"] else None
     if gc_result:
         changed_after = changed_since_baseline(product, baseline) if baseline.is_file() else git_changed(product)
         subject_after = subject_for(product, changed_after)
         if subject_after != subject:
             changed, subject = changed_after, subject_after
-            effective = classify_tier(changed, floor=effective)
+            effective_changed = execution_paths(product, task_id, changed)
+            effective = classify_tier(effective_changed, floor=effective)
             result["tier"]["effective"] = effective
             result["subject"] = {"kind": "worktree", "digest": subject, "paths": changed}
             tier_fingerprint = fingerprint(
-                "tier", subject, current_policy, changed, tier_floor, tools,
+                "tier", subject, current_policy, effective_changed, tier_floor, tools,
             )
             result["checks"]["tier"] = executed_check(
                 decision="pass", fingerprint=tier_fingerprint,
                 subject_digest=subject, policy_digest=current_policy,
                 completed_at=now(), effective_tier=effective,
             )
-            scope_pass = bool(declared) and paths_within_scope(changed, declared)
+            scope_pass = bool(declared) and paths_within_scope(effective_changed, declared)
             scope_fingerprint = fingerprint(
-                "scope", subject, current_policy, changed, sorted(declared), tools,
+                "scope", subject, current_policy, effective_changed, sorted(declared), tools,
             )
             result["checks"]["scope"] = executed_check(
                 decision="pass" if scope_pass else "block",
@@ -216,9 +236,9 @@ def cmd_finish(args: argparse.Namespace) -> int:
                 policy_digest=current_policy, completed_at=now(),
             )
             result["invariants"]["scope"] = result["checks"]["scope"]["decision"]
-            mechanical = mechanical_code_health(product, changed, tier=effective)
+            mechanical = mechanical_code_health(product, effective_changed, tier=effective)
             mechanical["fingerprint"] = fingerprint(
-                "code_health", subject, result["policy_digest"], changed, effective
+                "code_health", subject, result["policy_digest"], effective_changed, effective
             )
             result["checks"].pop("tests", None)
             result["checks"].pop("structure", None)

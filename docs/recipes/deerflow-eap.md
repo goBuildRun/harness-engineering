@@ -57,4 +57,4 @@ adoption note / capability gates
 - 产品长期配置写入 `<product-root>/harness-workspace/project.yaml`。
 - 本机产品上下文优先由 `--product-root/--product-id`、`HARNESS_PRODUCT_ROOT/HARNESS_PRODUCT_ID` 或 cwd discovery 决定；`.harness/products/active-product.json` 只是默认兜底。
 - 通用脚本不得假设产品必须包含 DeerFlow、capability package 或 EAP 架构目录。
-- recipe gate 必须写入同一个任务 `result.json` 并服从 execution tier、fingerprint、成本遥测和 CI commit 绑定规则，不生成平行完成态。
+- recipe gate 必须写入同一个任务 `result.json` 并服从 execution tier、fingerprint、成本遥测和 Git attestation 绑定规则，不生成平行完成态。

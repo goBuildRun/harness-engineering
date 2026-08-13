@@ -146,6 +146,7 @@ required_files:
   - tests/test_harness_gc_context.py
   - tests/test_harness_runtime.py
   - tests/test_harness_attestation.py
+  - tests/test_git_native_contract.py
   - tests/test_harness_assurance.py
   - tests/test_harness_schema.py
   - tests/test_harness_cache.py

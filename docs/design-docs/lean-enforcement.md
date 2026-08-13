@@ -112,7 +112,7 @@ harness-workspace/runs/tasks/<task-id>/result.json
 
 `result.json` 使用任务级单写锁和“临时文件 + 原子替换”更新；中断后可恢复，多个 Agent 不得并发覆盖。它是当前任务的物化状态，不是可由开发者提交后让接受端盲信的证明。
 
-Harness core 的唯一事实源是 Git 对象库。`finish` 验证工作区后，为目标 commit 生成 canonical attestation，至少绑定 `commit SHA + tree SHA + task_id + policy_digest + result_digest + decision`，并写入 `refs/harness/attestations/<commit>`。attestation 使用共享 result schema 的稳定子集，不新增平行完成态。`status` 和接受端 verifier 只从 Git object/ref 读取并重算绑定关系；工作区 `result.json` 只是可恢复的物化视图。
+Harness core 的唯一事实源是 Git 对象库。`finish` 先验证工作区并生成 validated result；commit 后由 hook 将 canonical result 写成 Git blob，再生成绑定 `commit SHA + tree SHA + task_id + policy_digest + result object/digest + decision` 的 attestation，并写入 `refs/harness/attestations/<commit>`。`status` 和接受端 verifier 从 Git object/ref 读取并重算绑定关系；工作区 `result.json` 只是可恢复的物化视图。
 
 代码托管和 CI 不参与 Harness 生命周期。它们可以运行或展示 verifier，但接受真相始终是“目标 Git commit 拥有由相应权限边界生成的有效 attestation”；任何展示层都不得引入第二个状态机。
 
@@ -143,7 +143,7 @@ Harness core 的唯一事实源是 Git 对象库。`finish` 验证工作区后�
 1. 正式迭代绑定一个可追踪任务身份；`standard` / `strict` 使用产品 Work Item，`lite` 可使用 Harness 生成的本地任务 ID，不得无 ID 执行。
 2. 实际改动没有越过声明的产品和任务范围。
 3. 已运行与实际风险匹配的验证。
-4. `finish` 必须为目标 commit 生成有效 attestation；合并、推送或发布入口验证通过后才能接受该 commit，外部 Work Item 只能由成功接受/发布动作关闭。
+4. `finish` 必须生成有效 result，commit 后必须生成对应 attestation；受控接收或发布入口重验并签名后才能关闭外部 Work Item。
 
 人工 Gate 不能由 Agent 自行签署。未通过 `finish` 的直接编辑属于未受管变更，可以保留在工作区，但不能成为有效完成态。
 
@@ -177,7 +177,7 @@ Harness core 的唯一事实源是 Git 对象库。`finish` 验证工作区后�
 }
 ```
 
-该字段尚未落地前继续保留 `enforcement: shadow|enforced` 兼容契约：`local` 与 `guarded` 都映射为 `shadow`，只有 live audit 证明权威接受链不可绕过时才映射为 `enforced`。`shadow` 是旧协议的兼容值，不再作为面向采用者的成熟度名称。
+兼容期继续保留 `enforcement: shadow|enforced`：`local` 与 `guarded` 都映射为 `shadow`，只有受控接受端验收证明不可绕过时才映射为 `enforced`。`shadow` 不再作为面向采用者的成熟度名称。
 
 仅靠提示词、`AGENTS.md` 或操作手册不能保证遵循。目标实现使用四层控制：
 
@@ -188,7 +188,7 @@ Harness core 的唯一事实源是 Git 对象库。`finish` 验证工作区后�
 
 保障重点是“绕过后不能被接受”，而不是假设所有工具都能阻止用户直接编辑文件。
 
-“已安装”不等于 `enforced`。只有当受控 Git remote 的 `pre-receive` 或发布入口对所有进入正式 ref/制品的 commit 强制执行同一 verifier，且 provider `done` 只消费对应 acceptance attestation 时，产品才可标记 `assurance.level: enforced`。单用户完全控制的本地仓库最多是 `guarded`，因为同一用户能改 refs、hooks 和对象；这是 Git 权限边界。GitHub branch protection 仅是一种可选实现证据。
+“已安装”不等于 `enforced`。只有当受控 Git remote 的 `pre-receive` 或发布入口对所有进入正式 ref/制品的 commit 重跑 verifier/gates，使用独立密钥签发 acceptance receipt，且 provider `done` 校验该签名时，产品才可标记 `assurance.level: enforced`。单用户完全控制的本地仓库最多是 `guarded`。
 
 仓库管理员仍可能使用平台级紧急 bypass；该动作位于 Harness 本身权限边界之外，必须由平台审计记录并被视为显式例外，不能生成有效 Harness `pass`。
 
@@ -203,7 +203,7 @@ Harness core 的唯一事实源是 Git 对象库。`finish` 验证工作区后�
 - Growth 仅在发现新失败模式、架构边界、默认行为或明确技术债候选时触发。
 - 外部 Work Item 使用批量差异同步，不逐项重复 close/pull。
 - 超出 execution tier 预算时先停止自动扩张上下文或 Agent 调用，并返回 `BUDGET_APPROVAL_REQUIRED`；人工批准只能增加预算或升级 tier，不能跳过必要 gate。
-- commit verifier 对目标 commit 重算机械 GC 信号；需要独立 Agent GC 时消费由 `finish` 生成、与 task/subject/policy 绑定的 receipt，不在每个托管平台重复调用模型。可选 CI adapter 可以代执行，但不得成为 core 前提。精确调用次数、上下文字符数与耗时写入统一成本字段。
+- commit verifier 对目标 commit 重算机械 GC 信号；需要独立 Agent GC 时消费由 `finish` 生成、与 task/subject/policy 绑定的 receipt。精确调用次数、上下文字符数与耗时写入统一成本字段。
 
 成本优化不能取消四个不变式，也不能降低高风险任务的证据质量。
 
@@ -223,8 +223,8 @@ Harness core 的唯一事实源是 Git 对象库。`finish` 验证工作区后�
 1. 先为四个不变式补可执行验收测试，并记录当前任务耗时、Token、上下文和产物数量基线。
 2. 实现共享 result schema、原子状态写入和成本遥测，以 shadow mode 包装现有 `check.sh`；此阶段结果不改变当前准入判定。
 3. 让 execution tier 分类器在 shadow mode 同时读取计划与实际 diff，验证升级、未知分类和 policy digest，不先开放降本路径。
-4. 提供 `start/status/finish` 门面，`finish` 生成 commit-bound attestation；内部 verifier 可由 hooks、`pre-receive`、发布脚本或可选 CI adapter 调用。
-5. Git-native 接受链和 provider 状态流转稳定后，再删除 GitHub 专属 core 假设并启用更多可选 adapter。
+4. 提供 `start/status/finish` 门面；`finish` 生成 result，commit hook 生成 attestation，受控接受端重验并签名。
+5. Git-native 接受链和 provider 状态流转稳定后，完成受控 `pre-receive` / release gate 验收。
 6. 最后迁移活动任务，隐藏被门面替代的 Agent 可见命令链，并删除冗余证据要求。
 
 每增加一个新入口或产物，必须同时说明它替代什么；不能证明替代关系的新增内容不进入 Harness core。

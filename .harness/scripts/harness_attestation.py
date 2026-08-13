@@ -28,7 +28,10 @@ def resolve_commit(repo: Path, commit: str) -> str:
         value = _git(repo, "rev-parse", "--verify", f"{commit}^{{commit}}")
     except (FileNotFoundError, subprocess.CalledProcessError):
         return ""
-    return value if len(value) == 40 else ""
+    try:
+        return value if _git(repo, "cat-file", "-t", value) == "commit" else ""
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return ""
 
 
 def attestation_ref(commit: str) -> str:
@@ -71,6 +74,11 @@ def create_attestation(repo: Path, result: dict[str, Any], *, commit: str = "HEA
             return {"decision": "block", "reason": "HARNESS_RESULT_SUBJECT_MISMATCH"}
     else:
         return {"decision": "block", "reason": "HARNESS_RESULT_SUBJECT_INVALID"}
+    result_raw = json.dumps(result, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
+    try:
+        result_object = _git(repo, "hash-object", "-w", "--stdin", input_text=result_raw)
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return {"decision": "block", "reason": "ATTESTATION_WRITE_FAILED"}
     payload = {
         "schema": SCHEMA,
         "commit_sha": sha,
@@ -79,6 +87,7 @@ def create_attestation(repo: Path, result: dict[str, Any], *, commit: str = "HEA
         "policy_digest": policy,
         "binding_digest": str(result.get("binding_digest") or ""),
         "result_digest": canonical_digest(result),
+        "result_object": result_object,
         "decision": "pass",
         "created_at": now(),
     }
@@ -115,8 +124,17 @@ def verify_attestation(repo: Path, *, commit: str = "HEAD", policy_digest: str =
         return {"decision": "block", "reason": "ATTESTATION_DECISION_BLOCK", "ref": ref}
     if policy_digest and payload.get("policy_digest") != policy_digest:
         return {"decision": "block", "reason": "ATTESTATION_POLICY_MISMATCH", "ref": ref}
+    try:
+        result = json.loads(_git(repo, "cat-file", "blob", str(payload.get("result_object") or "")))
+    except (FileNotFoundError, subprocess.CalledProcessError, json.JSONDecodeError):
+        return {"decision": "block", "reason": "ATTESTATION_RESULT_INVALID", "ref": ref}
+    if (canonical_digest(result) != payload.get("result_digest")
+            or result.get("task_id") != payload.get("task_id")
+            or result.get("policy_digest") != payload.get("policy_digest")
+            or result.get("decision") != "pass" or result.get("state") != "validated"):
+        return {"decision": "block", "reason": "ATTESTATION_RESULT_INVALID", "ref": ref}
     return {"decision": "pass", "reason": "ATTESTATION_VALID", "ref": ref,
-            "object": obj, "attestation": payload}
+            "object": obj, "attestation": payload, "result": result}
 
 
 def main() -> int:

@@ -13,16 +13,16 @@
 | TD-009 | product-spec 验收 checkbox 机械校验 | — | **已偿还** 2026-06-18 · 合入 TD-008 |
 | TD-010 | L3 Solutioning 强制 `bmad-create-architecture` | — | **已偿还** 2026-06-18 · 合入 TD-008 |
 | TD-011 | CI 硬拦 TEST/REVIEW 报告与 QA 凭证 | 中 | done：`qa_evidence_check.sh` 已接入 `check.sh` |
-| TD-012 | 飞书/Jira provider 真实租户深度验证、Webhook 与状态流转 | 中 | partially done：2026-08-12 飞书真实租户已验证 app/editor 清单授权、token、tasklist、smoke 创建、pull、负责人过滤与开放态读取；Jira、Webhook 和 CI 完成态流转仍 open |
+| TD-012 | 飞书/Jira provider 真实租户深度验证、Webhook 与状态流转 | 中 | partially done：2026-08-12 飞书真实租户已验证 app/editor 清单授权、token、tasklist、smoke 创建、pull、负责人过滤与开放态读取；Jira、Webhook 和 Git-native 完成态流转仍 open |
 | TD-013 | Flow-X 式知识沉淀与成长候选报告 | — | **已偿还** 2026-06-20 · `harness_knowledge.py` + `harness_growth.py` |
 | TD-014 | `tasks-dag.md` 与 `03-实施方案.md` 任务 ID 同步 | — | **已偿还** 2026-06-20 · `dag_sync_check.py` |
 | TD-015 | 7 字段任务契约机械校验 | — | **已偿还** 2026-06-20 · `task_contract_check.py` |
 | TD-016 | 产品侧 `quality.commands` 接入 CI/check | — | **已偿还** 2026-06-21 · `quality_commands.py` + Harness allowlist/危险 env 拦截 |
 | TD-017 | 开源发布前防泄漏预检 | — | **已偿还** 2026-06-21 · `release_preflight.sh` |
 | TD-018 | 实现统一 `start/status/finish` 门面、原子 `result.json` 与实现/Harness 分项成本遥测；内部复用现有 gate，不新增并行流程 | 高 | partially done：tier-aware 结构化 runner、本地/CI 共享 checks、task/subject/policy-bound usage receipt、预算阻断与确定性缓存已落地；仍需真实 provider usage receipt 联调 |
-| TD-019 | 以 Git object/ref attestation 作为唯一 commit 接受真相；`finish` 只进入 ready/review，受控接受或发布后才能关闭 Work Item | 高 | in progress：canonical attestation、refs、verifier 与 provider acceptance receipt 已落地；受控接收端验收待完成 |
+| TD-019 | 以 Git object/ref attestation 作为唯一 commit 接受真相；`finish` 只进入 ready/review，受控接受或发布后才能关闭 Work Item | 高 | in progress：canonical result object、attestation refs、verifier 与 SSH-signed provider receipt 已落地；受控接收端重跑验收待完成 |
 | TD-020 | 建立能力迁移验收：逐项证明 BMAD、TDD、QA、安全、知识、浏览器、协同能力已被统一门面承载或按需触发 | 高 | partially done：见 [能力迁移映射](../design-docs/capability-migration-map.md)；`capability_contract.py` 已机械检查承载入口/tier gate，前端 diff 自动触发 browser gate 已落地，provider 生命周期仍待真实端到端验证 |
-| TD-021 | 建立 Git-native `local → guarded → enforced` 验收与绕过测试 | 高 | redesigned：本地 hooks 只能证明 guarded；enforced 必须证明受控 remote `pre-receive` 或发布入口对所有正式 commit 强制 verifier。GitHub live probe 降为可选 adapter，不再阻塞 core 完成 |
+| TD-021 | 建立 Git-native `local → guarded → enforced` 验收与绕过测试 | 高 | in progress：guarded 已覆盖全部新增 commit、同步 attestation refs 并保持 commit 后状态；enforced 仍须证明受控 `pre-receive` 或发布入口重跑 gates 并签名 |
 | TD-022 | 拆分超过 400 行的 `work_item.py`，保持 provider CLI、诊断和同步契约不变 | — | **已偿还** 2026-08-11 · provider 网络诊断与能力矩阵迁入 `work_item_diagnostics.py`；核心 CLI 降至 400 行内 |
 | TD-023 | 拆分超过 1000 行的 brownfield intake，隔离扫描策略、信号采集、报告渲染与知识沉淀 | — | **已偿还** 2026-08-11 · `harness_intake_{policy,scan,review}.py` 按职责拆分，入口和各模块均不超过 400 行并保留 CLI/import 契约 |
 | TD-024 | 拆分超过 1700 行的 Work Item provider 单体，隔离 facade、BMAD contract、provider 与 transport/payload helper | — | **已偿还** 2026-08-11 · Teambition、Feishu、Jira adapter 独立，旧 `work_item_providers` export 保持兼容，所有 Work Item 模块不超过 400 行 |

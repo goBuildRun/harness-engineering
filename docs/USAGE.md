@@ -9,7 +9,7 @@
 
 `AGENTS.md` 为最小地图，本文件说明公开使用方式，并保留统一入口尚未覆盖的兼容命令和诊断参考。
 
-**实现状态说明**：`harness start/status/finish`、workspace audit/migrate、结构化 `assurance` 和可选 guarded Git hooks 已可执行。平台 required、发布依赖和 provider 生命周期未全部验证时，兼容字段继续显示 `shadow`，不得标记 `enforced`。旧命令暂保留用于兼容和诊断。
+**实现状态说明**：`harness start/status/finish`、workspace audit/migrate、结构化 `assurance` 和 guarded Git hooks 已可执行。受控 `pre-receive` / release gate 尚未完成端到端验收时，兼容字段继续显示 `shadow`，不得标记 `enforced`。
 
 **升级兼容说明**：已有产品不做全量 workspace 迁移。planning、knowledge 和历史 evidence 原位保留；新任务写新结果；只有进行中或重开的任务补最小运行状态。详细矩阵见 [精简执行设计 §10](./design-docs/lean-enforcement.md#10-历史数据与兼容升级)。
 
@@ -649,7 +649,7 @@ bash .harness/scripts/browser_qa_setup.sh check
 
 Harness core 不安装或要求托管平台 workflow。GitHub 可作为普通 Git remote、代码浏览和备份通道，但不参与任务状态、commit 准入、发布资格或 Work Item 完成态。
 
-`finish` 验证当前任务并把结果写入 `result.json`。guarded 仓库在 commit 后将该结果与目标 commit 的 tree、task、policy 和 result digest 绑定，写入 `refs/harness/attestations/<commit>`；创建时会从 commit tree 重算 subject，不能把旧结果贴到内容不同的 commit。`status` 只读验证当前 HEAD 的 attestation 与 hooks，不访问网络。
+`finish` 验证当前任务并把结果写入 `result.json`。guarded 仓库在 commit 后由 `post-commit` 将该结果作为 canonical Git blob，与目标 commit 的 tree、task、policy 和 result digest 绑定，写入 `refs/harness/attestations/<commit>`；创建时会从 commit tree 重算 subject。`status` 只读验证当前 HEAD 的 attestation、result object 与 hooks，不访问网络。
 
 attestation 是共享协议，不是新的任务完成态。local/guarded 仓库所有者仍可修改 hooks、refs 和对象，因此只能防陈旧与误操作。需要不可绕过准入时，受控 bare Git remote 的 `pre-receive` 或正式发布入口必须自行重跑 verifier/gates，并由该受控边界生成 acceptance receipt；不能直接信任客户端提交的 ref。
 
@@ -667,7 +667,7 @@ execution tier 与 assurance level 必须分开理解：前者决定任务需要
 
 `guarded` 是轻量推广的默认目标，不要求自建 Gitea/GitLab 或购买 GitHub 套餐；它不能因方便而伪称不可绕过。需要绝对准入时，再选择 protected branch、受控 bare repository、发布 gate 等 `enforced` 承载方式。
 
-Guarded 接入会把 `pre-commit` / `post-commit` / `pre-push` 写入产品 `.githooks/`，并在 repo-local `.git/config` 中设置 `core.hooksPath` 和 Harness 安装根；本机绝对路径不会进入提交内容。`pre-commit` 校验有效 `finish` 结果，`post-commit` 创建 commit-bound attestation，`pre-push` 只读验证将要推送的 commit。Guard audit 要求三个 hooks 已纳入 Git、内容与当前 Harness 模板一致且本机配置未偏移。hooks 可被仓库所有者绕过，因此始终保持 `bypassable: true`。
+Guarded 接入会把 `pre-commit` / `post-commit` / `pre-push` 写入产品 `.githooks/`，并在 repo-local `.git/config` 中设置 `core.hooksPath` 和 Harness 安装根。`pre-commit` 校验有效 `finish` 结果，`post-commit` 创建 commit-bound attestation，`pre-push` 遍历本次新增的全部 commit、逐个验证并批量同步其 attestation refs。该同步不与随后发生的分支 push 构成服务端原子事务，只用于 guarded 审计便利；真正的原子接受属于 `pre-receive`。Guard audit 要求三个 hooks 已纳入 Git且内容未偏移。hooks 可被仓库所有者绕过，因此始终保持 `bypassable: true`。
 
 目标公开路径只有三步；当前 `local` 接入入口如下（旧结果字段仍显示 `shadow`）：
 
@@ -698,7 +698,7 @@ bash .harness/scripts/harness migrate-task <task-id> --reason '<复核原因>'
 
 结构化 gate runner 按 tier 将 planning、structure、QA、knowledge、growth 和 quality 分别写入 `checks`。standard 命中 `.tsx/.jsx/.vue/.svelte/.html/.css/.scss` 或 frontend/web/ui/pages/components 路径时自动要求 `HARNESS_BROWSER_QA_URL` 并执行浏览器审计；strict 还要求 `HARNESS_STRICT_EVIDENCE` 指向绑定当前 subject、包含 browser/deployment/rollback pass 的 JSON receipt。产品可在 `quality.commands.lint` 使用 `python-import-boundaries` builtin 声明 `paths` 和 `boundaries: [{from, forbid}]`，通用默认值不内置产品目录。
 
-本地 `work_item.sh close` 默认只写 `ready_to_release`。`done`、`implemented`、`released` 等终态必须传入由受控 `git-receive` 或 `release-gate` 生成的 `--lifecycle-receipt`；receipt 绑定 work item、task、policy/result digest、commit、attestation object 和 accepted ref。普通本地结果或未知 authority 会返回阻断。
+本地 `work_item.sh close` 默认只写 `ready_to_release`。`done`、`implemented`、`released` 等终态必须传入受控 `git-receive` 或 `release-gate` 使用独立 SSH 私钥签发的 `--lifecycle-receipt`，并设置 `HARNESS_ACCEPTANCE_ALLOWED_SIGNERS` 指向产品信任的公钥清单。消费端会回查 Git attestation/result object，并校验 work item、task、policy/result digest、commit、accepted ref 和签名；手写 JSON 一律阻断。
 
 | 公开动作 | 使用者看到的结果 | 过渡期内部能力参考 |
 |----------|------------------|--------------------|

@@ -48,6 +48,7 @@ class HarnessInitTest(unittest.TestCase):
             self.assertEqual(result["decision"], "pass")
             config = yaml.safe_load((product_root / "harness-workspace/project.yaml").read_text())
             self.assertEqual(config["assurance"]["level"], "guarded")
+            self.assertNotIn("enforcement", config)
             self.assertEqual(
                 subprocess.check_output(
                     ["git", "config", "--local", "--get", "core.hooksPath"],

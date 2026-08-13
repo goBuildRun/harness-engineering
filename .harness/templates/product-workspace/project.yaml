@@ -39,14 +39,6 @@ evidence:
 harness:
   task_contract: harness-task-v1
 
-enforcement:
-  # 安装 workspace 不等于 enforced。只有 live audit 四项全通过时才会升级状态。
-  mode: shadow
-  platform: github
-  repository: ""
-  target_branch: main
-  required_check: harness-commit-acceptance
-
 assurance:
   # local 默认不修改 Git；guarded 由 init 安装 repo-local .githooks，仍可被 --no-verify 绕过。
   level: {{assurance_level}}

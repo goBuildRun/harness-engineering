@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 from harness_knowledge import sync_planning
+from product_context import ProductContextError, resolve_product_root
 from provider_lifecycle import TERMINAL_STATUSES, validate_receipt
 from harness_output import dump_json
 from work_item_diagnostics import cmd_capabilities, cmd_diagnose
@@ -110,7 +111,16 @@ def cmd_close(args: argparse.Namespace) -> int:
                 receipt = json.loads(Path(args.lifecycle_receipt).read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
                 pass
-        ok, reason = validate_receipt(receipt, work_item_id=args.id)
+        allowed = os.environ.get("HARNESS_ACCEPTANCE_ALLOWED_SIGNERS", "")
+        try:
+            product_root = resolve_product_root(root)
+        except ProductContextError as exc:
+            emit("block", f"ACCEPTANCE_PRODUCT_ROOT_INVALID: {exc}", work_item_id=args.id)
+            return 0
+        ok, reason = validate_receipt(
+            receipt, work_item_id=args.id, repo=product_root,
+            allowed_signers=Path(allowed) if allowed else Path("/nonexistent"),
+        )
         if not ok:
             emit("block", reason, work_item_id=args.id)
             return 0

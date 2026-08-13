@@ -30,41 +30,6 @@ def snapshot(level: str = "local", *, blockers: list[str] | None = None) -> dict
     }
 
 
-def apply_enforcement(result: dict[str, Any], enforcement: dict[str, Any], *, guarded: bool) -> None:
-    enforced = enforcement.get("enforcement") == "enforced"
-    level = "enforced" if enforced else ("guarded" if guarded else "local")
-    assurance = snapshot(level, blockers=list(enforcement.get("blockers") or []))
-    assurance["task_execution"] = (
-        "complete" if result.get("state") == "validated" and result.get("decision") == "pass"
-        else "incomplete"
-    )
-    assurance["verified_at"] = str(enforcement.get("probed_at") or "")
-    result["assurance"] = assurance
-    result["enforcement"] = "enforced" if enforced else "shadow"
-
-
-def refresh_result(result: dict[str, Any], product: Path, enforcement: dict[str, Any]) -> None:
-    guards = audit_guards(product)
-    apply_enforcement(result, enforcement, guarded=guards["level"] == "guarded")
-    result["enforcement_notice"] = enforcement["notice"]
-    result["enforcement_probe"] = enforcement
-    result["assurance"]["guard_audit"] = guards
-
-
-def audit_report(product: Path, enforcement: dict[str, Any]) -> dict[str, Any]:
-    guards = audit_guards(product)
-    enforced = enforcement["enforcement"] == "enforced"
-    return {
-        "level": "enforced" if enforced else guards["level"],
-        "acceptance_authority": (
-            "git-receive" if enforced
-            else ("git-hooks" if guards["level"] == "guarded" else "worktree")
-        ),
-        "bypassable": not enforced,
-        "guard_audit": guards,
-    }
-
-
 def guard_prelude() -> str:
     return """#!/usr/bin/env bash
 set -euo pipefail
@@ -94,13 +59,36 @@ python3 -c 'import json,sys; d=json.loads(sys.argv[1]); r=d.get("result",{}); ok
 def pre_push_script() -> str:
     return guard_prelude() + """\
 ATTEST="$CONFIGURED_ROOT/.harness/scripts/harness_attestation.py"
+REMOTE_NAME="${1:-origin}"
+ATTEST_REFS=()
 while read -r local_ref local_sha remote_ref remote_sha; do
   [[ "$local_sha" =~ ^0+$ ]] && continue
-  python3 "$ATTEST" verify --repo "$PRODUCT_ROOT" --commit "$local_sha" >/dev/null || {
-    echo "HARNESS_PUSH_GUARD_BLOCKED: $local_sha has no valid attestation" >&2
+  if [[ "$remote_sha" =~ ^0+$ ]]; then
+    ACTIVE="$PRODUCT_ROOT/harness-workspace/runs/active_task.json"
+    [[ -f "$ACTIVE" ]] || { echo 'HARNESS_GUARD_ACTIVE_TASK_MISSING' >&2; exit 1; }
+    TASK_ID="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("task_id", ""))' "$ACTIVE")"
+    BASELINE="$PRODUCT_ROOT/harness-workspace/runs/tasks/$TASK_ID/worktree_baseline.json"
+    BASE_SHA="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("repo_head", ""))' "$BASELINE")"
+    [[ -n "$BASE_SHA" ]] || { echo 'HARNESS_GUARD_BASELINE_MISSING' >&2; exit 1; }
+    COMMITS="$(git rev-list --reverse "$BASE_SHA..$local_sha")"
+  else
+    COMMITS="$(git rev-list --reverse "$remote_sha..$local_sha")"
+  fi
+  while read -r commit; do
+    [[ -z "$commit" ]] && continue
+    python3 "$ATTEST" verify --repo "$PRODUCT_ROOT" --commit "$commit" >/dev/null || {
+      echo "HARNESS_PUSH_GUARD_BLOCKED: $commit has no valid attestation" >&2
+      exit 1
+    }
+    ATTEST_REFS+=("refs/harness/attestations/$commit:refs/harness/attestations/$commit")
+  done <<< "$COMMITS"
+done
+if (( ${#ATTEST_REFS[@]} )); then
+  git push --atomic --no-verify "$REMOTE_NAME" "${ATTEST_REFS[@]}" >/dev/null || {
+    echo 'HARNESS_PUSH_GUARD_BLOCKED: attestation refs were not accepted atomically' >&2
     exit 1
   }
-done
+fi
 echo 'HARNESS_PUSH_GUARD_PASS' >&2
 """
 

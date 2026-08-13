@@ -52,6 +52,8 @@ class HarnessAttestationTest(unittest.TestCase):
             self.assertEqual(payload["commit_sha"], commit)
             self.assertEqual(payload["task_id"], "task-1")
             self.assertEqual(payload["result_digest"], canonical_digest(result))
+            self.assertTrue(payload["result_object"])
+            self.assertEqual(verified["result"]["task_id"], "task-1")
 
     def test_missing_copied_and_policy_changed_attestations_fail(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -91,6 +93,22 @@ class HarnessAttestationTest(unittest.TestCase):
             subprocess.run(["git", "commit", "-qam", "different"], cwd=repo, check=True)
             outcome = create_attestation(repo, result, commit="HEAD")
             self.assertEqual(outcome["reason"], "HARNESS_RESULT_SUBJECT_MISMATCH")
+
+    def test_tampered_result_object_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            commit = self.repo(repo)
+            created = create_attestation(repo, self.result(repo, commit), commit=commit)
+            payload = dict(created["attestation"])
+            payload["result_object"] = subprocess.check_output(
+                ["git", "hash-object", "-w", "--stdin"], cwd=repo, text=True, input="{}\n"
+            ).strip()
+            raw = json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n"
+            blob = subprocess.check_output(
+                ["git", "hash-object", "-w", "--stdin"], cwd=repo, text=True, input=raw
+            ).strip()
+            subprocess.run(["git", "update-ref", f"refs/harness/attestations/{commit}", blob], cwd=repo, check=True)
+            self.assertEqual(verify_attestation(repo, commit=commit)["reason"], "ATTESTATION_RESULT_INVALID")
 
 
 if __name__ == "__main__":
