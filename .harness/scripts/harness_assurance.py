@@ -81,6 +81,7 @@ while read -r local_ref local_sha remote_ref remote_sha; do
       exit 1
     }
     ATTEST_REFS+=("refs/harness/attestations/$commit:refs/harness/attestations/$commit")
+    ATTEST_REFS+=("refs/harness/results/$commit:refs/harness/results/$commit")
   done <<< "$COMMITS"
 done
 if (( ${#ATTEST_REFS[@]} )); then

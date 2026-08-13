@@ -274,7 +274,7 @@ harness migrate-task <task-id>
 
 ## 11. 成功判定
 
-当前实施按 [Git-native Harness Upgrade](../exec-plans/active/git-native-harness-upgrade.md) 的 Epic/Story 顺序推进。E1-S1 已完成 bare receive verifier core：对受保护 ref 的全部新增 commit 校验 canonical attestation/result，并从目标 commit tree 重算 tier、scope、policy 和机械 code-health；它保持只读并对范围解析错误 fail closed。E1-S2 已把 verifier 结果与 SSH 签名 acceptance receipt 串联，绑定 commit/ref/task/policy/result/Work Item/provider 并校验有效期。受控安装审计仍未完成，因此当前 assurance 仍为 local/guarded（兼容字段为 shadow）。
+当前实施按 [Git-native Harness Upgrade](../exec-plans/active/git-native-harness-upgrade.md) 的 Epic/Story 顺序推进。Epic 1 已完成：bare receive verifier 对正式 ref 的全部新增 commit 重验；SSH receipt 绑定 commit/ref/task/policy/result/Work Item/provider 并校验有效期；受控安装与 audit 已用真实 Git push 验证拒绝、接受、签发和 provider 消费。框架具备 enforced 能力，但 assurance 是产品实例属性：实际 authority 未通过 audit 的产品仍为 local/guarded（兼容字段为 shadow）。
 
 - 未经过 Harness 的变更无法获得有效 attestation、关闭 Work Item 或进入正式 ref/制品。
 - 本地伪造、复制或提交 `result.json` 不能让其他 commit 通过 verifier。

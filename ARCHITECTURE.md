@@ -158,7 +158,7 @@ flowchart TD
 - 没有结构守门和计划同步，不允许合并。
 - 没有人工 review 和 `harness_growth.sh apply-review`，成长候选不能进入产品知识；没有跨产品 review，不能升级成全局规则。
 
-Harness 使用两个正交分层：`lite|standard|strict` 决定任务验证深度，`local|guarded|enforced` 决定接受保障。core 只依赖 Git：`local` 生成任务结果；`guarded` 由 `post-commit` 生成 attestation 并用 repo-local hooks 验证；接收端 verifier core 已能在 bare Git 中逐个重验新增 commit 且保持仓库只读。只有受控 `pre-receive` / release gate、独立签名 receipt 和 provider 终态链路完成端到端验收后，才可声明 `enforced`。代码托管和 CI 不参与 Harness 生命周期。
+Harness 使用两个正交分层：`lite|standard|strict` 决定任务验证深度，`local|guarded|enforced` 决定接受保障。core 只依赖 Git：`local` 生成任务结果；`guarded` 由 `post-commit` 生成 attestation 并用 repo-local hooks 验证；`enforced` 由受控 bare Git 的 `pre-receive` 逐 commit 重验并阻断，`post-receive` 为实际已接受 commit 签发 receipt，provider 终态只消费有效 receipt。框架端到端能力已验证；单个产品只有其实际 authority 的安装审计通过后才可标记 enforced。代码托管和 CI 不参与 Harness 生命周期。
 
 ## 7. Gate Chain
 
@@ -178,7 +178,7 @@ Harness 使用两个正交分层：`lite|standard|strict` 决定任务验证深�
 | Doc gardening | 文档链接、旧路径和信息架构约束 |
 | Final check | 发布前完整链路 |
 | Code health | `finish` 始终执行 diff 机械扫描，并按 tier/信号要求独立 gc-sweeper 结果 |
-| Commit acceptance | `finish` 生成 validated result；`post-commit` 绑定 commit/tree/result object 并生成 attestation |
+| Commit acceptance | `finish` 生成 validated result；`post-commit` 绑定 commit/tree，并原子创建 attestation ref 与 canonical result-object ref；两者只是 Git 对象可达性索引，不是平行任务状态 |
 | Enforcement audit | 验证目标 remote/ref 或发布入口安装接收端 verifier、强制逐 commit 重验，并持有独立签名私钥 |
 | Provider lifecycle | 本地最多 ready/review；终态校验受控接受点签名且未过期的 acceptance receipt，签名信任根支持多公钥轮换 |
 

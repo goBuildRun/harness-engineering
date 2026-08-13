@@ -14,6 +14,7 @@ from harness_runtime import canonical_digest, now
 
 SCHEMA = "harness-git-attestation-v1"
 REF_PREFIX = "refs/harness/attestations"
+RESULT_REF_PREFIX = "refs/harness/results"
 
 
 def _git(repo: Path, *args: str, input_text: str | None = None) -> str:
@@ -36,6 +37,10 @@ def resolve_commit(repo: Path, commit: str) -> str:
 
 def attestation_ref(commit: str) -> str:
     return f"{REF_PREFIX}/{commit}"
+
+
+def result_ref(commit: str) -> str:
+    return f"{RESULT_REF_PREFIX}/{commit}"
 
 
 def commit_subject(repo: Path, commit: str, paths: list[str]) -> str:
@@ -94,8 +99,12 @@ def create_attestation(repo: Path, result: dict[str, Any], *, commit: str = "HEA
     raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
     try:
         blob = _git(repo, "hash-object", "-w", "--stdin", input_text=raw)
-        subprocess.run(["git", "update-ref", attestation_ref(sha), blob], cwd=repo,
-                       check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(
+            ["git", "update-ref", "--stdin"], cwd=repo, check=True, text=True,
+            input=(f"start\nupdate {result_ref(sha)} {result_object}\n"
+                   f"update {attestation_ref(sha)} {blob}\nprepare\ncommit\n"),
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
     except (FileNotFoundError, subprocess.CalledProcessError):
         return {"decision": "block", "reason": "ATTESTATION_WRITE_FAILED"}
     return {"decision": "pass", "reason": "ATTESTATION_CREATED", "ref": attestation_ref(sha),
@@ -128,6 +137,11 @@ def verify_attestation(repo: Path, *, commit: str = "HEAD", policy_digest: str =
         result = json.loads(_git(repo, "cat-file", "blob", str(payload.get("result_object") or "")))
     except (FileNotFoundError, subprocess.CalledProcessError, json.JSONDecodeError):
         return {"decision": "block", "reason": "ATTESTATION_RESULT_INVALID", "ref": ref}
+    try:
+        if _git(repo, "rev-parse", "--verify", result_ref(sha)) != payload.get("result_object"):
+            raise ValueError
+    except (FileNotFoundError, subprocess.CalledProcessError, ValueError):
+        return {"decision": "block", "reason": "ATTESTATION_RESULT_REF_INVALID", "ref": ref}
     if (canonical_digest(result) != payload.get("result_digest")
             or result.get("task_id") != payload.get("task_id")
             or result.get("policy_digest") != payload.get("policy_digest")

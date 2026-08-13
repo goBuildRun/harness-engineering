@@ -88,13 +88,15 @@ class HarnessReceiveTest(unittest.TestCase):
             blob = subprocess.check_output(
                 ["git", "rev-parse", f"refs/harness/attestations/{new}"], cwd=source, text=True
             ).strip()
-            for obj in (blob, json.loads(subprocess.check_output(
+            result_object = json.loads(subprocess.check_output(
                 ["git", "cat-file", "blob", blob], cwd=source, text=True
-            ))["result_object"]):
+            ))["result_object"]
+            for obj in (blob, result_object):
                 data = subprocess.check_output(["git", "cat-file", "blob", obj], cwd=source)
                 subprocess.run(["git", "hash-object", "-w", "--stdin"], cwd=bare, input=data, check=True,
                                stdout=subprocess.DEVNULL)
             subprocess.run(["git", "update-ref", f"refs/harness/attestations/{new}", blob], cwd=bare, check=True)
+            subprocess.run(["git", "update-ref", f"refs/harness/results/{new}", result_object], cwd=bare, check=True)
             outcome = verify_updates(bare, ROOT, [(old, new, "refs/heads/main")])
             self.assertEqual(outcome["decision"], "pass", outcome)
 

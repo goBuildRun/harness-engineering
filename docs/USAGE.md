@@ -9,7 +9,7 @@
 
 `AGENTS.md` 为最小地图，本文件说明公开使用方式，并保留统一入口尚未覆盖的兼容命令和诊断参考。
 
-**实现状态说明**：`harness start/status/finish`、workspace audit/migrate、结构化 `assurance`、guarded Git hooks 和 bare Git 接收端 verifier core 已可执行。受控 hook 安装、服务端签名 receipt 与 provider 终态链尚未完成端到端验收，兼容字段继续显示 `shadow`，不得标记 `enforced`。
+**实现状态说明**：`harness start/status/finish`、workspace audit/migrate、guarded hooks，以及受控 bare Git 的安装、接收阻断、签名 receipt 和 provider 终态校验均已通过端到端机械验收。框架已具备 `enforced` 能力；未对自身实际 Git authority 完成安装和 audit 的产品仍显示 `shadow`，不得标记 `enforced`。
 
 **升级兼容说明**：已有产品不做全量 workspace 迁移。planning、knowledge 和历史 evidence 原位保留；新任务写新结果；只有进行中或重开的任务补最小运行状态。详细矩阵见 [精简执行设计 §10](./design-docs/lean-enforcement.md#10-历史数据与兼容升级)。
 
@@ -651,7 +651,7 @@ Harness core 不安装或要求托管平台 workflow。GitHub 可作为普通 Gi
 
 `finish` 验证当前任务并把结果写入 `result.json`。guarded 仓库在 commit 后由 `post-commit` 将该结果作为 canonical Git blob，与目标 commit 的 tree、task、policy 和 result digest 绑定，写入 `refs/harness/attestations/<commit>`；创建时会从 commit tree 重算 subject。`status` 只读验证当前 HEAD 的 attestation、result object 与 hooks，不访问网络。
 
-attestation 是共享协议，不是新的任务完成态。local/guarded 仓库所有者仍可修改 hooks、refs 和对象，因此只能防陈旧与误操作。内部 `harness_receive.py` 已支持读取 `pre-receive` 的更新集合，在 bare Git 中逐个验证受保护 ref 的全部新增 commit，并从 commit tree 重算 tier、scope、policy 与机械 code-health；范围解析失败会 fail closed，校验过程不修改 bare 仓库或产品 workspace。它仍只是 enforced 的 verifier core，不能替代受控 hook 安装、独立签名 receipt 和端到端审计。
+attestation 是共享协议，不是新的任务完成态。local/guarded 仓库所有者仍可修改 hooks、refs 和对象，因此只能防陈旧与误操作。内部 `harness_receive.py` 读取 receive 更新集合，在 bare Git 中逐个验证受保护 ref 的全部新增 commit，并从 commit tree 重算 tier、scope、policy 与机械 code-health；范围解析失败会 fail closed，`pre-receive` 校验不修改 bare 仓库或产品 workspace。attestation ref 与 `refs/harness/results/<commit>` 只保证 canonical result Git object 可达，服务端仍重新验证其绑定。`post-receive` 仅为实际接受的 commit 签发 receipt；receipt 物化失败时 provider 因缺少有效 receipt 不能进入终态。
 
 ---
 
@@ -663,9 +663,11 @@ execution tier 与 assurance level 必须分开理解：前者决定任务需要
 |----------|----------|----------|----------|
 | `local` | 个人、本地 Git、快速试用 | `start/status/finish` | 已可用；结果可审计但可被显式绕过 |
 | `guarded` | 小团队、希望低成本阻止误提交/误推送 | `harness_init.sh init --assurance guarded ...` 安装版本化 `.githooks` | 已实现；hooks 可被 `--no-verify` 或管理员绕过，不等于 enforced |
-| `enforced` | 合规、发布或组织级不可绕过准入 | 日常入口不变，受控 `pre-receive` 或 release gate 执行 verifier | 接收端 verifier core 已实现；签名 receipt、安装审计和完整接线验收完成前不得声明 enforced |
+| `enforced` | 合规、发布或组织级不可绕过准入 | 日常入口不变，管理员在受控 bare Git 安装并审计 receive authority | 框架能力已端到端验证；仅实际 authority audit 通过的产品可启用 |
 
 `guarded` 是轻量推广的默认目标，不要求自建 Gitea/GitLab 或购买 GitHub 套餐；它不能因方便而伪称不可绕过。需要绝对准入时，再选择 protected branch、受控 bare repository、发布 gate 等 `enforced` 承载方式。
+
+管理员内部接入使用 `.harness/scripts/harness_enforced.py install`，提供 bare repo、正式 refs、独立 SSH 私钥、`allowed_signers` 和 receipt 目录；随后执行 `audit`。audit 会检查 hook 内容与执行权限、runtime、正式 refs、receipt 目录、信任根以及私钥不得对 group/other 开放。该工具不进入开发者日常公共命令面；私钥和 receipt 目录不得提交进产品仓库。
 
 Guarded 接入会把 `pre-commit` / `post-commit` / `pre-push` 写入产品 `.githooks/`，并在 repo-local `.git/config` 中设置 `core.hooksPath` 和 Harness 安装根。`pre-commit` 校验有效 `finish` 结果，`post-commit` 创建 commit-bound attestation，`pre-push` 遍历本次新增的全部 commit、逐个验证并批量同步其 attestation refs。该同步不与随后发生的分支 push 构成服务端原子事务，只用于 guarded 审计便利；真正的原子接受属于 `pre-receive`。Guard audit 要求三个 hooks 已纳入 Git且内容未偏移。hooks 可被仓库所有者绕过，因此始终保持 `bypassable: true`。
 

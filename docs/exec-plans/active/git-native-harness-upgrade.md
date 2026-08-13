@@ -61,7 +61,7 @@ Implementation note: receipt 只能由已通过 receive verifier 的 commit/ref 
 
 ### E1-S3 Enforced installation and audit
 
-Status: pending
+Status: completed (2026-08-13)
 
 Acceptance criteria:
 
@@ -69,6 +69,8 @@ Acceptance criteria:
 - 临时 bare repo 端到端证明未验证 commit push 失败、验证 commit 成功。
 - 只有 hook、policy、信任根和 provider terminal 链全部通过才报告 enforced。
 - release gate 可复用同一 verifier 和 receipt schema。
+
+Implementation note: 内部 `harness_enforced.py` 为受控 bare Git 安装和审计 `pre-receive` / `post-receive`。真实 Git push 验收证明未验证 commit 被拒绝、有效 commit 被接受并生成可消费 receipt；hook 偏移、信任根缺失或私钥权限暴露均使 audit fail closed。框架能力已达到 enforced，但每个产品仍须对自身实际 authority 独立审计。
 
 ## Epic 2: Lightweight Adoption And Migration
 

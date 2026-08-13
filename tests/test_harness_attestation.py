@@ -108,7 +108,10 @@ class HarnessAttestationTest(unittest.TestCase):
                 ["git", "hash-object", "-w", "--stdin"], cwd=repo, text=True, input=raw
             ).strip()
             subprocess.run(["git", "update-ref", f"refs/harness/attestations/{commit}", blob], cwd=repo, check=True)
-            self.assertEqual(verify_attestation(repo, commit=commit)["reason"], "ATTESTATION_RESULT_INVALID")
+            self.assertEqual(
+                verify_attestation(repo, commit=commit)["reason"],
+                "ATTESTATION_RESULT_REF_INVALID",
+            )
 
 
 if __name__ == "__main__":

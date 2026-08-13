@@ -155,6 +155,8 @@ def main() -> int:
     parser.add_argument("--repo", default=".")
     parser.add_argument("--harness-root", default=str(Path(__file__).resolve().parents[2]))
     parser.add_argument("--protected-ref", action="append", default=[])
+    parser.add_argument("--signing-key", default="")
+    parser.add_argument("--receipt-dir", default="")
     args = parser.parse_args()
     try:
         updates = parse_updates(sys.stdin)
@@ -163,10 +165,28 @@ def main() -> int:
         return 1
     configured = tuple(args.protected_ref or os.environ.get(
         "HARNESS_PROTECTED_REFS", "refs/heads/main").split(","))
-    outcome = verify_updates(
-        Path(args.repo).resolve(), Path(args.harness_root).resolve(), updates,
-        protected_refs=configured,
-    )
+    repo = Path(args.repo).resolve()
+    harness = Path(args.harness_root).resolve()
+    if args.signing_key or args.receipt_dir:
+        if not args.signing_key or not args.receipt_dir:
+            outcome = {"decision": "block", "reason": "ACCEPTANCE_OUTPUT_CONFIG_INVALID"}
+        else:
+            outcome = accept_updates(
+                repo, harness, updates, signing_key=Path(args.signing_key),
+                protected_refs=configured,
+            )
+            if outcome["decision"] == "pass":
+                receipt_dir = Path(args.receipt_dir)
+                receipt_dir.mkdir(parents=True, exist_ok=True)
+                for receipt in outcome["receipts"]:
+                    target = receipt_dir / f"{receipt['commit_sha']}.json"
+                    temporary = target.with_suffix(".json.tmp")
+                    temporary.write_text(
+                        json.dumps(receipt, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+                    )
+                    os.replace(temporary, target)
+    else:
+        outcome = verify_updates(repo, harness, updates, protected_refs=configured)
     dump_json(outcome)
     return 0 if outcome["decision"] == "pass" else 1
 
