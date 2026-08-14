@@ -2,13 +2,16 @@
 from __future__ import annotations
 
 import json
+import io
 import os
 import subprocess
 import sys
 import tempfile
 import time
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -21,6 +24,7 @@ from harness_assurance import (audit_guards, check_bootstrap, check_release_cand
 from harness_runtime import default_result, load_result  # noqa: E402
 from harness_commands import refresh_assurance  # noqa: E402
 from harness_schema import validate_result  # noqa: E402
+from harness_cli import main as harness_main  # noqa: E402
 
 
 class HarnessAssuranceTest(unittest.TestCase):
@@ -83,6 +87,34 @@ class HarnessAssuranceTest(unittest.TestCase):
             result = self.release_candidate_result([".githooks/post-commit", ".githooks/pre-commit", ".githooks/pre-push"])
             result["checks"]["qa_evidence"]["reason"] += "; QA_SIGNOFF_MISSING:T4"
             self.assertEqual(create_release_candidate(product, result)["reason"], "RELEASE_CANDIDATE_NOT_ELIGIBLE")
+
+    def test_release_candidate_resolves_agent_start_work_item_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            task_id = "WI-agent-start"
+            runs = product / "harness-workspace" / "runs"
+            task_root = runs / "tasks" / task_id
+            task_root.mkdir(parents=True)
+            (runs / "active_task.json").write_text(
+                json.dumps({"work_item_id": task_id}),
+                encoding="utf-8",
+            )
+            (task_root / "result.json").write_text(
+                json.dumps(default_result(task_id)),
+                encoding="utf-8",
+            )
+
+            output = io.StringIO()
+            with patch.object(
+                sys,
+                "argv",
+                ["harness", "--product-root", str(product), "release-candidate"],
+            ), redirect_stdout(output):
+                self.assertEqual(harness_main(), 0)
+
+            outcome = json.loads(output.getvalue())
+            self.assertEqual(outcome["reason"], "RELEASE_CANDIDATE_GUARDED_REQUIRED")
+
     def test_local_lite_onboarding_public_path_completes_under_five_minutes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product = Path(tmp)

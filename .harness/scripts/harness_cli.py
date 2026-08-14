@@ -8,7 +8,7 @@ from pathlib import Path
 
 from harness_commands import cmd_amend, cmd_ci_check, cmd_finish, cmd_start, cmd_status, cmd_usage_baseline
 from harness_assurance import create_bootstrap, create_release_candidate
-from harness_runtime import active_task_path, load_result, result_path
+from harness_runtime import load_result, resolve_task_id, result_path
 from harness_migration_commands import cmd_audit, cmd_migrate
 from harness_runtime import TIERS
 
@@ -75,9 +75,12 @@ def main() -> int:
     if args.command == "release-candidate":
         import json
         try:
-            active = json.loads(active_task_path(Path(args.product_root).resolve()).read_text())
-            result = load_result(result_path(Path(args.product_root).resolve(), active["task_id"]))
-        except (OSError, KeyError, ValueError, json.JSONDecodeError):
+            product_root = Path(args.product_root).resolve()
+            task_id, blockers = resolve_task_id(product_root, None)
+            if blockers or not task_id:
+                raise ValueError("active task result is unavailable")
+            result = load_result(result_path(product_root, task_id))
+        except (OSError, ValueError, json.JSONDecodeError):
             outcome = {"decision": "block", "reason": "RELEASE_CANDIDATE_ACTIVE_RESULT_MISSING"}
         else:
             outcome = create_release_candidate(Path(args.product_root).resolve(), result)
