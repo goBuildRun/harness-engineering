@@ -304,6 +304,31 @@ class HarnessGrowthTest(unittest.TestCase):
         self.assertTrue(status["ok"])
         self.assertEqual("GROWTH_FRESHNESS_OK", status["reason"])
 
+    def test_work_item_growth_ignores_unrelated_historical_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            write_project_config(product)
+            layout = load_layout(ROOT, product)
+            ensure(layout)
+            unrelated = layout.summaries_dir / "WI-OLD-T1-SUMMARY.md"
+            unrelated.write_text("- 经验沉淀：历史候选。\n", encoding="utf-8")
+            current = layout.summaries_dir / "WI-42-T1-SUMMARY.md"
+            current.write_text("- 经验沉淀：当前候选。\n", encoding="utf-8")
+            candidates = collect(layout, work_item_id="WI-42")
+            report = layout.growth_reports_dir / "2026-06-22-WI-42-GROWTH.md"
+            report.write_text(
+                render(layout, candidates, work_item_id="WI-42")
+                .replace("- **人工决定**：待定", "- **人工决定**：lesson")
+                .replace("- **处理结果**：待处理", "- **处理结果**：已沉淀"),
+                encoding="utf-8",
+            )
+
+            status = freshness_status(layout, work_item_id="WI-42")
+
+        self.assertEqual(len(candidates), 1)
+        self.assertTrue(status["ok"])
+        self.assertEqual(status["work_item_id"], "WI-42")
+
 
 if __name__ == "__main__":
     unittest.main()

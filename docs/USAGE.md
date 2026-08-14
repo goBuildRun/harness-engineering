@@ -622,7 +622,9 @@ bash .harness/scripts/check.sh
 
 Growth 不是固定收尾。只有出现新的失败模式、架构边界、默认行为或明确技术债候选时才进入 review；没有候选时不得为“走流程”生成空报告。
 
-`scan` 生成的报告包含对候选来源路径和候选文本规范化后的 `Evidence digest`。`freshness` 比较该摘要与当前 evidence，不使用文件系统 `mtime`，因此同一 commit 在 receive/CI 隔离 checkout 中仍可确定性重放。候选内容变化返回 `GROWTH_REPORT_STALE`；旧格式报告没有摘要时返回 `GROWTH_REPORT_UNBOUND`，必须重新 `scan` 并完成 review，不能把 checkout 时间当作新鲜证据。
+`scan` 生成的报告包含 Work Item 身份，以及对该 Work Item 候选来源路径和候选文本规范化后的 `Evidence digest`。任务身份从 active Planning Gate 读取，也可用 `--work-item` 显式提供；文件名或报告头未绑定该任务的历史 evidence 不参与 freshness。`freshness` 不使用文件系统 `mtime`，因此同一 commit 在 receive/CI 隔离 checkout 中仍可确定性重放。候选内容变化返回 `GROWTH_REPORT_STALE`；旧格式报告没有摘要或 Work Item 绑定时返回 `GROWTH_REPORT_UNBOUND`，必须重新 `scan` 并完成 review。
+
+`agent_start.sh` 会原子启动或恢复同一 Work Item 的 lean runtime，保证 `result.json` 与 worktree/Token baseline 同步存在；恢复任务不会覆盖原 baseline。QA sign-off 只写 `runs/tasks/<work-item>/`，凭证和 TEST/REVIEW 文件均按 Work Item 查找，禁止回退复用全局 `qa_approved_T*.json`。
 
 ---
 

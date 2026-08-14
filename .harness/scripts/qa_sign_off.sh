@@ -76,8 +76,7 @@ else
   PATHS_JSON=$(cd "$PRODUCT_ROOT" && { git diff --name-only 2>/dev/null || true; git diff --cached --name-only 2>/dev/null || true; } | sort -u | python3 -c "import sys,json; print(json.dumps([l.strip() for l in sys.stdin if l.strip()], ensure_ascii=False))")
 fi
 
-python3 "$SCRIPT_DIR/qa_write_evidence.py" "$EVIDENCE" "$TASK_ID" "$DECISION" "$TS" "$SUMMARY" "$PATHS_JSON"
-cp "$EVIDENCE" "$LEGACY_EVIDENCE" 2>/dev/null || true
+python3 "$SCRIPT_DIR/qa_write_evidence.py" "$EVIDENCE" "$TASK_ID" "$ACTIVE_WI" "$DECISION" "$TS" "$SUMMARY" "$PATHS_JSON"
 
 # 同步 05-QA验收.md
 PLANNING_GATE="$AGENT_WS/planning_gate_pass.json"

@@ -41,18 +41,16 @@ def task_dir_from_args(args: argparse.Namespace, layout: Phase0Layout, gate: dic
 
 
 def qa_candidates(layout: Phase0Layout, wid: str, task_id: str) -> list[Path]:
-    paths: list[Path] = []
     if wid:
-        paths.append(layout.agent_workspace / "tasks" / wid / f"qa_approved_{task_id}.json")
-    paths.append(layout.agent_workspace / f"qa_approved_{task_id}.json")
-    return paths
+        return [layout.agent_workspace / "tasks" / wid / f"qa_approved_{task_id}.json"]
+    return [layout.agent_workspace / f"qa_approved_{task_id}.json"]
 
 
 def first_existing(paths: list[Path]) -> Path | None:
     return next((p for p in paths if p.is_file()), None)
 
 
-def validate_qa_json(path: Path, task_id: str) -> list[str]:
+def validate_qa_json(path: Path, task_id: str, wid: str = "") -> list[str]:
     data = load_json(path)
     issues: list[str] = []
     if not data:
@@ -61,6 +59,8 @@ def validate_qa_json(path: Path, task_id: str) -> list[str]:
         issues.append(f"QA_NOT_PASS:{path}")
     if data.get("task_id") != task_id:
         issues.append(f"QA_TASK_MISMATCH:{path}")
+    if wid and data.get("work_item_id") != wid:
+        issues.append(f"QA_WORK_ITEM_MISMATCH:{path}")
     if data.get("reviewer") != "qa-evaluator":
         issues.append(f"QA_REVIEWER_INVALID:{path}")
     if data.get("structure_gate") != "pass":
@@ -143,7 +143,7 @@ def main() -> int:
         if not qa_path:
             issues.append(f"QA_SIGNOFF_MISSING:{task_id}")
             continue
-        issues.extend(validate_qa_json(qa_path, task_id))
+        issues.extend(validate_qa_json(qa_path, task_id, wid))
 
         test_candidates = report_candidates(layout.test_reports_dir, wid, task_dir, task_id, "TEST")
         review_candidates = report_candidates(layout.review_reports_dir, wid, task_dir, task_id, "REVIEW")

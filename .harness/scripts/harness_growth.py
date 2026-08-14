@@ -12,7 +12,7 @@ from typing import Any
 from harness_knowledge import ensure
 from harness_growth_review import apply_review, resolve_report
 from harness_output import dump_json
-from workspace_paths import Phase0Layout, load_layout
+from workspace_paths import Phase0Layout, load_active_planning_gate, load_layout
 
 SIGNAL = re.compile(
     r"(经验沉淀|沉淀候选|LESSONS|CONTEXT|已排除|失败|Critical|Major|风险|技术债|重复|越界|架构沉淀|安全|性能)",
@@ -42,7 +42,19 @@ def emit(decision: str, reason: str, **extra) -> None:
     dump_json({"decision": decision, "reason": reason, **extra})
 
 
-def evidence_files(layout: Phase0Layout) -> list[Path]:
+def _bound_to_work_item(path: Path, work_item_id: str) -> bool:
+    if not work_item_id:
+        return True
+    if work_item_id in path.name:
+        return True
+    try:
+        head = path.read_text(encoding="utf-8", errors="ignore")[:2000]
+    except OSError:
+        return False
+    return bool(re.search(rf"Work Item(?: ID)?\*\*[：:]\s*`?{re.escape(work_item_id)}`?", head))
+
+
+def evidence_files(layout: Phase0Layout, work_item_id: str = "") -> list[Path]:
     roots = (
         layout.summaries_dir,
         layout.progress_dir,
@@ -52,7 +64,10 @@ def evidence_files(layout: Phase0Layout) -> list[Path]:
     files: list[Path] = []
     for root in roots:
         if root.is_dir():
-            files.extend(sorted(p for p in root.rglob("*.md") if p.is_file()))
+            files.extend(sorted(
+                p for p in root.rglob("*.md")
+                if p.is_file() and _bound_to_work_item(p, work_item_id)
+            ))
     return files
 
 
@@ -90,10 +105,10 @@ def code_span(text: str) -> str:
     return sanitize_capture_text(text).replace("`", "'")
 
 
-def collect(layout: Phase0Layout) -> list[tuple[Path, str]]:
+def collect(layout: Phase0Layout, work_item_id: str = "") -> list[tuple[Path, str]]:
     candidates: list[tuple[Path, str]] = []
     seen: set[str] = set()
-    for path in evidence_files(layout):
+    for path in evidence_files(layout, work_item_id):
         try:
             lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
         except OSError:
@@ -121,10 +136,12 @@ def capture_evidence(
     next_action: str = "",
     source: str = "",
     command: str = "",
+    work_item_id: str = "",
 ) -> Path:
     now = datetime.now(timezone.utc)
     safe_title = slugify(sanitize_capture_text(title) or sanitize_capture_text(summary) or "growth-capture")
-    out = layout.progress_dir / f"{now.strftime('%Y-%m-%dT%H%M%SZ')}-{safe_title}-GROWTH-CAPTURE.md"
+    prefix = f"{work_item_id}-" if work_item_id else ""
+    out = layout.progress_dir / f"{now.strftime('%Y-%m-%dT%H%M%SZ')}-{prefix}{safe_title}-GROWTH-CAPTURE.md"
     out.parent.mkdir(parents=True, exist_ok=True)
     clean_title = sanitize_capture_text(title) or safe_title
     clean_summary = sanitize_capture_text(summary)
@@ -143,6 +160,7 @@ def capture_evidence(
         f"- **标题**：{clean_title}",
         f"- **建议分类**：{clean_category}",
         f"- **来源**：{clean_source}",
+        *([f"- **Work Item**：`{work_item_id}`"] if work_item_id else []),
         "",
         "## 经验沉淀候选",
         "",
@@ -163,7 +181,7 @@ def capture_evidence(
     return out
 
 
-def render(layout: Phase0Layout, candidates: list[tuple[Path, str]]) -> str:
+def render(layout: Phase0Layout, candidates: list[tuple[Path, str]], work_item_id: str = "") -> str:
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     lines = [
         "# GROWTH — Harness 自我成长报告",
@@ -172,6 +190,7 @@ def render(layout: Phase0Layout, candidates: list[tuple[Path, str]]) -> str:
         f"- 产品：{layout.product_name}",
         f"- Profile：{layout.harness_profile}",
         f"- 候选数量：{len(candidates)}",
+        *([f"- Work Item: `{work_item_id}`"] if work_item_id else []),
         f"- Evidence digest: `{evidence_digest(layout, candidates)}`",
         "",
         "## 1. 候选沉淀项",
@@ -210,8 +229,21 @@ def render(layout: Phase0Layout, candidates: list[tuple[Path, str]]) -> str:
     return "\n".join(lines)
 
 
-def review_status(layout: Phase0Layout) -> dict[str, object]:
+def _report_bound_to_work_item(report: Path, work_item_id: str) -> bool:
+    if not work_item_id:
+        return True
+    if work_item_id in report.name:
+        return True
+    try:
+        head = report.read_text(encoding="utf-8", errors="ignore")[:1200]
+    except OSError:
+        return False
+    return f"Work Item: `{work_item_id}`" in head or f"Work Item：`{work_item_id}`" in head
+
+
+def review_status(layout: Phase0Layout, work_item_id: str = "") -> dict[str, object]:
     reports = sorted(layout.growth_reports_dir.glob("*-GROWTH.md")) if layout.growth_reports_dir.is_dir() else []
+    reports = [report for report in reports if _report_bound_to_work_item(report, work_item_id)]
     pending: list[str] = []
     reviewed: list[str] = []
     historical_pending: list[str] = []
@@ -230,11 +262,13 @@ def review_status(layout: Phase0Layout) -> dict[str, object]:
         "pending": pending,
         "historical_pending": historical_pending,
         "reviewed": reviewed,
+        "work_item_id": work_item_id,
     }
 
 
-def latest_report(layout: Phase0Layout) -> Path | None:
+def latest_report(layout: Phase0Layout, work_item_id: str = "") -> Path | None:
     reports = sorted(layout.growth_reports_dir.glob("*-GROWTH.md")) if layout.growth_reports_dir.is_dir() else []
+    reports = [report for report in reports if _report_bound_to_work_item(report, work_item_id)]
     return reports[-1] if reports else None
 
 
@@ -257,10 +291,10 @@ def report_evidence_digest(report: Path) -> str:
     return match.group(1) if match else ""
 
 
-def freshness_status(layout: Phase0Layout) -> dict[str, object]:
-    candidates = collect(layout)
-    evidence = evidence_files(layout)
-    report = latest_report(layout)
+def freshness_status(layout: Phase0Layout, work_item_id: str = "") -> dict[str, object]:
+    candidates = collect(layout, work_item_id)
+    evidence = evidence_files(layout, work_item_id)
+    report = latest_report(layout, work_item_id)
     if not candidates:
         return {
             "ok": True,
@@ -268,6 +302,7 @@ def freshness_status(layout: Phase0Layout) -> dict[str, object]:
             "candidates": 0,
             "evidence_files": len(evidence),
             "latest_report": "",
+            "work_item_id": work_item_id,
         }
     if report is None:
         return {
@@ -276,6 +311,7 @@ def freshness_status(layout: Phase0Layout) -> dict[str, object]:
             "candidates": len(candidates),
             "evidence_files": len(evidence),
             "latest_report": "",
+            "work_item_id": work_item_id,
         }
     current_digest = evidence_digest(layout, candidates)
     bound_digest = report_evidence_digest(report)
@@ -288,6 +324,7 @@ def freshness_status(layout: Phase0Layout) -> dict[str, object]:
             "latest_report": layout.rel(report),
             "evidence_digest": current_digest,
             "report_evidence_digest": "",
+            "work_item_id": work_item_id,
         }
     if bound_digest != current_digest:
         return {
@@ -298,8 +335,9 @@ def freshness_status(layout: Phase0Layout) -> dict[str, object]:
             "latest_report": layout.rel(report),
             "evidence_digest": current_digest,
             "report_evidence_digest": bound_digest,
+            "work_item_id": work_item_id,
         }
-    status = review_status(layout)
+    status = review_status(layout, work_item_id)
     if status["pending"]:
         return {
             "ok": False,
@@ -339,6 +377,7 @@ def main() -> int:
     parser.add_argument("--next-action", default="")
     parser.add_argument("--source", default="")
     parser.add_argument("--command", default="")
+    parser.add_argument("--work-item", default="")
     parser.add_argument("cmd", choices=("scan", "status", "review-status", "freshness", "apply-review", "capture"))
     args = parser.parse_args()
 
@@ -349,7 +388,9 @@ def main() -> int:
     if args.cmd in {"scan", "apply-review", "capture"}:
         ensure(layout)
 
-    candidates = collect(layout)
+    gate = load_active_planning_gate(layout)
+    work_item_id = args.work_item.strip() or str(((gate or {}).get("work_item") or {}).get("id") or "").strip()
+    candidates = collect(layout, work_item_id)
     if args.cmd == "capture":
         summary = args.summary.strip()
         if not summary:
@@ -366,23 +407,24 @@ def main() -> int:
             next_action=args.next_action.strip(),
             source=args.source.strip(),
             command=args.command.strip(),
+            work_item_id=work_item_id,
         )
         emit("pass", f"GROWTH_CAPTURE_READY: {layout.rel(out)}", evidence=layout.rel(out))
         return 0
 
     if args.cmd == "status":
-        emit("pass", "GROWTH_STATUS", candidates=len(candidates), evidence_files=len(evidence_files(layout)))
+        emit("pass", "GROWTH_STATUS", candidates=len(candidates), evidence_files=len(evidence_files(layout, work_item_id)), work_item_id=work_item_id)
         return 0
 
     if args.cmd == "review-status":
-        status = review_status(layout)
+        status = review_status(layout, work_item_id)
         decision = "block" if status["pending"] else "pass"
         reason = "GROWTH_REVIEW_PENDING" if status["pending"] else "GROWTH_REVIEW_OK"
         emit(decision, reason, **status)
         return 0
 
     if args.cmd == "freshness":
-        result = freshness_status(layout)
+        result = freshness_status(layout, work_item_id)
         emit("pass" if result.pop("ok") else "block", str(result.pop("reason")), **result)
         return 0
 
@@ -392,10 +434,10 @@ def main() -> int:
         return 0
 
     out = Path(args.output).resolve() if args.output else (
-        layout.growth_reports_dir / f"{datetime.now(timezone.utc).strftime('%Y-%m-%d')}-GROWTH.md"
+        layout.growth_reports_dir / f"{datetime.now(timezone.utc).strftime('%Y-%m-%d')}{'-' + work_item_id if work_item_id else ''}-GROWTH.md"
     )
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(render(layout, candidates), encoding="utf-8")
+    out.write_text(render(layout, candidates, work_item_id), encoding="utf-8")
     emit("pass", f"GROWTH_REPORT_READY: {layout.rel(out)}", candidates=len(candidates), report=layout.rel(out))
     return 0
 

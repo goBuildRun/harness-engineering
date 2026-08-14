@@ -80,6 +80,11 @@ work_item:
                     encoding="utf-8"
                 )
             )
+            result = json.loads(
+                (workspace / "runs" / "tasks" / "local1234" / "result.json").read_text(
+                    encoding="utf-8"
+                )
+            )
 
         self.assertEqual(data["decision"], "pass")
         self.assertIn("产品知识注入", context)
@@ -89,6 +94,37 @@ work_item:
         self.assertEqual(context, legacy_context)
         self.assertEqual(baseline["work_item_id"], "local1234")
         self.assertEqual(baseline["mode"], "task_start")
+        self.assertEqual(result["task_id"], "local1234")
+        self.assertEqual(result["work_item"]["id"], "local1234")
+
+    def test_agent_start_resume_preserves_runtime_and_worktree_baseline(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            workspace = product / "harness-workspace"
+            task_dir = workspace / "planning" / "tasks" / "2026-06-22-local1234-demo"
+            task_dir.mkdir(parents=True)
+            (workspace / "project.yaml").write_text(
+                "product:\n  id: demo\n  name: Demo\nworkspace:\n  root: harness-workspace\n  planning: planning\n  runs: runs\n  knowledge: knowledge\n  evidence: evidence\nwork_item:\n  provider: noop\n",
+                encoding="utf-8",
+            )
+            (task_dir / "planning_gate_pass.json").write_text(json.dumps({
+                "decision": "pass", "level": "L1", "task_dir": str(task_dir),
+                "work_item": {"id": "local1234", "provider": "noop"},
+            }), encoding="utf-8")
+            env = {**os.environ, "HARNESS_PRODUCT_ROOT": str(product), "WORK_ITEM_PROVIDER": "noop"}
+            argv = ["bash", str(SCRIPT_DIR / "agent_start.sh"), "local1234"]
+            subprocess.check_output(argv, cwd=ROOT, env=env, text=True, stderr=subprocess.DEVNULL)
+            baseline_path = workspace / "runs/tasks/local1234/worktree_baseline.json"
+            result_path = workspace / "runs/tasks/local1234/result.json"
+            baseline_before = baseline_path.read_bytes()
+            result_before = json.loads(result_path.read_text(encoding="utf-8"))
+            subprocess.check_output(argv, cwd=ROOT, env=env, text=True, stderr=subprocess.DEVNULL)
+
+            baseline_after = baseline_path.read_bytes()
+            result_after = json.loads(result_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(baseline_after, baseline_before)
+        self.assertEqual(result_after["baseline"], result_before["baseline"])
 
 
 if __name__ == "__main__":

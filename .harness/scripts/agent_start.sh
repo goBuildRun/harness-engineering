@@ -67,10 +67,24 @@ CONTEXT_FILE="$WS_DIR/context.md"
 LEGACY_CONTEXT="$AGENT_WS/context.md"
 BASELINE_FILE="$WS_DIR/worktree_baseline.json"
 
-python3 "$SCRIPT_DIR/worktree_baseline.py" capture \
-  --repo "$PRODUCT_ROOT" \
-  --output "$BASELINE_FILE" \
-  --work-item-id "$WORK_ITEM_ID" >/dev/null
+TASK_SCOPE=$(python3 - "$TASK_DIR" "$PRODUCT_ROOT" <<'PY'
+import os, sys
+print(os.path.relpath(sys.argv[1], sys.argv[2]))
+PY
+)
+RUNTIME_START=$("$SCRIPT_DIR/harness" start "$WORK_ITEM_ID" \
+  --work-item "$WORK_ITEM_ID" --tier standard --scope "$TASK_SCOPE")
+if ! echo "$RUNTIME_START" | python3 -c "import sys,json; d=json.load(sys.stdin); sys.exit(0 if d.get('decision')=='pass' else 1)" 2>/dev/null; then
+  harness_print_json "$RUNTIME_START"
+  exit 0
+fi
+
+if [[ ! -f "$BASELINE_FILE" ]]; then
+  python3 "$SCRIPT_DIR/worktree_baseline.py" capture \
+    --repo "$PRODUCT_ROOT" \
+    --output "$BASELINE_FILE" \
+    --work-item-id "$WORK_ITEM_ID" >/dev/null
+fi
 
 python3 - "$CONTEXT_FILE" "$LEGACY_CONTEXT" "$GATE_FILE" "$WORK_ITEM_ID" "$LEVEL" "$TASK_DIR" "$PRODUCT_ROOT" "$SCRIPT_DIR" "$TASKS_ROOT" "$HARNESS_ROOT" <<'PY'
 import json, subprocess, sys

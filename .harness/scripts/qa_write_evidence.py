@@ -8,11 +8,11 @@ from pathlib import Path
 
 
 def main() -> int:
-    if len(sys.argv) < 7:
-        print("USAGE: qa_write_evidence.py <path> <task_id> <decision> <ts> <summary> <paths_json>", file=sys.stderr)
+    if len(sys.argv) < 8:
+        print("USAGE: qa_write_evidence.py <path> <task_id> <work_item_id> <decision> <ts> <summary> <paths_json>", file=sys.stderr)
         return 1
 
-    path, task_id, decision, ts, summary, paths_json = sys.argv[1:7]
+    path, task_id, work_item_id, decision, ts, summary, paths_json = sys.argv[1:8]
     try:
         paths = json.loads(paths_json)
     except json.JSONDecodeError:
@@ -20,6 +20,7 @@ def main() -> int:
 
     payload = {
         "task_id": task_id,
+        "work_item_id": work_item_id,
         "decision": decision,
         "reviewer": "qa-evaluator",
         "timestamp": ts,
