@@ -185,6 +185,23 @@ class HarnessGrowthTest(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertIn("GROWTH_REVIEW_PENDING", result["reason"])
 
+    def test_review_status_preserves_historical_pending_without_blocking_current_report(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            write_project_config(product)
+            layout = load_layout(ROOT, product)
+            ensure(layout)
+            old = layout.growth_reports_dir / "2026-06-21-GROWTH.md"
+            old.write_text("- **人工决定**：待定\n- **处理结果**：待处理\n", encoding="utf-8")
+            current = layout.growth_reports_dir / "2026-06-22-GROWTH.md"
+            current.write_text("- **人工决定**：lesson\n- **处理结果**：已沉淀\n", encoding="utf-8")
+
+            status = review_status(layout)
+
+        self.assertEqual(status["pending"], [])
+        self.assertEqual(status["historical_pending"], ["harness-workspace/evidence/growth-reports/2026-06-21-GROWTH.md:2"])
+        self.assertEqual(status["current_report"], "harness-workspace/evidence/growth-reports/2026-06-22-GROWTH.md")
+
     def test_freshness_blocks_when_candidates_have_no_growth_report(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product = Path(tmp)

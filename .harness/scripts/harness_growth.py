@@ -212,14 +212,23 @@ def review_status(layout: Phase0Layout) -> dict[str, object]:
     reports = sorted(layout.growth_reports_dir.glob("*-GROWTH.md")) if layout.growth_reports_dir.is_dir() else []
     pending: list[str] = []
     reviewed: list[str] = []
+    historical_pending: list[str] = []
+    current = reports[-1] if reports else None
     for report in reports:
         text = report.read_text(encoding="utf-8", errors="ignore")
         pending_count = len(PENDING_RE.findall(text))
         if pending_count:
-            pending.append(f"{layout.rel(report)}:{pending_count}")
+            target = pending if report == current else historical_pending
+            target.append(f"{layout.rel(report)}:{pending_count}")
         else:
             reviewed.append(layout.rel(report))
-    return {"reports": len(reports), "pending": pending, "reviewed": reviewed}
+    return {
+        "reports": len(reports),
+        "current_report": layout.rel(current) if current else "",
+        "pending": pending,
+        "historical_pending": historical_pending,
+        "reviewed": reviewed,
+    }
 
 
 def latest_report(layout: Phase0Layout) -> Path | None:
