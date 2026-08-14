@@ -26,6 +26,11 @@ def receipt_path(repo: Path) -> Path:
     return path if path.is_absolute() else repo.resolve() / path
 
 
+def _staged_paths(repo: Path) -> list[str]:
+    output = _git(repo, "-c", "core.quotePath=false", "diff", "--cached", "--name-only")
+    return sorted(line for line in output.splitlines() if line)
+
+
 def _digest(value: Any) -> str:
     raw = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
@@ -50,7 +55,7 @@ def create(repo: Path, result: dict[str, Any], *, guarded: bool) -> dict[str, An
         return {"decision": "block", "reason": "RELEASE_CANDIDATE_GUARDED_REQUIRED"}
     if not _eligible(result):
         return {"decision": "block", "reason": "RELEASE_CANDIDATE_NOT_ELIGIBLE"}
-    staged = sorted(line for line in _git(repo, "diff", "--cached", "--name-only").splitlines() if line)
+    staged = _staged_paths(repo)
     if not staged or staged != sorted((result.get("subject") or {}).get("paths") or []):
         return {"decision": "block", "reason": "RELEASE_CANDIDATE_INDEX_SCOPE_MISMATCH"}
     receipt = {
@@ -81,7 +86,7 @@ def check(repo: Path, *, consume: bool = False) -> dict[str, Any]:
         valid = (_git(repo, "rev-parse", "HEAD^1") == receipt.get("parent")
                  and _git(repo, "rev-parse", "HEAD^{tree}") == receipt.get("tree"))
     else:
-        staged = sorted(line for line in _git(repo, "diff", "--cached", "--name-only").splitlines() if line)
+        staged = _staged_paths(repo)
         valid = (_git(repo, "rev-parse", "HEAD") == receipt.get("parent")
                  and _git(repo, "write-tree") == receipt.get("tree") and staged == receipt.get("paths"))
     if not valid:

@@ -54,9 +54,10 @@ class HarnessAssuranceTest(unittest.TestCase):
             install_guards(product)
             subprocess.run(["git", "add", ".githooks"], cwd=product, check=True)
             subprocess.run(["git", "commit", "-qm", "guards", "--no-verify"], cwd=product, check=True)
-            (product / "tracked.txt").write_text("candidate\n")
-            subprocess.run(["git", "add", "tracked.txt"], cwd=product, check=True)
-            created = create_release_candidate(product, self.release_candidate_result(["tracked.txt"]))
+            candidate_path = "中文任务.md"
+            (product / candidate_path).write_text("candidate\n")
+            subprocess.run(["git", "add", candidate_path], cwd=product, check=True)
+            created = create_release_candidate(product, self.release_candidate_result([candidate_path]))
             self.assertEqual(created["decision"], "pass", created)
             self.assertEqual(check_release_candidate(product)["decision"], "pass")
             subprocess.run(["git", "commit", "-qm", "candidate"], cwd=product, check=True)
