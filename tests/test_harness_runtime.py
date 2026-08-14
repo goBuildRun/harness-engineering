@@ -38,6 +38,19 @@ import harness_migration_commands  # noqa: E402
 
 
 class HarnessRuntimeTest(unittest.TestCase):
+    def test_git_changed_preserves_unicode_commit_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.name", "Harness Test"], cwd=repo, check=True)
+            target = repo / "03-实施方案.md"
+            target.write_text("first\n", encoding="utf-8")
+            subprocess.run(["git", "add", str(target.name)], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-q", "-m", "unicode path"], cwd=repo, check=True)
+
+            self.assertEqual(git_changed(repo, "HEAD"), ["03-实施方案.md"])
+
     def test_cost_baseline_never_substitutes_zero_for_unknown(self) -> None:
         baseline = json.loads(
             (ROOT / "tests" / "fixtures" / "lean-cost-baseline.json").read_text()
