@@ -158,13 +158,21 @@ class HarnessRuntimeTest(unittest.TestCase):
             result["baseline"]["source"] = "migration"
             result["tier"]["effective"] = "strict"
             result["binding_digest"] = "old-binding"
+            result["subject"]["digest"] = "old-subject"
+            result["policy_digest"] = "old-policy"
+            result["cost"]["receipt"] = {
+                "provider": "test", "model": "test", "task_id": task_id,
+                "subject_digest": result["subject"]["digest"],
+                "policy_digest": result["policy_digest"],
+            }
             result["checks"]["planning"] = {
                 "decision": "pass", "fingerprint": "old", "subject_digest": "old",
                 "source": "executed",
             }
             atomic_write_result(path, result)
             captured = []
-            with mock.patch.object(harness_commands, "dump_json", side_effect=captured.append):
+            with (mock.patch.object(harness_commands, "dump_json", side_effect=captured.append),
+                  mock.patch.object(harness_commands, "policy_for", return_value="new-policy")):
                 harness_commands.cmd_amend(SimpleNamespace(
                     product_root=str(product), harness_root=str(ROOT), task_id=task_id,
                     scope=["harness-workspace/", ".githooks", ".githooks"],
@@ -179,6 +187,8 @@ class HarnessRuntimeTest(unittest.TestCase):
             self.assertIn("TASK_BINDING_CHANGED", amended["blockers"])
             self.assertNotEqual(amended["binding_digest"], "old-binding")
             self.assertEqual(amended["tier"]["effective"], "standard")
+            self.assertNotIn("receipt", amended["cost"])
+            self.assertEqual(amended["policy_digest"], "new-policy")
 
     def test_amend_task_rejects_unsafe_scope_without_writing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

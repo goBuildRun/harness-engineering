@@ -126,6 +126,7 @@ def cmd_amend(args: argparse.Namespace) -> int:
     result["binding_revisions"] = revisions
     result["binding_digest"] = canonical_digest(binding)
     result["policy_digest"] = policy_for(harness, product)
+    result.get("cost", {}).pop("receipt", None)
     result["tier"]["effective"] = result["tier"]["initial"]
     result["state"] = "active"
     result["decision"] = "block"
