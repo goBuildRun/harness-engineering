@@ -15,7 +15,12 @@ SCRIPT_DIR = ROOT / ".harness" / "scripts"
 sys.path.insert(0, str(SCRIPT_DIR))
 
 from worktree_baseline import capture_baseline  # noqa: E402
-from plan_sync_check import active_task_baseline, extract_planned_paths, task_changed  # noqa: E402
+from plan_sync_check import (  # noqa: E402
+    active_task_baseline,
+    active_task_planning_dir,
+    extract_planned_paths,
+    task_changed,
+)
 from business_paths import find_business_paths, load_business_roots  # noqa: E402
 from workspace_paths import load_layout  # noqa: E402
 
@@ -91,6 +96,7 @@ workspace:
             active_id, active_baseline = active_task_baseline(layout)
             self.assertEqual(active_id, "wi-demo")
             self.assertEqual(active_baseline, baseline.resolve())
+            self.assertEqual(active_task_planning_dir(layout), task_dir.resolve())
             self.assertIn("services/gateway/new.py", task_changed(layout))
 
             result = self._run(product, task_dir)
@@ -101,6 +107,38 @@ workspace:
                 find_business_paths("`deer-flow` and `deer-flowing`", ("deer-flow/",)),
                 ["deer-flow"],
             )
+
+    def test_lean_task_id_selects_active_plan_over_stale_gate(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product, task_dir, _baseline = self._product(Path(tmp))
+            runs = product / "harness-workspace/runs"
+            (runs / "active_task.json").write_text(json.dumps({"task_id": "wi-demo"}), encoding="utf-8")
+            stale = product / "harness-workspace/planning/tasks/2026-07-25-wi-stale"
+            stale.mkdir()
+            (stale / "03-实施方案.md").write_text(
+                "| ID | write_files |\n|---|---|\n| T1 | `services/stale.py` |\n",
+                encoding="utf-8",
+            )
+            (runs / "planning_gate_pass.json").write_text(
+                json.dumps({"task_dir": str(stale)}), encoding="utf-8"
+            )
+            (product / "services/gateway/new.py").write_text("task change\n", encoding="utf-8")
+
+            layout = load_layout(ROOT, product)
+            self.assertEqual(active_task_planning_dir(layout), task_dir.resolve())
+            out = subprocess.check_output(
+                [
+                    sys.executable,
+                    str(SCRIPT_DIR / "plan_sync_check.py"),
+                    "--harness-root",
+                    str(ROOT),
+                    "--product-root",
+                    str(product),
+                ],
+                text=True,
+            )
+
+            self.assertEqual(json.loads(out)["decision"], "pass", out)
 
     def test_recovery_baseline_requires_reason_and_preserves_planned_change(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

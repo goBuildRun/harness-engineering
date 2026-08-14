@@ -35,10 +35,21 @@ def active_task_baseline(layout) -> tuple[str, Path | None]:
         active = json.loads(active_path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return "", None
-    work_item_id = str(active.get("work_item_id") or "").strip()
+    work_item_id = str(active.get("work_item_id") or active.get("task_id") or "").strip()
     if not work_item_id:
         return "", None
     return work_item_id, layout.agent_workspace / "tasks" / work_item_id / "worktree_baseline.json"
+
+
+def active_task_planning_dir(layout) -> Path | None:
+    work_item_id, _ = active_task_baseline(layout)
+    if not work_item_id or not layout.tasks.is_dir():
+        return None
+    exact = layout.tasks / work_item_id
+    if exact.is_dir():
+        return exact
+    matches = [path for path in layout.tasks.iterdir() if path.is_dir() and work_item_id in path.name]
+    return matches[0] if len(matches) == 1 else None
 
 
 def task_changed(layout) -> list[str]:
@@ -92,8 +103,11 @@ def main() -> int:
         args.product_id,
     )
 
-    gate = active_planning_gate_path(layout)
     task_dir = args.task_dir
+    active_dir = active_task_planning_dir(layout)
+    if not task_dir and active_dir is not None and (active_dir / "03-实施方案.md").is_file():
+        task_dir = str(active_dir)
+    gate = active_planning_gate_path(layout)
     if not task_dir and gate.is_file():
         try:
             task_dir = json.loads(gate.read_text(encoding="utf-8")).get("task_dir") or ""
