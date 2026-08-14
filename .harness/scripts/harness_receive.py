@@ -122,37 +122,25 @@ def _checkout_commit(repo: Path, commit: str, destination: Path, *,
         ["git", "init", "--quiet", str(destination)],
         check=True, env=synthetic_env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
-    subprocess.run(["git", "config", "user.email", "authority@harness.invalid"], cwd=destination,
-                   check=True, env=synthetic_env)
-    subprocess.run(["git", "config", "user.name", "Harness Authority"], cwd=destination,
-                   check=True, env=synthetic_env)
-    try:
-        parent = _git(repo, "rev-parse", f"{commit}^1")
-    except (FileNotFoundError, subprocess.CalledProcessError):
-        parent = ""
-    if parent:
-        _export_tree(repo, parent, destination)
-        _export_submodules(repo, parent, destination, submodule_repositories or {})
-        subprocess.run(["git", "add", "-A"], cwd=destination, check=True, env=synthetic_env)
-        subprocess.run(
-            ["git", "-c", "core.hooksPath=/dev/null", "commit", "--quiet", "-m", "subject parent"],
-            cwd=destination, check=True, env=synthetic_env,
-        )
-        for child in destination.iterdir():
-            if child.name != ".git":
-                if child.is_dir():
-                    import shutil
-                    shutil.rmtree(child)
-                else:
-                    child.unlink()
-    _export_tree(repo, commit, destination)
-    _export_submodules(repo, commit, destination, submodule_repositories or {})
-    subprocess.run(["git", "add", "-A"], cwd=destination, check=True, env=synthetic_env)
-    subprocess.run(
-        ["git", "-c", "core.hooksPath=/dev/null", "commit", "--quiet", "--allow-empty",
-         "-m", "subject commit"], cwd=destination,
-        check=True, env=synthetic_env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    git_dir = _git(repo, "rev-parse", "--git-dir")
+    object_directory = (repo / git_dir / "objects").resolve()
+    alternates = [Path(value).resolve() for value in os.environ.get(
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES", "",
+    ).split(os.pathsep) if value]
+    quarantine = os.environ.get("GIT_OBJECT_DIRECTORY", "")
+    if quarantine:
+        alternates.insert(0, Path(quarantine).resolve())
+    alternates.append(object_directory)
+    alternate_file = destination / ".git/objects/info/alternates"
+    alternate_file.parent.mkdir(parents=True, exist_ok=True)
+    alternate_file.write_text(
+        "\n".join(dict.fromkeys(str(path) for path in alternates)) + "\n", encoding="utf-8",
     )
+    subprocess.run(
+        ["git", "-c", "core.hooksPath=/dev/null", "reset", "--hard", "--quiet", commit],
+        cwd=destination, check=True, env=synthetic_env,
+    )
+    _export_submodules(repo, commit, destination, submodule_repositories or {})
 
 
 def verify_commit(repo: Path, harness: Path, commit: str, *,

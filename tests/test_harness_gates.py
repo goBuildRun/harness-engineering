@@ -91,6 +91,21 @@ class HarnessGatesTest(unittest.TestCase):
             ).read_text())
             self.assertEqual(materialized["task_dir"], str(task.resolve()))
 
+    def test_ci_task_resolves_slug_directory_by_work_item_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            task = product / "harness-workspace/planning/tasks/2026-08-14-WI-42-story"
+            task.mkdir(parents=True)
+            (task / "planning_gate_pass.json").write_text(json.dumps({
+                "decision": "pass", "work_item": {"id": "WI-42", "provider": "feishu"},
+            }))
+
+            self.assertTrue(prepare_ci_task(ROOT, product, "WI-42"))
+            materialized = json.loads((
+                product / "harness-workspace/runs/planning_gate_pass.json"
+            ).read_text())
+            self.assertEqual(materialized["task_dir"], str(task.resolve()))
+
     def test_lite_omits_planning_qa_and_strict_evidence(self) -> None:
         gates = set(TIER_GATES["lite"])
         self.assertNotIn("planning", gates)

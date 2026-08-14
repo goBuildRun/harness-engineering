@@ -95,6 +95,14 @@ def _strict_evidence(subject_digest: str) -> dict[str, Any]:
 def prepare_ci_task(harness: Path, product: Path, task_id: str) -> bool:
     layout = load_layout(harness, product)
     task_dir = layout.tasks / task_id
+    if not task_dir.is_dir() and layout.tasks.is_dir():
+        matches = [
+            candidate for candidate in layout.tasks.iterdir()
+            if candidate.is_dir()
+            and (_task_work_item(candidate) or {}).get("id") == task_id
+        ]
+        if len(matches) == 1:
+            task_dir = matches[0]
     source = next(
         (path for path in (task_dir / "planning_gate_pass.json", task_dir / "phase0_pass.json")
          if path.is_file()),

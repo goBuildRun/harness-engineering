@@ -149,6 +149,9 @@ class HarnessReceiveTest(unittest.TestCase):
                 self.assertEqual(
                     (checkout / "vendor/component/value.txt").read_text(), "trusted component\n",
                 )
+                self.assertEqual(subprocess.check_output(
+                    ["git", "rev-parse", "HEAD"], cwd=checkout, text=True,
+                ).strip(), new)
                 return {"decision": "pass", "checks": {}, "missing": []}
 
             with mock.patch("harness_receive.run_gate_plan", side_effect=gates):
