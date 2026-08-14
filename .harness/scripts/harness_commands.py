@@ -385,6 +385,7 @@ def cmd_ci_check(args: argparse.Namespace) -> int:
     changed = git_changed(product, sha)
     result = default_result(args.task_id, initial_tier=args.tier)
     result["work_item"] = committed_work_item(harness, product, args.task_id)
+    result["task"] = {"task_id": args.task_id, "scope": args.scope, "tier_floor": args.tier}
     result["subject"] = {"kind": "commit", "digest": sha}
     result["policy_digest"] = policy_for(harness, product)
     result["binding_digest"] = canonical_digest({"task_id": args.task_id, "scope": args.scope, "commit": sha})

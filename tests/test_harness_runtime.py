@@ -253,6 +253,7 @@ class HarnessRuntimeTest(unittest.TestCase):
         self.assertEqual(result["checks"]["tier"]["source"], "executed")
         self.assertEqual(result["checks"]["scope"]["source"], "executed")
         self.assertEqual(result["checks"]["code_health"]["source"], "executed")
+        self.assertEqual(result["task"], {"task_id": "cache-ci", "scope": ["."], "tier_floor": "lite"})
         self.assertFalse((ROOT / "harness-workspace").exists())
 
     def test_scope_change_and_hotfix_require_reason_and_raise_tier_floor(self) -> None:
