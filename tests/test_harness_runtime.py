@@ -34,6 +34,7 @@ from harness_runtime import (  # noqa: E402
 from harness_scope import paths_within_scope  # noqa: E402
 from harness_state import invalidate_if_stale  # noqa: E402
 import harness_commands  # noqa: E402
+import harness_ci  # noqa: E402
 import harness_migration_commands  # noqa: E402
 
 
@@ -516,9 +517,9 @@ class HarnessRuntimeTest(unittest.TestCase):
                               "provider": "compatible", "model": "gc-model"},
             }))
             captured = []
-            with mock.patch.object(harness_commands, "run_gate_plan", return_value={
+            with mock.patch.object(harness_ci, "run_gate_plan", return_value={
                 "decision": "pass", "checks": {}, "missing": [],
-            }), mock.patch.object(harness_commands, "dump_json", side_effect=captured.append):
+            }), mock.patch.object(harness_ci, "dump_json", side_effect=captured.append):
                 harness_commands.cmd_ci_check(SimpleNamespace(
                     product_root=str(product), harness_root=str(ROOT), task_id="gc-ci",
                     commit=sha, tier="standard", scope=["."], gc_result=str(receipt), output="",

@@ -68,7 +68,42 @@ def _export_tree(repo: Path, commit: str, destination: Path) -> None:
         bundle.extractall(destination, filter="data")
 
 
-def _checkout_commit(repo: Path, commit: str, destination: Path) -> None:
+def _gitlinks(repo: Path, commit: str) -> dict[str, str]:
+    raw = subprocess.check_output(
+        ["git", "ls-tree", "-r", "-z", commit], cwd=repo, stderr=subprocess.DEVNULL,
+    )
+    links: dict[str, str] = {}
+    for entry in raw.decode("utf-8", errors="strict").split("\0"):
+        if not entry:
+            continue
+        metadata, path = entry.split("\t", 1)
+        mode, object_type, sha = metadata.split(" ", 2)
+        if mode == "160000" and object_type == "commit":
+            links[path] = sha
+    return links
+
+
+def _export_submodules(repo: Path, commit: str, destination: Path,
+                       repositories: dict[str, Path]) -> None:
+    root = destination.resolve()
+    for path, sha in _gitlinks(repo, commit).items():
+        source = repositories.get(path)
+        target = (destination / path).resolve()
+        if source is None:
+            raise ValueError(f"RECEIVE_SUBMODULE_SOURCE_MISSING:{path}")
+        if target == root or root not in target.parents:
+            raise ValueError(f"RECEIVE_SUBMODULE_PATH_INVALID:{path}")
+        try:
+            if _git(source, "cat-file", "-t", sha) != "commit":
+                raise ValueError(f"RECEIVE_SUBMODULE_COMMIT_INVALID:{path}")
+        except (FileNotFoundError, subprocess.CalledProcessError) as exc:
+            raise ValueError(f"RECEIVE_SUBMODULE_COMMIT_MISSING:{path}") from exc
+        target.mkdir(parents=True, exist_ok=True)
+        _export_tree(source, sha, target)
+
+
+def _checkout_commit(repo: Path, commit: str, destination: Path, *,
+                     submodule_repositories: dict[str, Path] | None = None) -> None:
     synthetic_env = dict(os.environ)
     for name in ("GIT_DIR", "GIT_WORK_TREE", "GIT_OBJECT_DIRECTORY",
                  "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_QUARANTINE_PATH"):
@@ -87,6 +122,7 @@ def _checkout_commit(repo: Path, commit: str, destination: Path) -> None:
         parent = ""
     if parent:
         _export_tree(repo, parent, destination)
+        _export_submodules(repo, parent, destination, submodule_repositories or {})
         subprocess.run(["git", "add", "-A"], cwd=destination, check=True, env=synthetic_env)
         subprocess.run(
             ["git", "-c", "core.hooksPath=/dev/null", "commit", "--quiet", "-m", "subject parent"],
@@ -100,6 +136,7 @@ def _checkout_commit(repo: Path, commit: str, destination: Path) -> None:
                 else:
                     child.unlink()
     _export_tree(repo, commit, destination)
+    _export_submodules(repo, commit, destination, submodule_repositories or {})
     subprocess.run(["git", "add", "-A"], cwd=destination, check=True, env=synthetic_env)
     subprocess.run(
         ["git", "-c", "core.hooksPath=/dev/null", "commit", "--quiet", "--allow-empty",
@@ -109,7 +146,8 @@ def _checkout_commit(repo: Path, commit: str, destination: Path) -> None:
 
 
 def verify_commit(repo: Path, harness: Path, commit: str, *,
-                  gc_allowed_signers: Path | None = None) -> dict[str, Any]:
+                  gc_allowed_signers: Path | None = None,
+                  submodule_repositories: dict[str, Path] | None = None) -> dict[str, Any]:
     attested = verify_attestation(repo, commit=commit)
     if attested.get("decision") != "pass":
         return {"decision": "block", "reason": "RECEIVE_ATTESTATION_INVALID", "commit": commit,
@@ -127,7 +165,11 @@ def verify_commit(repo: Path, harness: Path, commit: str, *,
     with tempfile.TemporaryDirectory() as tmp:
         checkout = Path(tmp) / "subject"
         try:
-            _checkout_commit(repo, commit, checkout)
+            _checkout_commit(
+                repo, commit, checkout, submodule_repositories=submodule_repositories,
+            )
+        except ValueError as exc:
+            return {"decision": "block", "reason": str(exc), "commit": commit}
         except (FileNotFoundError, subprocess.CalledProcessError) as exc:
             return {"decision": "block", "reason": "RECEIVE_CHECKOUT_FAILED", "commit": commit,
                     "detail": type(exc).__name__ + (
@@ -179,7 +221,8 @@ def verify_commit(repo: Path, harness: Path, commit: str, *,
 
 def verify_updates(repo: Path, harness: Path, updates: list[tuple[str, str, str]], *,
                    protected_refs: tuple[str, ...] = ("refs/heads/main",),
-                   gc_allowed_signers: Path | None = None) -> dict[str, Any]:
+                   gc_allowed_signers: Path | None = None,
+                   submodule_repositories: dict[str, Path] | None = None) -> dict[str, Any]:
     verified: list[dict[str, Any]] = []
     for old, new, ref in updates:
         if ref not in protected_refs:
@@ -196,7 +239,10 @@ def verify_updates(repo: Path, harness: Path, updates: list[tuple[str, str, str]
             return {"decision": "block", "reason": "RECEIVE_RANGE_INVALID", "ref": ref,
                     "verified_commits": verified}
         for commit in commits:
-            outcome = verify_commit(repo, harness, commit, gc_allowed_signers=gc_allowed_signers)
+            outcome = verify_commit(
+                repo, harness, commit, gc_allowed_signers=gc_allowed_signers,
+                submodule_repositories=submodule_repositories,
+            )
             if outcome["decision"] != "pass":
                 return {**outcome, "ref": ref, "verified_commits": verified}
             outcome["ref"] = ref
@@ -208,9 +254,11 @@ def verify_updates(repo: Path, harness: Path, updates: list[tuple[str, str, str]
 def accept_updates(repo: Path, harness: Path, updates: list[tuple[str, str, str]], *,
                    signing_key: Path, protected_refs: tuple[str, ...] = ("refs/heads/main",),
                    gc_allowed_signers: Path | None = None,
+                   submodule_repositories: dict[str, Path] | None = None,
                    ) -> dict[str, Any]:
     outcome = verify_updates(repo, harness, updates, protected_refs=protected_refs,
-                             gc_allowed_signers=gc_allowed_signers)
+                             gc_allowed_signers=gc_allowed_signers,
+                             submodule_repositories=submodule_repositories)
     if outcome["decision"] != "pass":
         return outcome
     bindings: list[tuple[dict[str, Any], str, str]] = []
@@ -246,6 +294,27 @@ def parse_updates(stream: Any) -> list[tuple[str, str, str]]:
     return updates
 
 
+def parse_submodule_repositories(raw: str) -> dict[str, Path]:
+    try:
+        configured = json.loads(raw or "{}")
+    except json.JSONDecodeError as exc:
+        raise ValueError("RECEIVE_SUBMODULE_CONFIG_INVALID") from exc
+    if not isinstance(configured, dict):
+        raise ValueError("RECEIVE_SUBMODULE_CONFIG_INVALID")
+    repositories: dict[str, Path] = {}
+    for path, source in configured.items():
+        if not isinstance(path, str) or not isinstance(source, str):
+            raise ValueError("RECEIVE_SUBMODULE_CONFIG_INVALID")
+        candidate = Path(path)
+        if (not path or candidate.is_absolute() or ".." in candidate.parts or not source):
+            raise ValueError("RECEIVE_SUBMODULE_CONFIG_INVALID")
+        repository = Path(source)
+        if not repository.is_absolute():
+            raise ValueError("RECEIVE_SUBMODULE_CONFIG_INVALID")
+        repositories[path.rstrip("/")] = repository.resolve()
+    return repositories
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Internal bare Git pre-receive verifier")
     parser.add_argument("--repo", default=".")
@@ -254,9 +323,11 @@ def main() -> int:
     parser.add_argument("--signing-key", default="")
     parser.add_argument("--receipt-dir", default="")
     parser.add_argument("--gc-allowed-signers", default="")
+    parser.add_argument("--submodule-repositories-json", default="{}")
     args = parser.parse_args()
     try:
         updates = parse_updates(sys.stdin)
+        submodules = parse_submodule_repositories(args.submodule_repositories_json)
     except ValueError as exc:
         dump_json({"decision": "block", "reason": str(exc)})
         return 1
@@ -272,6 +343,7 @@ def main() -> int:
                 repo, harness, updates, signing_key=Path(args.signing_key),
                 protected_refs=configured,
                 gc_allowed_signers=Path(args.gc_allowed_signers) if args.gc_allowed_signers else None,
+                submodule_repositories=submodules,
             )
             if outcome["decision"] == "pass":
                 receipt_dir = Path(args.receipt_dir)
@@ -295,6 +367,7 @@ def main() -> int:
         outcome = verify_updates(
             repo, harness, updates, protected_refs=configured,
             gc_allowed_signers=Path(args.gc_allowed_signers) if args.gc_allowed_signers else None,
+            submodule_repositories=submodules,
         )
     dump_json(outcome)
     return 0 if outcome["decision"] == "pass" else 1

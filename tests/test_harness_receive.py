@@ -110,6 +110,53 @@ class HarnessReceiveTest(unittest.TestCase):
             outcome = verify_updates(bare, ROOT, [(old, new, "refs/heads/main")])
             self.assertEqual(outcome["decision"], "pass", outcome)
 
+    def test_receive_materializes_submodule_from_explicit_local_object_source(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            component = root / "component"
+            component.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=component, check=True)
+            subprocess.run(["git", "config", "user.email", "harness@example.invalid"], cwd=component, check=True)
+            subprocess.run(["git", "config", "user.name", "Harness Test"], cwd=component, check=True)
+            (component / "value.txt").write_text("trusted component\n")
+            subprocess.run(["git", "add", "."], cwd=component, check=True)
+            subprocess.run(["git", "commit", "-qm", "component"], cwd=component, check=True)
+
+            repo = root / "product"
+            repo.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.email", "harness@example.invalid"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.name", "Harness Test"], cwd=repo, check=True)
+            (repo / "docs").mkdir()
+            (repo / "docs/a.md").write_text("base\n")
+            subprocess.run([
+                "git", "-c", "protocol.file.allow=always", "submodule", "add", "-q",
+                str(component), "vendor/component",
+            ], cwd=repo, check=True)
+            subprocess.run(["git", "add", "."], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-qm", "base with component"], cwd=repo, check=True)
+            old = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
+            (repo / "docs/a.md").write_text("changed\n")
+            subprocess.run(["git", "commit", "-qam", "change"], cwd=repo, check=True)
+            new = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
+            self.attest(repo, new)
+
+            missing = verify_updates(repo, ROOT, [(old, new, "refs/heads/main")])
+            self.assertEqual(missing["reason"], "RECEIVE_SUBMODULE_SOURCE_MISSING:vendor/component")
+
+            def gates(_harness: Path, checkout: Path, **_kwargs: object) -> dict[str, object]:
+                self.assertEqual(
+                    (checkout / "vendor/component/value.txt").read_text(), "trusted component\n",
+                )
+                return {"decision": "pass", "checks": {}, "missing": []}
+
+            with mock.patch("harness_receive.run_gate_plan", side_effect=gates):
+                accepted = verify_updates(
+                    repo, ROOT, [(old, new, "refs/heads/main")],
+                    submodule_repositories={"vendor/component": component},
+                )
+            self.assertEqual(accepted["decision"], "pass", accepted)
+
     def test_receive_rejects_missing_attestation_and_unverified_middle_commit(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)

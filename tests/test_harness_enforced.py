@@ -64,9 +64,13 @@ class HarnessEnforcedTest(unittest.TestCase):
             installed = install(
                 remote, ROOT, protected_refs=("refs/heads/main",), signing_key=key,
                 allowed_signers=allowed, receipt_dir=receipts,
+                submodule_repositories={"vendor/component": source},
             )
             self.assertEqual(installed["decision"], "pass", installed)
-            self.assertEqual(audit(remote)["assurance"]["level"], "enforced")
+            audited = audit(remote)
+            self.assertEqual(audited["assurance"]["level"], "enforced")
+            self.assertEqual(audited["assurance"]["submodule_repositories"], 1)
+            self.assertTrue(audited["assurance"]["submodule_repositories_valid"])
 
             (source / "docs/a.md").write_text("unattested\n")
             subprocess.run(["git", "commit", "-qam", "unattested"], cwd=source, check=True)

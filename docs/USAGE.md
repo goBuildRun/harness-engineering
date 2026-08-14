@@ -670,7 +670,7 @@ execution tier 与 assurance level 必须分开理解：前者决定任务需要
 
 `guarded` 是轻量推广的默认目标，不要求自建 Gitea/GitLab 或购买 GitHub 套餐；它不能因方便而伪称不可绕过。需要绝对准入时，再选择 protected branch、受控 bare repository、发布 gate 等 `enforced` 承载方式。
 
-管理员内部接入使用 `.harness/scripts/harness_enforced.py install`，提供 bare repo、正式 refs、独立 SSH 私钥、`allowed_signers` 和 receipt 目录；随后执行 `audit`。audit 会检查 hook 内容与执行权限、runtime、正式 refs、receipt 目录、信任根以及私钥不得对 group/other 开放。该工具不进入开发者日常公共命令面；私钥和 receipt 目录不得提交进产品仓库。
+管理员内部接入使用 `.harness/scripts/harness_enforced.py install`，提供 bare repo、正式 refs、独立 SSH 私钥、`allowed_signers` 和 receipt 目录；随后执行 `audit`。含 Git submodule 的产品还必须为每个 gitlink 提供 `--submodule-repository <product-path>=<absolute-local-repository>`。receive 只从这些管理员配置的本地对象库按 commit tree 中的 gitlink SHA 物化内容，不信任提交内 `.gitmodules` URL、不联网；缺映射、对象缺失或路径越界均 fail closed。audit 会检查 hook 内容与执行权限、runtime、正式 refs、receipt 目录、信任根、子模块对象源以及私钥不得对 group/other 开放。该工具不进入开发者日常公共命令面；私钥和 receipt 目录不得提交进产品仓库。
 
 Guarded 接入会把 `pre-commit` / `post-commit` / `pre-push` 写入产品 `.githooks/`，并在 repo-local `.git/config` 中设置 `core.hooksPath` 和 Harness 安装根。`pre-commit` 校验有效 `finish` 结果，`post-commit` 创建 commit-bound attestation，`pre-push` 遍历本次新增的全部 commit、逐个验证并批量同步其 attestation refs。该同步不与随后发生的分支 push 构成服务端原子事务，只用于 guarded 审计便利；真正的原子接受属于 `pre-receive`。Guard audit 要求三个 hooks 已纳入 Git且内容未偏移。hooks 可被仓库所有者绕过，因此始终保持 `bypassable: true`。
 

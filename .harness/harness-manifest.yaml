@@ -55,6 +55,7 @@ required_files:
   - .harness/scripts/harness_runtime.py
   - .harness/scripts/harness_tier.py
   - .harness/scripts/harness_commands.py
+  - .harness/scripts/harness_ci.py
   - .harness/scripts/harness_attestation.py
   - .harness/scripts/harness_receive.py
   - .harness/scripts/harness_enforced.py
