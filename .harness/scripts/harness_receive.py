@@ -60,9 +60,18 @@ def valid_update_objects(repo: Path, old: str, new: str) -> bool:
         return False
 
 
-def _export_tree(repo: Path, commit: str, destination: Path) -> None:
+def _clean_git_env() -> dict[str, str]:
+    environment = dict(os.environ)
+    for name in ("GIT_DIR", "GIT_WORK_TREE", "GIT_OBJECT_DIRECTORY",
+                 "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_QUARANTINE_PATH"):
+        environment.pop(name, None)
+    return environment
+
+
+def _export_tree(repo: Path, commit: str, destination: Path, *, isolated: bool = False) -> None:
     archive = subprocess.check_output(
         ["git", "archive", "--format=tar", commit], cwd=repo, stderr=subprocess.DEVNULL,
+        env=_clean_git_env() if isolated else None,
     )
     with tarfile.open(fileobj=io.BytesIO(archive), mode="r:") as bundle:
         bundle.extractall(destination, filter="data")
@@ -94,20 +103,21 @@ def _export_submodules(repo: Path, commit: str, destination: Path,
         if target == root or root not in target.parents:
             raise ValueError(f"RECEIVE_SUBMODULE_PATH_INVALID:{path}")
         try:
-            if _git(source, "cat-file", "-t", sha) != "commit":
+            object_type = subprocess.check_output(
+                ["git", "cat-file", "-t", sha], cwd=source, text=True,
+                stderr=subprocess.DEVNULL, env=_clean_git_env(),
+            ).strip()
+            if object_type != "commit":
                 raise ValueError(f"RECEIVE_SUBMODULE_COMMIT_INVALID:{path}")
         except (FileNotFoundError, subprocess.CalledProcessError) as exc:
             raise ValueError(f"RECEIVE_SUBMODULE_COMMIT_MISSING:{path}") from exc
         target.mkdir(parents=True, exist_ok=True)
-        _export_tree(source, sha, target)
+        _export_tree(source, sha, target, isolated=True)
 
 
 def _checkout_commit(repo: Path, commit: str, destination: Path, *,
                      submodule_repositories: dict[str, Path] | None = None) -> None:
-    synthetic_env = dict(os.environ)
-    for name in ("GIT_DIR", "GIT_WORK_TREE", "GIT_OBJECT_DIRECTORY",
-                 "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_QUARANTINE_PATH"):
-        synthetic_env.pop(name, None)
+    synthetic_env = _clean_git_env()
     subprocess.run(
         ["git", "init", "--quiet", str(destination)],
         check=True, env=synthetic_env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,

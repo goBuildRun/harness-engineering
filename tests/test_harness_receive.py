@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -16,7 +17,7 @@ sys.path.insert(0, str(SCRIPTS))
 from harness_attestation import create_attestation  # noqa: E402
 from harness_gc_context import build_gc_context  # noqa: E402
 from harness_gc_receipt import build_receipt, store_receipt  # noqa: E402
-from harness_receive import accept_updates, commits_for_update, verify_updates  # noqa: E402
+from harness_receive import _export_submodules, accept_updates, commits_for_update, verify_updates  # noqa: E402
 from harness_runtime import default_result, mechanical_code_health, policy_for  # noqa: E402
 from provider_lifecycle import validate_receipt  # noqa: E402
 
@@ -156,6 +157,26 @@ class HarnessReceiveTest(unittest.TestCase):
                     submodule_repositories={"vendor/component": component},
                 )
             self.assertEqual(accepted["decision"], "pass", accepted)
+
+            destination = root / "isolated"
+            destination.mkdir()
+            component_sha = subprocess.check_output(
+                ["git", "rev-parse", "HEAD"], cwd=component, text=True,
+            ).strip()
+            polluted = {
+                "GIT_OBJECT_DIRECTORY": str(root / "parent-quarantine"),
+                "GIT_QUARANTINE_PATH": str(root / "parent-quarantine"),
+            }
+            with mock.patch.dict(os.environ, polluted), mock.patch(
+                "harness_receive._gitlinks",
+                return_value={"vendor/component": component_sha},
+            ):
+                _export_submodules(
+                    repo, new, destination, {"vendor/component": component},
+                )
+            self.assertEqual(
+                (destination / "vendor/component/value.txt").read_text(), "trusted component\n",
+            )
 
     def test_receive_rejects_missing_attestation_and_unverified_middle_commit(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
