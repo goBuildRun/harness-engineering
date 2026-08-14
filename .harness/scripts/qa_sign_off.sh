@@ -54,7 +54,7 @@ TS="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
 ACTIVE_WI=""
 if [[ -f "$AGENT_WS/active_task.json" ]]; then
-  ACTIVE_WI=$(python3 -c "import json; print(json.load(open('$AGENT_WS/active_task.json')).get('work_item_id') or '')" 2>/dev/null || echo "")
+  ACTIVE_WI=$(python3 -c "import json; d=json.load(open('$AGENT_WS/active_task.json')); print(d.get('work_item_id') or d.get('task_id') or '')" 2>/dev/null || echo "")
 fi
 
 if [[ -n "$ACTIVE_WI" ]]; then
