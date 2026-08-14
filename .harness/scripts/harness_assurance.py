@@ -10,14 +10,19 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from harness_release_candidate import check as check_release_candidate
+from harness_release_candidate import create as _create_release_candidate
+
 
 ASSURANCE_LEVELS = {"local", "guarded", "enforced"}
 HOOK_PATHS = (".githooks/post-commit", ".githooks/pre-commit", ".githooks/pre-push")
 
 
-def _git(product: Path, *args: str) -> str:
-    return subprocess.check_output(["git", *args], cwd=product, text=True,
-                                   stderr=subprocess.DEVNULL).strip()
+def _git(product: Path, *args: str, input_text: str | None = None) -> str:
+    return subprocess.check_output(
+        ["git", *args], cwd=product, text=True, input=input_text,
+        stderr=subprocess.DEVNULL,
+    ).strip()
 
 
 def bootstrap_path(product: Path) -> Path:
@@ -110,6 +115,10 @@ OUTPUT="$("$HARNESS_BIN" --product-root "$PRODUCT_ROOT" status 2>&1)" || {
   exit 1
 }
 python3 -c 'import json,sys; d=json.loads(sys.argv[1]); r=d.get("result",{}); ok=d.get("decision")=="pass" and r.get("decision")=="pass" and r.get("state")=="validated"; raise SystemExit(0 if ok else 1)' "$OUTPUT" || {
+  if python3 "$CONFIGURED_ROOT/.harness/scripts/harness_assurance.py" release-candidate-check --repo "$PRODUCT_ROOT" >/dev/null; then
+    echo 'HARNESS_RELEASE_CANDIDATE_PASS' >&2
+    exit 0
+  fi
   python3 "$CONFIGURED_ROOT/.harness/scripts/harness_assurance.py" bootstrap-check --repo "$PRODUCT_ROOT" >/dev/null || {
     echo 'HARNESS_GUARD_BLOCKED' >&2
     exit 1
@@ -164,6 +173,10 @@ echo 'HARNESS_PUSH_GUARD_PASS' >&2
 
 def post_commit_script() -> str:
     return guard_prelude() + """\
+if python3 "$CONFIGURED_ROOT/.harness/scripts/harness_assurance.py" release-candidate-consume --repo "$PRODUCT_ROOT" >/dev/null 2>&1; then
+  echo 'HARNESS_RELEASE_CANDIDATE_ATTESTED' >&2
+  exit 0
+fi
 if python3 "$CONFIGURED_ROOT/.harness/scripts/harness_assurance.py" bootstrap-consume --repo "$PRODUCT_ROOT" >/dev/null 2>&1; then
   echo 'HARNESS_GUARDED_BOOTSTRAP_CONSUMED' >&2
   exit 0
@@ -289,6 +302,10 @@ def audit_guards(product: Path) -> dict[str, Any]:
     }
 
 
+def create_release_candidate(product: Path, result: dict[str, Any]) -> dict[str, Any]:
+    return _create_release_candidate(product, result, guarded=audit_guards(product)["level"] == "guarded")
+
+
 def refresh_result(result: dict[str, Any], product: Path, policy_digest: str, *,
                    phase: str, verified_at: str, attestation: dict[str, Any]) -> None:
     guards = audit_guards(product)
@@ -306,11 +323,16 @@ def refresh_result(result: dict[str, Any], product: Path, policy_digest: str, *,
 def main() -> int:
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="command", required=True)
-    for name in ("bootstrap-check", "bootstrap-consume"):
+    for name in ("bootstrap-check", "bootstrap-consume", "release-candidate-check", "release-candidate-consume"):
         command = sub.add_parser(name)
         command.add_argument("--repo", required=True)
     args = parser.parse_args()
-    outcome = check_bootstrap(Path(args.repo), consume=args.command == "bootstrap-consume")
+    if args.command.startswith("release-candidate"):
+        outcome = check_release_candidate(
+            Path(args.repo), consume=args.command == "release-candidate-consume",
+        )
+    else:
+        outcome = check_bootstrap(Path(args.repo), consume=args.command == "bootstrap-consume")
     print(json.dumps(outcome, ensure_ascii=False))
     return 0 if outcome["decision"] == "pass" else 1
 

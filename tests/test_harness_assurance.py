@@ -15,14 +15,73 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / ".harness" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
-from harness_assurance import (audit_guards, check_bootstrap, create_bootstrap,
-                               install_guards, pre_push_script)  # noqa: E402
+from harness_assurance import (audit_guards, check_bootstrap, check_release_candidate,
+                               create_bootstrap, create_release_candidate, install_guards,
+                               pre_push_script)  # noqa: E402
 from harness_runtime import default_result, load_result  # noqa: E402
 from harness_commands import refresh_assurance  # noqa: E402
 from harness_schema import validate_result  # noqa: E402
 
 
 class HarnessAssuranceTest(unittest.TestCase):
+    def release_candidate_result(self, paths: list[str]) -> dict:
+        result = default_result("task-release", initial_tier="standard")
+        result.update(state="blocked", decision="block", policy_digest="policy-1")
+        result["binding_digest"] = "binding-1"
+        result["subject"] = {"kind": "worktree", "digest": "subject-1", "paths": paths}
+        result["invariants"] = {
+            "task_identity": "pass", "scope": "pass", "risk_validation": "block",
+            "final_result": "pass",
+        }
+        result["checks"] = {
+            "quality_test": {"decision": "pass"},
+            "qa_evidence": {
+                "decision": "block",
+                "reason": "QA_EVIDENCE_INVALID: QA_SIGNOFF_MISSING:T5",
+            },
+        }
+        return result
+
+    def test_release_candidate_is_index_bound_one_shot_and_not_a_final_attestation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            subprocess.run(["git", "init", "-q"], cwd=product, check=True)
+            subprocess.run(["git", "config", "user.email", "harness@example.invalid"], cwd=product, check=True)
+            subprocess.run(["git", "config", "user.name", "Harness Test"], cwd=product, check=True)
+            (product / "tracked.txt").write_text("base\n")
+            subprocess.run(["git", "add", "tracked.txt"], cwd=product, check=True)
+            subprocess.run(["git", "commit", "-qm", "base"], cwd=product, check=True)
+            install_guards(product)
+            subprocess.run(["git", "add", ".githooks"], cwd=product, check=True)
+            subprocess.run(["git", "commit", "-qm", "guards", "--no-verify"], cwd=product, check=True)
+            (product / "tracked.txt").write_text("candidate\n")
+            subprocess.run(["git", "add", "tracked.txt"], cwd=product, check=True)
+            created = create_release_candidate(product, self.release_candidate_result(["tracked.txt"]))
+            self.assertEqual(created["decision"], "pass", created)
+            self.assertEqual(check_release_candidate(product)["decision"], "pass")
+            subprocess.run(["git", "commit", "-qm", "candidate"], cwd=product, check=True)
+            sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=product, text=True).strip()
+            self.assertEqual(check_release_candidate(product)["reason"], "RELEASE_CANDIDATE_MISSING")
+            self.assertEqual(
+                subprocess.check_output(
+                    ["git", "show", f"refs/harness/release-candidates/{sha}"], cwd=product, text=True,
+                ) and True,
+                True,
+            )
+            self.assertNotEqual(subprocess.run(
+                ["git", "show-ref", "--verify", f"refs/harness/attestations/{sha}"], cwd=product,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            ).returncode, 0)
+
+    def test_release_candidate_rejects_any_pending_gate_beyond_production_t5(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            subprocess.run(["git", "init", "-q"], cwd=product, check=True)
+            install_guards(product)
+            subprocess.run(["git", "add", ".githooks"], cwd=product, check=True)
+            result = self.release_candidate_result([".githooks/post-commit", ".githooks/pre-commit", ".githooks/pre-push"])
+            result["checks"]["qa_evidence"]["reason"] += "; QA_SIGNOFF_MISSING:T4"
+            self.assertEqual(create_release_candidate(product, result)["reason"], "RELEASE_CANDIDATE_NOT_ELIGIBLE")
     def test_local_lite_onboarding_public_path_completes_under_five_minutes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product = Path(tmp)
