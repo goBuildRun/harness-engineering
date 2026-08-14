@@ -162,6 +162,20 @@ workspace:
             self.assertEqual(result["decision"], "pass", result)
             self.assertIn("1 个变更路径", result["reason"])
 
+    def test_extract_planned_paths_preserves_spaces_inside_backticks(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product, task_dir, _baseline = self._product(Path(tmp))
+            expected = "services/Product Blueprint (Current).md"
+            (task_dir / "03-实施方案.md").write_text(
+                f"| ID | write_files |\n|---|---|\n| T1 | `{expected}` |\n",
+                encoding="utf-8",
+            )
+            layout = load_layout(ROOT, product)
+
+            planned = extract_planned_paths(layout, str(task_dir))
+
+            self.assertIn(expected, planned)
+
 
 if __name__ == "__main__":
     unittest.main()

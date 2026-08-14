@@ -162,6 +162,10 @@ def _path_pattern(roots: tuple[str, ...]) -> re.Pattern[str]:
 
 def find_business_paths(text: str, roots: tuple[str, ...] = DEFAULT_BUSINESS_ROOTS) -> list[str]:
     paths: dict[str, None] = {}
+    for raw in re.findall(r"`([^`\r\n]+)`", text):
+        path = normalize_path(raw)
+        if is_business_path(path, roots):
+            paths[path] = None
     for match in _path_pattern(roots).finditer(text):
         path = normalize_path(match.group(0).rstrip("`'\"),;，；。]}>"))
         if is_business_path(path, roots):
