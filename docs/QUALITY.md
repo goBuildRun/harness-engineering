@@ -28,7 +28,7 @@
 - `bash .harness/scripts/harness_knowledge.sh check-planning` — `CONTEXT.md` 的 BMAD Planning 受管区块新鲜度
 - `bash .harness/scripts/harness_growth.sh capture --summary "..."` — 排障完成时记录自我成长候选证据，不直接改长期知识
 - `bash .harness/scripts/harness_growth.sh review-status` — GROWTH 报告人工 review 状态
-- `bash .harness/scripts/harness_growth.sh freshness` — GROWTH 报告是否覆盖最新 evidence 候选
+- `bash .harness/scripts/harness_growth.sh freshness` — GROWTH 报告的 Evidence digest 是否覆盖当前 evidence 候选；不依赖 checkout 文件时间
 - `bash .harness/scripts/quality_commands.sh lint|test` — 产品侧业务 lint/test 命令
 - `bash .harness/scripts/run_in_sandbox.sh '<cmd>'` — 受控 TDD 执行入口；默认 controlled argv，可切 Docker backend
 - `bash .harness/scripts/browser_qa_setup.sh check` — 前端任务前检查 Playwright Chromium
@@ -36,7 +36,7 @@
 - `python3 .harness/scripts/browser_qa.py <url> --action scenario --scenario <path.json>` — 受限交互步骤、逐步结果、截图和 trace
 - `mr_ready.sh` 的 diff-bound review checklist + 独立 receipt — correctness/security/tests/scope 四视角，禁止实现角色自签
 - `bash .harness/scripts/release_preflight.sh` — 开源发布前防泄漏检查，不属于日常产品 MR 门禁
-- `bash .harness/scripts/check.sh` — Planning Gate + validate + structure + plan_sync + dag_sync + qa_evidence + knowledge_freshness + growth_freshness + quality；本地可自动刷新 planning CONTEXT、生成缺失 GROWTH 报告，CI 与过期 GROWTH 报告会阻断
+- `bash .harness/scripts/check.sh` — Planning Gate + validate + structure + plan_sync + dag_sync + qa_evidence + knowledge_freshness + growth_freshness + quality；本地可自动刷新 planning CONTEXT、生成缺失 GROWTH 报告，CI 与未绑定/内容过期的 GROWTH 报告会阻断
 - `bash .harness/scripts/subagent-pr-gate.sh <TASK>` — QA 凭证
 
 通用结构规则由 active profile 和 `structure_guard` 决定；产品专用规则只能放入对应 profile，不得进入 generic 默认值。

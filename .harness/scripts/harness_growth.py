@@ -19,6 +19,7 @@ SIGNAL = re.compile(
     re.IGNORECASE,
 )
 PENDING_RE = re.compile(r"人工决定\*\*[：:]\s*待定|处理结果\*\*[：:]\s*待处理")
+EVIDENCE_DIGEST_RE = re.compile(r"^- Evidence digest: `([0-9a-f]{64})`$", re.MULTILINE)
 SECRET_PATTERNS = (
     (
         re.compile(r"(?i)(authorization\s*:\s*bearer\s+)[^\s`]+"),
@@ -171,6 +172,7 @@ def render(layout: Phase0Layout, candidates: list[tuple[Path, str]]) -> str:
         f"- 产品：{layout.product_name}",
         f"- Profile：{layout.harness_profile}",
         f"- 候选数量：{len(candidates)}",
+        f"- Evidence digest: `{evidence_digest(layout, candidates)}`",
         "",
         "## 1. 候选沉淀项",
         "",
@@ -236,14 +238,23 @@ def latest_report(layout: Phase0Layout) -> Path | None:
     return reports[-1] if reports else None
 
 
-def newest_mtime(paths: list[Path]) -> float:
-    mtimes: list[float] = []
-    for path in paths:
-        try:
-            mtimes.append(path.stat().st_mtime)
-        except OSError:
-            continue
-    return max(mtimes) if mtimes else 0.0
+def evidence_digest(layout: Phase0Layout, candidates: list[tuple[Path, str]]) -> str:
+    digest = hashlib.sha256()
+    for path, text in candidates:
+        digest.update(layout.rel(path).encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(text.encode("utf-8"))
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def report_evidence_digest(report: Path) -> str:
+    try:
+        text = report.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return ""
+    match = EVIDENCE_DIGEST_RE.search(text)
+    return match.group(1) if match else ""
 
 
 def freshness_status(layout: Phase0Layout) -> dict[str, object]:
@@ -266,18 +277,27 @@ def freshness_status(layout: Phase0Layout) -> dict[str, object]:
             "evidence_files": len(evidence),
             "latest_report": "",
         }
-    evidence_mtime = newest_mtime(evidence)
-    try:
-        report_mtime = report.stat().st_mtime
-    except OSError:
-        report_mtime = 0.0
-    if report_mtime + 1e-6 < evidence_mtime:
+    current_digest = evidence_digest(layout, candidates)
+    bound_digest = report_evidence_digest(report)
+    if not bound_digest:
+        return {
+            "ok": False,
+            "reason": "GROWTH_REPORT_UNBOUND",
+            "candidates": len(candidates),
+            "evidence_files": len(evidence),
+            "latest_report": layout.rel(report),
+            "evidence_digest": current_digest,
+            "report_evidence_digest": "",
+        }
+    if bound_digest != current_digest:
         return {
             "ok": False,
             "reason": "GROWTH_REPORT_STALE",
             "candidates": len(candidates),
             "evidence_files": len(evidence),
             "latest_report": layout.rel(report),
+            "evidence_digest": current_digest,
+            "report_evidence_digest": bound_digest,
         }
     status = review_status(layout)
     if status["pending"]:
@@ -287,6 +307,8 @@ def freshness_status(layout: Phase0Layout) -> dict[str, object]:
             "candidates": len(candidates),
             "evidence_files": len(evidence),
             "latest_report": layout.rel(report),
+            "evidence_digest": current_digest,
+            "report_evidence_digest": bound_digest,
             **status,
         }
     return {
@@ -295,6 +317,8 @@ def freshness_status(layout: Phase0Layout) -> dict[str, object]:
         "candidates": len(candidates),
         "evidence_files": len(evidence),
         "latest_report": layout.rel(report),
+        "evidence_digest": current_digest,
+        "report_evidence_digest": bound_digest,
         **status,
     }
 

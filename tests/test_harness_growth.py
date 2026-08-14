@@ -13,7 +13,14 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPT_DIR = ROOT / ".harness" / "scripts"
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from harness_growth import apply_review, capture_evidence, collect, freshness_status, review_status  # noqa: E402
+from harness_growth import (  # noqa: E402
+    apply_review,
+    capture_evidence,
+    collect,
+    freshness_status,
+    render,
+    review_status,
+)
 from harness_knowledge import ensure  # noqa: E402
 from workspace_paths import load_layout  # noqa: E402
 
@@ -217,7 +224,7 @@ class HarnessGrowthTest(unittest.TestCase):
         self.assertEqual("GROWTH_REPORT_MISSING", status["reason"])
         self.assertEqual(1, status["candidates"])
 
-    def test_freshness_blocks_when_growth_report_is_older_than_evidence(self) -> None:
+    def test_freshness_blocks_when_growth_report_is_not_bound_to_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product = Path(tmp)
             write_project_config(product)
@@ -227,9 +234,49 @@ class HarnessGrowthTest(unittest.TestCase):
             evidence.write_text("- 经验沉淀：后续任务需要进入 CONTEXT。\n", encoding="utf-8")
             report = layout.growth_reports_dir / "2026-06-22-GROWTH.md"
             report.write_text("# GROWTH\n", encoding="utf-8")
-            old = evidence.stat().st_mtime - 10
+            status = freshness_status(layout)
 
-            os.utime(report, (old, old))
+        self.assertFalse(status["ok"])
+        self.assertEqual("GROWTH_REPORT_UNBOUND", status["reason"])
+
+    def test_freshness_uses_evidence_digest_not_checkout_mtime(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            write_project_config(product)
+            layout = load_layout(ROOT, product)
+            ensure(layout)
+            evidence = layout.summaries_dir / "demo-T1-SUMMARY.md"
+            evidence.write_text("- 经验沉淀：后续任务需要进入 CONTEXT。\n", encoding="utf-8")
+            candidates = collect(layout)
+            report = layout.growth_reports_dir / "2026-06-22-GROWTH.md"
+            report.write_text(
+                render(layout, candidates)
+                .replace("- **人工决定**：待定", "- **人工决定**：context")
+                .replace("- **处理结果**：待处理", "- **处理结果**：已沉淀"),
+                encoding="utf-8",
+            )
+            newer = report.stat().st_mtime + 10
+            os.utime(evidence, (newer, newer))
+
+            status = freshness_status(layout)
+
+        self.assertTrue(status["ok"])
+        self.assertEqual("GROWTH_FRESHNESS_OK", status["reason"])
+        self.assertEqual(status["evidence_digest"], status["report_evidence_digest"])
+
+    def test_freshness_blocks_when_bound_evidence_content_changes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            write_project_config(product)
+            layout = load_layout(ROOT, product)
+            ensure(layout)
+            evidence = layout.summaries_dir / "demo-T1-SUMMARY.md"
+            evidence.write_text("- 经验沉淀：第一版。\n", encoding="utf-8")
+            report = layout.growth_reports_dir / "2026-06-22-GROWTH.md"
+            report.write_text(render(layout, collect(layout)), encoding="utf-8")
+            evidence.write_text("- 经验沉淀：第二版。\n", encoding="utf-8")
+            older = report.stat().st_mtime - 10
+            os.utime(evidence, (older, older))
 
             status = freshness_status(layout)
 
@@ -246,17 +293,9 @@ class HarnessGrowthTest(unittest.TestCase):
             evidence.write_text("- 经验沉淀：后续任务需要进入 CONTEXT。\n", encoding="utf-8")
             report = layout.growth_reports_dir / "2026-06-22-GROWTH.md"
             report.write_text(
-                """
-# GROWTH — Harness 自我成长报告
-
-### G-001
-
-- **来源**：`harness-workspace/evidence/summaries/demo-T1-SUMMARY.md`
-- **原文摘要**：后续任务需要进入 CONTEXT。
-- **建议分类**：lesson / context / architecture / tech-debt / ignore
-- **人工决定**：context
-- **处理结果**：已沉淀
-""".lstrip(),
+                render(layout, collect(layout))
+                .replace("- **人工决定**：待定", "- **人工决定**：context")
+                .replace("- **处理结果**：待处理", "- **处理结果**：已沉淀"),
                 encoding="utf-8",
             )
 
