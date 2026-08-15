@@ -10,7 +10,7 @@ from pathlib import Path
 
 from business_paths import find_business_paths, load_business_roots
 from harness_output import dump_json
-from workspace_paths import active_planning_gate_path, load_layout
+from workspace_paths import active_planning_gate_path, load_layout, resolve_task_dir
 
 FIELD_ALIASES = {
     "id": ("id", "任务id", "任务 id"),
@@ -99,9 +99,7 @@ def task_file(args: argparse.Namespace, layout) -> Path:
             except (json.JSONDecodeError, OSError):
                 task_dir = ""
     if task_dir:
-        p = Path(task_dir)
-        if not p.is_absolute():
-            p = layout.tasks / task_dir
+        p = resolve_task_dir(layout, task_dir, cwd=Path.cwd())
         return (p / "03-实施方案.md").resolve()
     return (layout.tasks / "03-实施方案.md").resolve()
 

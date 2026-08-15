@@ -298,6 +298,8 @@ cp tasks/_templates/00-任务卡.md tasks/_templates/03-实施方案.md tasks/_t
 bash .harness/scripts/planning_gate.sh L2 "$TASK_DIR"
 ```
 
+`TASK_DIR` 可传绝对路径、产品根相对路径（`harness-workspace/planning/tasks/...`）、planning 根相对路径（`tasks/...`）或任务目录 basename；`planning_gate`、task contract 与 DAG 检查使用同一解析规则。
+
 凭证：`harness-workspace/runs/planning_gate_pass.json` + `harness-workspace/planning/tasks/.../planning_gate_pass.json`。`phase0_pass.json` 会作为历史兼容副本同步写入。
 
 L2/L3 的 `03-实施方案.md` 必须通过 7 字段任务契约：
@@ -313,6 +315,8 @@ bash .harness/scripts/agent_start.sh <work-item-id>
 ```
 
 从 `harness-workspace/planning/tasks/` 自动恢复 Planning Gate，并把产品侧 `CONTEXT.md`、`LESSONS.md`、`REFERENCE_SYSTEMS.md` 摘要注入本次任务上下文；工作区在 `harness-workspace/runs/tasks/<id>/`。
+
+L3 Planning Gate 启动 `strict` execution tier；runtime scope 由任务目录及 `03-实施方案.md` 的写入边界组成。重复启动同一 Work Item 只允许单调提升 tier 或扩充 scope，保留原 worktree/Token baseline，且拒绝把既有 task 重新绑定到另一个 Work Item。
 
 ---
 
@@ -624,7 +628,7 @@ Growth 不是固定收尾。只有出现新的失败模式、架构边界、默�
 
 `scan` 生成的报告包含 Work Item 身份，以及对该 Work Item 候选来源路径和候选文本规范化后的 `Evidence digest`。任务身份从 active Planning Gate 读取，也可用 `--work-item` 显式提供；文件名或报告头未绑定该任务的历史 evidence 不参与 freshness。`freshness` 不使用文件系统 `mtime`，因此同一 commit 在 receive/CI 隔离 checkout 中仍可确定性重放。候选内容变化返回 `GROWTH_REPORT_STALE`；旧格式报告没有摘要或 Work Item 绑定时返回 `GROWTH_REPORT_UNBOUND`，必须重新 `scan` 并完成 review。
 
-`agent_start.sh` 会原子启动或恢复同一 Work Item 的 lean runtime，保证 `result.json` 与 worktree/Token baseline 同步存在；恢复任务不会覆盖原 baseline。QA sign-off 只写 `runs/tasks/<work-item>/`，凭证和 TEST/REVIEW 文件均按 Work Item 查找，禁止回退复用全局 `qa_approved_T*.json`。
+`agent_start.sh` 会原子启动或恢复同一 Work Item 的 lean runtime，保证 `result.json` 与 worktree/Token baseline 同步存在；恢复任务不会覆盖原 baseline，只会单调增强 tier/scope binding。QA sign-off 只写 `runs/tasks/<work-item>/`，凭证和 TEST/REVIEW 文件均按 Work Item 查找，禁止回退复用全局 `qa_approved_T*.json`。
 
 ---
 

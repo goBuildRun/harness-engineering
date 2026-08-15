@@ -39,6 +39,61 @@ import harness_migration_commands  # noqa: E402
 
 
 class HarnessRuntimeTest(unittest.TestCase):
+    def test_start_resume_monotonically_strengthens_tier_and_scope(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            subprocess.run(["git", "init", "-q"], cwd=product, check=True)
+            common = {
+                "product_root": str(product),
+                "harness_root": str(ROOT),
+                "task_id": "resume-strict",
+                "work_item": "WI-42",
+                "kind": "implementation",
+                "reason": "",
+            }
+            captured = []
+            with mock.patch.object(harness_commands, "dump_json", side_effect=captured.append):
+                harness_commands.cmd_start(SimpleNamespace(
+                    **common, tier="standard", scope=["harness-workspace/planning/tasks/story"],
+                ))
+            baseline_path = product / "harness-workspace/runs/tasks/resume-strict/worktree_baseline.json"
+            baseline_before = baseline_path.read_bytes()
+
+            captured = []
+            with mock.patch.object(harness_commands, "dump_json", side_effect=captured.append):
+                harness_commands.cmd_start(SimpleNamespace(
+                    **common, tier="strict", scope=["deer-flow", "harness-workspace/evidence"],
+                ))
+
+            result = captured[-1]["result"]
+            self.assertEqual(captured[-1]["reason"], "TASK_RESUMED_WITH_STRONGER_BINDING")
+            self.assertEqual(result["tier"], {"initial": "strict", "effective": "strict"})
+            self.assertEqual(result["task"]["tier_floor"], "strict")
+            self.assertEqual(result["task"]["scope"], [
+                "deer-flow",
+                "harness-workspace/evidence",
+                "harness-workspace/planning/tasks/story",
+            ])
+            self.assertEqual(result["binding_revisions"][-1]["previous_tier"], "standard")
+            self.assertEqual(baseline_path.read_bytes(), baseline_before)
+
+    def test_start_resume_rejects_work_item_rebinding(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            subprocess.run(["git", "init", "-q"], cwd=product, check=True)
+            common = {
+                "product_root": str(product), "harness_root": str(ROOT),
+                "task_id": "resume-identity", "tier": "standard", "scope": ["src"],
+                "kind": "implementation", "reason": "",
+            }
+            with mock.patch.object(harness_commands, "dump_json"):
+                harness_commands.cmd_start(SimpleNamespace(**common, work_item="WI-1"))
+            captured = []
+            with mock.patch.object(harness_commands, "dump_json", side_effect=captured.append):
+                harness_commands.cmd_start(SimpleNamespace(**common, work_item="WI-2"))
+            self.assertEqual(captured[-1]["decision"], "block")
+            self.assertEqual(captured[-1]["reason"], "TASK_RESUME_WORK_ITEM_MISMATCH")
+
     def test_git_changed_preserves_unicode_commit_paths(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)

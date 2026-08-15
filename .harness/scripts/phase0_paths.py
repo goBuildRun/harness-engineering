@@ -208,6 +208,36 @@ def resolve_phase0_path(layout: Phase0Layout, rel: str) -> Path:
     return (layout.phase0_root / rel).resolve()
 
 
+def resolve_task_dir(layout: Phase0Layout, value: str, *, cwd: Path | None = None) -> Path:
+    """Resolve absolute, product-relative, planning-relative, or task-root-relative task paths."""
+    raw = value.strip().strip("`").replace("\\", "/")
+    path = Path(raw)
+    if path.is_absolute():
+        return path.resolve()
+
+    candidates: list[Path] = []
+    if cwd is not None:
+        candidates.append((cwd / path).resolve())
+    candidates.extend(
+        [
+            (layout.product_root / path).resolve(),
+            (layout.phase0_root / path).resolve(),
+            (layout.tasks / path).resolve(),
+        ]
+    )
+    for candidate in candidates:
+        if candidate.is_dir():
+            return candidate
+
+    product_tasks = layout.rel(layout.tasks).rstrip("/")
+    planning_tasks = layout.rel_phase0(layout.tasks).rstrip("/")
+    if raw == product_tasks or raw.startswith(f"{product_tasks}/"):
+        return (layout.product_root / path).resolve()
+    if raw == planning_tasks or raw.startswith(f"{planning_tasks}/"):
+        return (layout.phase0_root / path).resolve()
+    return (layout.tasks / path).resolve()
+
+
 def planning_gate_path(layout: Phase0Layout) -> Path:
     return layout.runs_root / "planning_gate_pass.json"
 

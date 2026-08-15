@@ -9,7 +9,7 @@ from pathlib import Path
 
 from harness_output import dump_json
 from task_contract_check import parse_task_rows
-from workspace_paths import active_planning_gate_path, load_layout
+from workspace_paths import active_planning_gate_path, load_layout, resolve_task_dir
 
 
 def emit(decision: str, reason: str, **extra) -> None:
@@ -18,10 +18,7 @@ def emit(decision: str, reason: str, **extra) -> None:
 
 def load_task_dir(layout, task_dir: str) -> Path | None:
     if task_dir:
-        p = Path(task_dir)
-        if not p.is_absolute():
-            p = layout.tasks / task_dir
-        return p.resolve()
+        return resolve_task_dir(layout, task_dir, cwd=Path.cwd())
     gate = active_planning_gate_path(layout)
     if gate.is_file():
         try:

@@ -30,6 +30,7 @@ from harness_scope import paths_within_scope
 from harness_state import invalidate_if_stale
 from worktree_baseline import capture_baseline, changed_since_baseline
 from harness_ci import cmd_ci_check
+from harness_task_binding import strengthen_resumed_task
 
 def execution_paths(product: Path, task_id: str, changed: list[str]) -> list[str]:
     generated = workspace_root(product) / "planning" / "tasks" / task_id / "task.json"
@@ -52,7 +53,10 @@ def cmd_start(args: argparse.Namespace) -> int:
     task_id = args.task_id or f"task-{uuid.uuid4().hex[:12]}"
     path = result_path(product, task_id)
     if path.exists():
-        dump_json({"decision": "pass", "reason": "TASK_RESUMED", "result": load_result(path)})
+        outcome = strengthen_resumed_task(load_result(path), args, task_id, harness, product)
+        if outcome.pop("changed", False):
+            atomic_write_result(path, outcome["result"])
+        dump_json(outcome)
         return 0
     change_reason = str(getattr(args, "reason", "") or "").strip()
     if args.kind in {"scope-change", "hotfix"} and not change_reason:

@@ -6,6 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HARNESS_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 EMIT="$SCRIPT_DIR/emit_json.py"
 PRODUCT_ROOT="$(bash "$SCRIPT_DIR/product_root.sh")"
+CALLER_CWD="$PWD"
 # Preserve the resolved product for nested checks after this script changes cwd.
 export HARNESS_PRODUCT_ROOT="$PRODUCT_ROOT"
 
@@ -46,10 +47,23 @@ TASK_DIR_ABS=""
 if [[ "$LEVEL" == "L2" || "$LEVEL" == "L3" ]]; then
   if [[ -z "$TASK_DIR" ]]; then
     FAILURES+=("NO_TASK_DIR: L2/L3 须传入 harness-workspace/planning/tasks/ 目录路径")
-  elif [[ ! -d "$TASK_DIR" ]]; then
-    FAILURES+=("TASK_DIR_MISSING: $TASK_DIR")
   else
-    TASK_DIR_ABS="$(cd "$TASK_DIR" && pwd)"
+    TASK_DIR_ABS=$(python3 - "$SCRIPT_DIR" "$HARNESS_ROOT" "$PRODUCT_ROOT" "$CALLER_CWD" "$TASK_DIR" <<'PY'
+import sys
+from pathlib import Path
+
+sys.path.insert(0, sys.argv[1])
+from workspace_paths import load_layout, resolve_task_dir
+
+layout = load_layout(Path(sys.argv[2]), Path(sys.argv[3]))
+print(resolve_task_dir(layout, sys.argv[5], cwd=Path(sys.argv[4])))
+PY
+)
+    if [[ ! -d "$TASK_DIR_ABS" ]]; then
+      FAILURES+=("TASK_DIR_MISSING: $TASK_DIR_ABS")
+      TASK_DIR_ABS=""
+    else
+      TASK_DIR="$TASK_DIR_ABS"
     require_task_file() {
       [[ -f "$TASK_DIR/$1" ]] || FAILURES+=("MISSING: $TASK_DIR/$1")
     }
@@ -71,7 +85,7 @@ if [[ "$LEVEL" == "L2" || "$LEVEL" == "L3" ]]; then
         FAILURES+=("GATE1_NOT_CONFIRMED: Gate 1 须标为「已确认」")
       fi
     fi
-    if [[ -f "$TASK_DIR/03-实施方案.md" ]]; then
+      if [[ -f "$TASK_DIR/03-实施方案.md" ]]; then
       PLAN_PATHS=$(python3 "$SCRIPT_DIR/business_paths.py" extract --harness-root "$HARNESS_ROOT" --product-root "$PRODUCT_ROOT" < "$TASK_DIR/03-实施方案.md" 2>/dev/null || true)
       if [[ -z "$PLAN_PATHS" ]]; then
         FAILURES+=("PLAN_NO_PATHS: 03-实施方案.md 须登记白名单目标路径（如 services/catalog_service/...）")
@@ -80,6 +94,7 @@ if [[ "$LEVEL" == "L2" || "$LEVEL" == "L3" ]]; then
       if ! echo "$TASK_CONTRACT" | python3 -c "import sys,json; d=json.load(sys.stdin); sys.exit(0 if d.get('decision')=='pass' else 1)" 2>/dev/null; then
         TASK_REASON=$(echo "$TASK_CONTRACT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('reason','TASK_CONTRACT_FAIL'))" 2>/dev/null || echo "TASK_CONTRACT_FAIL")
         FAILURES+=("$TASK_REASON")
+      fi
       fi
     fi
   fi

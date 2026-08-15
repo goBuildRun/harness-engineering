@@ -68,12 +68,42 @@ LEGACY_CONTEXT="$AGENT_WS/context.md"
 BASELINE_FILE="$WS_DIR/worktree_baseline.json"
 
 TASK_SCOPE=$(python3 - "$TASK_DIR" "$PRODUCT_ROOT" <<'PY'
-import os, sys
-print(os.path.relpath(sys.argv[1], sys.argv[2]))
+import sys
+from pathlib import Path
+
+print(Path(sys.argv[1]).resolve().relative_to(Path(sys.argv[2]).resolve()))
 PY
 )
+RUNTIME_TIER="standard"
+[[ "$LEVEL" == "L3" ]] && RUNTIME_TIER="strict"
+RUNTIME_SCOPE_ARGS=(--scope "$TASK_SCOPE")
+PLAN_FILE="$TASK_DIR/03-实施方案.md"
+if [[ -f "$PLAN_FILE" ]]; then
+  while IFS= read -r SCOPE_PATH; do
+    [[ -n "$SCOPE_PATH" ]] && RUNTIME_SCOPE_ARGS+=(--scope "$SCOPE_PATH")
+  done < <(python3 - "$SCRIPT_DIR" "$HARNESS_ROOT" "$PRODUCT_ROOT" "$PLAN_FILE" <<'PY'
+import sys
+from pathlib import Path
+
+sys.path.insert(0, sys.argv[1])
+from business_paths import find_business_paths, load_business_roots
+from task_contract_check import parse_task_rows
+
+text = Path(sys.argv[4]).read_text(encoding="utf-8", errors="ignore")
+rows, _ = parse_task_rows(text)
+roots = load_business_roots(Path(sys.argv[2]), product_root=Path(sys.argv[3]))
+paths = {
+    path.rstrip("/")
+    for row in rows
+    for path in find_business_paths(row.get("write_files", ""), roots)
+    if path.strip()
+}
+print("\n".join(sorted(paths)))
+PY
+)
+fi
 RUNTIME_START=$("$SCRIPT_DIR/harness" start "$WORK_ITEM_ID" \
-  --work-item "$WORK_ITEM_ID" --tier standard --scope "$TASK_SCOPE")
+  --work-item "$WORK_ITEM_ID" --tier "$RUNTIME_TIER" "${RUNTIME_SCOPE_ARGS[@]}")
 if ! echo "$RUNTIME_START" | python3 -c "import sys,json; d=json.load(sys.stdin); sys.exit(0 if d.get('decision')=='pass' else 1)" 2>/dev/null; then
   harness_print_json "$RUNTIME_START"
   exit 0

@@ -14,6 +14,47 @@ SCRIPT_DIR = ROOT / ".harness" / "scripts"
 
 
 class AgentStartTest(unittest.TestCase):
+    def test_l3_agent_start_requests_strict_tier_and_planned_write_scope(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            workspace = product / "harness-workspace"
+            task_dir = workspace / "planning" / "tasks" / "2026-06-22-local1234-demo"
+            task_dir.mkdir(parents=True)
+            (workspace / "project.yaml").write_text(
+                "product:\n  id: demo\n  name: Demo\n  profile: generic\n"
+                "workspace:\n  root: harness-workspace\n  planning: planning\n  runs: runs\n"
+                "  knowledge: knowledge\n  evidence: evidence\nwork_item:\n  provider: noop\n",
+                encoding="utf-8",
+            )
+            (task_dir / "00-任务卡.md").write_text("- Work Item：`local1234`\n", encoding="utf-8")
+            (task_dir / "03-实施方案.md").write_text(
+                "| ID | 读取边界 | 写入边界 | 动作 | 验证命令 | 完成标准 |\n"
+                "| --- | --- | --- | --- | --- | --- |\n"
+                "| T1 | `services/source.py` | `services/replay.py` | 实现反馈 | `python3 -m unittest` | 测试通过 |\n",
+                encoding="utf-8",
+            )
+            (task_dir / "planning_gate_pass.json").write_text(json.dumps({
+                "decision": "pass", "level": "L3", "task_dir": str(task_dir),
+                "work_item": {"id": "local1234", "provider": "noop"},
+            }), encoding="utf-8")
+            env = {**os.environ, "HARNESS_PRODUCT_ROOT": str(product), "WORK_ITEM_PROVIDER": "noop"}
+
+            out = subprocess.check_output(
+                ["bash", str(SCRIPT_DIR / "agent_start.sh"), "local1234"],
+                cwd=ROOT, env=env, text=True, stderr=subprocess.DEVNULL,
+            )
+            result = json.loads(
+                (workspace / "runs/tasks/local1234/result.json").read_text(encoding="utf-8")
+            )
+
+        self.assertEqual(json.loads(out)["decision"], "pass")
+        self.assertEqual(result["tier"]["initial"], "strict")
+        self.assertIn("services/replay.py", result["task"]["scope"])
+        self.assertIn(
+            "harness-workspace/planning/tasks/2026-06-22-local1234-demo",
+            result["task"]["scope"],
+        )
+
     def test_agent_start_injects_product_knowledge(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product = Path(tmp)

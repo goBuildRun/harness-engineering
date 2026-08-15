@@ -141,6 +141,8 @@ bash .harness/scripts/work_item.sh list-mine
 # … Harness Execution：tasks-dag → TDD → 风险匹配验证 → check → MR …
 ```
 
+`agent_start` 会从 `03-实施方案.md` 写入边界生成 runtime scope；L3 自动使用 strict tier。再次启动同一 Work Item 不覆盖原 baseline，只允许增强 tier/scope，并拒绝 Work Item 换绑。
+
 **开发注意**：
 
 - Teambition 产品：`.env` 中 `DINGTALK_OPERATOR_USER_ID` 建议填 **本人** 钉钉 userId（审计与 list-mine）
