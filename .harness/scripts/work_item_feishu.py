@@ -241,7 +241,14 @@ class FeishuProvider(FeishuPayloadMixin, WorkItemProvider):
                     return False, f"FEISHU_STATUS_UNSUPPORTED: {status}; completed mode only supports done/open statuses"
                 body = {"task": {"completed_at": completed_at}, "update_fields": ["completed_at"]}
                 self._request("PATCH", f"{self.tasks_path}/{urllib.parse.quote(work_item_id, safe='')}", body)
-                return True, f"FEISHU_UPDATED: status={status}; completed_at={completed_at}"
+                readback = self.pull(work_item_id)
+                provider_status = str(readback.status or "unknown")
+                canonical_status = self._canonical_status(provider_status)
+                readback_completed_at = str((readback.raw or {}).get("completed_at") or "0")
+                detail = f"requested_status={status}; provider_status={provider_status}; canonical_status={canonical_status}; completed_at={readback_completed_at}"
+                if canonical_status != stage:
+                    return False, f"FEISHU_UPDATE_VERIFY_FAIL: expected={stage}; {detail}"
+                return True, f"FEISHU_UPDATED: {detail}; readback=verified"
             if self.status_update_mode not in self.DESCRIPTION_MODE_ALIASES:
                 return False, (
                     f"FEISHU_STATUS_MODE_UNSUPPORTED: {self.status_update_mode}; "

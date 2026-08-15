@@ -256,7 +256,7 @@ FEISHU_USER_ACCESS_TOKEN=
 - `draft-spec`：生成待确认任务草稿，不写飞书
 - `sync-spec --assignee <id>`：创建任务、设置负责人并回写 `#<task_guid>`
 - `list-mine`：默认用 `tasklist_guid` 调用 `/open-apis/task/v2/tasklists/{tasklist_guid}/tasks`，也可用 `list_query` / `list_tasks_path` 适配租户差异，并在本地按负责人过滤
-- `close`：默认只本地返回 pass，不改飞书状态；产品侧配置 `status_update_mode: completed` 后，`close --status done` 会 PATCH 任务 `completed_at=<当前毫秒时间戳>`，`close --status in_progress` / `todo` 会清为 `"0"`。
+- `close`：默认只本地返回 pass，不改飞书状态；产品侧配置 `status_update_mode: completed` 后，`close --status done` 会 PATCH 任务 `completed_at=<当前毫秒时间戳>`，`close --status in_progress` / `todo` 会清为 `"0"`。写入后会重新拉取任务并核对 canonical `done/open` 状态；飞书把 `in_progress` 与 `todo` 都表示为未完成时，结果会同时报告 requested status、真实 provider status 和 canonical status，不把 provider 的 `todo` 冒充为精确 `in_progress`。
 
 推荐飞书接入测试顺序：
 

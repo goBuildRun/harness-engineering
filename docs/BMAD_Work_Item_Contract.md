@@ -155,7 +155,7 @@ growth-review-required
 - 产品侧 `project.yaml` 配置 `providers.feishu.tasklist_guid`，把任务创建到固定任务清单。
 - 如租户任务列表接口不同，可配置 `providers.feishu.list_tasks_path` 与 `providers.feishu.list_query`，`list-mine` 会拉取后按负责人本地过滤。
 - `providers.feishu.assignee_id` 可配置产品默认负责人；个人本地覆盖用 `FEISHU_ASSIGNEE_ID`。
-- `providers.feishu.status_update_mode: completed` 会把 Harness `done/closed/mr_merged` 映射为飞书任务 `completed_at=<当前毫秒时间戳>`；`in_progress/todo` 会清为 `"0"`，用于重新打开。
+- `providers.feishu.status_update_mode: completed` 会把 Harness `done/closed/mr_merged` 映射为飞书任务 `completed_at=<当前毫秒时间戳>`；`in_progress/todo` 会清为 `"0"`，用于重新打开。Provider 必须在 PATCH 后回读并核对 canonical `done/open` 状态；当飞书只返回 `todo` 表示未完成时，结果保留 requested status 与真实 provider status 的区别。
 - 飞书任务描述里只放摘要和链接，不复制完整 PRD。
 - Webhook 需要按租户继续增强；短期用 `diagnose --id`、`verify`、`pull` 校验具体任务。
 

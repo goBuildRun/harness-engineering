@@ -230,6 +230,17 @@ class FeishuProviderTest(unittest.TestCase):
                 {"code": 0, "tenant_access_token": "token-1", "expire": 7200},
                 {"code": 0, "data": {"task": {"guid": "task_guid_123", "summary": "任务", "status": "todo"}}},
                 {"code": 0, "data": {"task": {"guid": "task_guid_123", "completed_at": "1782803000000"}}},
+                {
+                    "code": 0,
+                    "data": {
+                        "task": {
+                            "guid": "task_guid_123",
+                            "summary": "任务",
+                            "status": "todo",
+                            "completed_at": "1782803000000",
+                        }
+                    },
+                },
             ]
         )
         with patch.dict(os.environ, {"FEISHU_APP_ID": "app-id", "FEISHU_APP_SECRET": "app-secret"}, clear=True):
@@ -240,7 +251,8 @@ class FeishuProviderTest(unittest.TestCase):
         self.assertTrue(ok)
         self.assertIn("FEISHU_UPDATED", reason)
         self.assertIn("completed_at=1782803000000", reason)
-        self.assertEqual([call.get_method() for call in fake.calls], ["POST", "GET", "PATCH"])
+        self.assertIn("readback=verified", reason)
+        self.assertEqual([call.get_method() for call in fake.calls], ["POST", "GET", "PATCH", "GET"])
         patch_body = fake.body(fake.calls[2])
         self.assertEqual(patch_body, {"task": {"completed_at": "1782803000000"}, "update_fields": ["completed_at"]})
 
@@ -260,6 +272,17 @@ class FeishuProviderTest(unittest.TestCase):
                     },
                 },
                 {"code": 0, "data": {"task": {"guid": "task_guid_123", "completed_at": "0"}}},
+                {
+                    "code": 0,
+                    "data": {
+                        "task": {
+                            "guid": "task_guid_123",
+                            "summary": "任务",
+                            "status": "todo",
+                            "completed_at": "0",
+                        }
+                    },
+                },
             ]
         )
         with patch.dict(os.environ, {"FEISHU_APP_ID": "app-id", "FEISHU_APP_SECRET": "app-secret"}, clear=True):
@@ -269,7 +292,50 @@ class FeishuProviderTest(unittest.TestCase):
 
         self.assertTrue(ok)
         self.assertIn("completed_at=0", reason)
+        self.assertIn("requested_status=in_progress", reason)
+        self.assertIn("provider_status=todo", reason)
+        self.assertIn("canonical_status=open", reason)
+        self.assertIn("readback=verified", reason)
         self.assertEqual(fake.body(fake.calls[2]), {"task": {"completed_at": "0"}, "update_fields": ["completed_at"]})
+
+    def test_update_status_completed_mode_blocks_when_readback_does_not_match(self) -> None:
+        fake = UrlopenRecorder(
+            [
+                {"code": 0, "tenant_access_token": "token-1", "expire": 7200},
+                {
+                    "code": 0,
+                    "data": {
+                        "task": {
+                            "guid": "task_guid_123",
+                            "summary": "任务",
+                            "status": "todo",
+                            "completed_at": "0",
+                        }
+                    },
+                },
+                {"code": 0, "data": {"task": {"guid": "task_guid_123", "completed_at": "1782803000000"}}},
+                {
+                    "code": 0,
+                    "data": {
+                        "task": {
+                            "guid": "task_guid_123",
+                            "summary": "任务",
+                            "status": "todo",
+                            "completed_at": "0",
+                        }
+                    },
+                },
+            ]
+        )
+        with patch.dict(os.environ, {"FEISHU_APP_ID": "app-id", "FEISHU_APP_SECRET": "app-secret"}, clear=True):
+            p = provider({"status_update_mode": "completed"})
+            with patch("urllib.request.urlopen", fake), patch("time.time", return_value=1782803000):
+                ok, reason = p.update_status("task_guid_123", "done")
+
+        self.assertFalse(ok)
+        self.assertIn("FEISHU_UPDATE_VERIFY_FAIL", reason)
+        self.assertIn("expected=done", reason)
+        self.assertIn("provider_status=todo", reason)
 
     def test_update_status_completed_mode_rejects_unknown_status(self) -> None:
         fake = UrlopenRecorder(
