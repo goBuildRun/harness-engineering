@@ -389,6 +389,9 @@ class HarnessAssuranceTest(unittest.TestCase):
             subprocess.run(["git", "commit", "-qm", "guarded onboarding", "--no-verify"], cwd=product, check=True)
             command = [str(SCRIPTS / "harness"), "--product-root", str(product)]
             subprocess.check_output([*command, "start", "guarded-task", "--tier", "lite", "--scope", "docs"])
+            (product / "harness-workspace/runs/active_task.json").write_text(
+                json.dumps({"work_item_id": "guarded-task"}), encoding="utf-8",
+            )
             binding_result = json.loads(subprocess.check_output(
                 [*command, "finish", "--skip-legacy-gates"], text=True,
                 env={**dict(os.environ), "HARNESS_PRODUCT_ROOT": str(product)},
@@ -406,6 +409,13 @@ class HarnessAssuranceTest(unittest.TestCase):
             subprocess.run(["git", "add", "docs/note.md"], cwd=product, check=True)
             subprocess.run(["git", "commit", "-qm", "change"], cwd=product, check=True)
             head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=product, text=True).strip()
+            self.assertEqual(
+                subprocess.run(
+                    ["git", "show-ref", "--verify", f"refs/harness/attestations/{head}"],
+                    cwd=product, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                ).returncode,
+                0,
+            )
             pushed = subprocess.run(
                 [str(product / ".githooks/pre-push"), "origin", str(remote)], cwd=product,
                 text=True, input=f"refs/heads/main {head} refs/heads/main {'0' * 40}\n",
@@ -415,6 +425,79 @@ class HarnessAssuranceTest(unittest.TestCase):
             self.assertIn("HARNESS_PUSH_GUARD_PASS", pushed.stderr)
             status = json.loads(subprocess.check_output([*command, "status"], text=True))
             self.assertEqual(status["result"]["state"], "validated")
+
+    def test_hooks_fail_closed_when_active_task_has_no_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            subprocess.run(["git", "init", "-q"], cwd=product, check=True)
+            subprocess.run(["git", "config", "user.email", "harness@example.invalid"], cwd=product, check=True)
+            subprocess.run(["git", "config", "user.name", "Harness Test"], cwd=product, check=True)
+            subprocess.run(["git", "commit", "--allow-empty", "-qm", "base"], cwd=product, check=True)
+            install_guards(product)
+            active = product / "harness-workspace/runs/active_task.json"
+            active.parent.mkdir(parents=True)
+            active.write_text("{}\n", encoding="utf-8")
+
+            post_commit = subprocess.run(
+                [str(product / ".githooks/post-commit")], cwd=product,
+                text=True, capture_output=True,
+            )
+            self.assertNotEqual(post_commit.returncode, 0)
+            self.assertIn("HARNESS_GUARD_TASK_ID_MISSING", post_commit.stderr)
+
+            head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=product, text=True).strip()
+            pre_push = subprocess.run(
+                [str(product / ".githooks/pre-push")], cwd=product,
+                text=True, input=f"refs/heads/main {head} refs/heads/main {'0' * 40}\n",
+                capture_output=True,
+            )
+            self.assertNotEqual(pre_push.returncode, 0)
+            self.assertIn("HARNESS_GUARD_TASK_ID_MISSING", pre_push.stderr)
+
+            active.write_text(json.dumps({"work_item_id": "missing-state"}), encoding="utf-8")
+            missing_result = subprocess.run(
+                [str(product / ".githooks/post-commit")], cwd=product,
+                text=True, capture_output=True,
+            )
+            self.assertNotEqual(missing_result.returncode, 0)
+            self.assertIn("HARNESS_GUARD_RESULT_MISSING", missing_result.stderr)
+
+            task_root = product / "harness-workspace/runs/tasks/missing-state"
+            task_root.mkdir(parents=True)
+            result_path = task_root / "result.json"
+            result_path.write_text(
+                json.dumps(default_result("missing-state")), encoding="utf-8",
+            )
+            missing_baseline = subprocess.run(
+                [str(product / ".githooks/pre-push")], cwd=product,
+                text=True, input=f"refs/heads/main {head} refs/heads/main {'0' * 40}\n",
+                capture_output=True,
+            )
+            self.assertNotEqual(missing_baseline.returncode, 0)
+            self.assertIn("HARNESS_GUARD_BASELINE_MISSING", missing_baseline.stderr)
+
+            (task_root / "worktree_baseline.json").write_text(
+                json.dumps({"repo_head": head}), encoding="utf-8",
+            )
+            result_path.unlink()
+            empty_range_missing_result = subprocess.run(
+                [str(product / ".githooks/pre-push")], cwd=product,
+                text=True, input=f"refs/heads/main {head} refs/heads/main {'0' * 40}\n",
+                capture_output=True,
+            )
+            self.assertNotEqual(empty_range_missing_result.returncode, 0)
+            self.assertIn("HARNESS_GUARD_RESULT_MISSING", empty_range_missing_result.stderr)
+
+            result_path.write_text(
+                json.dumps(default_result("missing-state")), encoding="utf-8",
+            )
+            empty_range_unattested_tip = subprocess.run(
+                [str(product / ".githooks/pre-push")], cwd=product,
+                text=True, input=f"refs/heads/main {head} refs/heads/main {'0' * 40}\n",
+                capture_output=True,
+            )
+            self.assertNotEqual(empty_range_unattested_tip.returncode, 0)
+            self.assertIn("HARNESS_PUSH_GUARD_BLOCKED", empty_range_unattested_tip.stderr)
 
     def test_pre_push_checks_every_new_commit_and_pushes_attestation_refs(self) -> None:
         script = pre_push_script()

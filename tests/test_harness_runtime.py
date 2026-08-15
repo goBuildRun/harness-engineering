@@ -318,6 +318,42 @@ class HarnessRuntimeTest(unittest.TestCase):
             self.assertEqual(rerun["decision"], "pass")
             self.assertGreaterEqual(rerun["result"]["cost"]["harness"]["reruns"], 1)
 
+    def test_status_projects_input_change_without_mutating_result(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            (product / "docs").mkdir()
+            (product / "docs/note.md").write_text("base\n")
+            (product / ".gitignore").write_text("harness-workspace/runs/\n")
+            subprocess.run(["git", "init", "-q"], cwd=product, check=True)
+            subprocess.run(["git", "config", "user.email", "harness@example.invalid"], cwd=product, check=True)
+            subprocess.run(["git", "config", "user.name", "Harness Test"], cwd=product, check=True)
+            subprocess.run(["git", "add", "."], cwd=product, check=True)
+            subprocess.run(["git", "commit", "-qm", "base"], cwd=product, check=True)
+            command = [
+                "python3", str(SCRIPTS / "harness_runtime.py"),
+                "--harness-root", str(ROOT), "--product-root", str(product),
+            ]
+            subprocess.check_output(
+                [*command, "start", "read-only-status", "--tier", "lite", "--scope", "docs"],
+                text=True,
+            )
+            (product / "docs/note.md").write_text("validated\n")
+            finished = json.loads(subprocess.check_output(
+                [*command, "finish", "--skip-legacy-gates"], text=True,
+                env={**os.environ, "HARNESS_PRODUCT_ROOT": str(product)},
+            ))
+            self.assertEqual(finished["decision"], "pass", finished)
+            result_path = product / "harness-workspace/runs/tasks/read-only-status/result.json"
+            before = result_path.read_bytes()
+            (product / "docs/note.md").write_text("changed after validation\n")
+
+            status = json.loads(subprocess.check_output([*command, "status"], text=True))
+
+            self.assertEqual(status["result"]["state"], "active")
+            self.assertEqual(status["result"]["decision"], "block")
+            self.assertIn("INPUT_CHANGED", status["result"]["blockers"])
+            self.assertEqual(result_path.read_bytes(), before)
+
     def test_ci_checks_are_always_executed(self) -> None:
         output = subprocess.check_output([
             "python3", str(SCRIPTS / "harness_runtime.py"),

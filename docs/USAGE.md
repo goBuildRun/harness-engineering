@@ -721,7 +721,7 @@ bash .harness/scripts/harness usage-baseline <task-id> --reason '<忽略此前�
 
 迁移结果缺少结构化 scope 时使用 `amend-task`。`--scope` 是完整替换集，不是追加项：必须为所有需要保留和新增的路径分别重复传入 `--scope`。该命令要求显式 scope 和 reason，保留旧 binding digest、前后 scope 与时间戳，重算 binding/policy，并将所有旧 checks 标记 stale；它不能修改历史任务卡、baseline 或 QA evidence，也不能直接把任务变为通过。
 
-`status` 同时重算当前 worktree subject 与 policy digest。任一输入变化都会把 `validated` 退回 `active`，标记旧 checks 为 stale、增加 rerun 计数并返回 `INPUT_CHANGED`；下一次 `finish` 重新执行当前 tier 所需检查并重算派生 blockers。`result.json` 在原子写入和读取时都执行共享 schema 校验，非法 state/tier/check/cost 或伪造的完整遥测会返回 `RESULT_SCHEMA_INVALID`。
+`status` 同时重算当前 worktree subject 与 policy digest，但只返回内存中的状态投影，不改写 `result.json`。任一输入变化都会在投影中把 `validated` 退回 `active`，标记旧 checks 为 stale、增加 rerun 计数并返回 `INPUT_CHANGED`；下一次 `finish` 才持久化失效状态、重新执行当前 tier 所需检查并重算派生 blockers。HEAD 已有同任务的有效 attestation 且当前工作树 clean 时，`status` 以 canonical Git result 为准，避免 task-start dirty baseline 在提交后误伤已接收结果。`result.json` 在原子写入和读取时都执行共享 schema 校验，非法 state/tier/check/cost 或伪造的完整遥测会返回 `RESULT_SCHEMA_INVALID`。
 
 本地 `finish` 只在 subject、policy、相关输入和工具 digest 全部一致时复用确定性的 `tier` 与 `scope` 判定，并把命中数累加到 `cost.harness.cache_hits`。diff code-health 每次都以 `source: executed` 重跑；QA、GC Agent、生产、部署和回滚证据不进入缓存。GC 修改代码后，tier、scope、测试、结构和 code-health 的旧 fingerprint 均失效。CI `ci-check` 始终针对目标 commit 重新执行，不读取本地缓存。
 

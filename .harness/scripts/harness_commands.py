@@ -189,10 +189,9 @@ def cmd_status(args: argparse.Namespace) -> int:
     if not path.is_file():
         dump_json({"decision": "block", "reason": "TASK_NOT_FOUND"})
         return 0
-    result = load_result(path)
+    stored_result = load_result(path)
     baseline = path.parent / "worktree_baseline.json"
     changed = changed_since_baseline(product, baseline) if baseline.is_file() else git_changed(product)
-    effective_changed = execution_paths(product, task_id, changed)
     current_subject = subject_for(product, changed)
     current_policy = policy_for(Path(args.harness_root).resolve(), product)
     attestation = verify_attestation(product, commit="HEAD", policy_digest=current_policy)
@@ -200,14 +199,12 @@ def cmd_status(args: argparse.Namespace) -> int:
     committed_current = (
         attestation.get("decision") == "pass"
         and committed_result.get("task_id") == task_id
-        and result.get("state") == "validated"
-        and result.get("decision") == "pass"
-        and not changed
+        and not git_changed(product)
     )
-    if not committed_current and invalidate_if_stale(result, current_subject, current_policy):
-        atomic_write_result(path, result)
+    result = deepcopy(committed_result if committed_current else stored_result)
+    if not committed_current:
+        invalidate_if_stale(result, current_subject, current_policy)
     refresh_assurance(result, product, current_policy, phase="status-head")
-    atomic_write_result(path, result)
     dump_json({"decision": "pass", "reason": "TASK_STATUS", "result": result})
     return 0
 

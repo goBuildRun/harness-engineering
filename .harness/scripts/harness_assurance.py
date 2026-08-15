@@ -108,6 +108,14 @@ fi
 """
 
 
+def active_task_resolver() -> str:
+    return """\
+resolve_active_task_id() {
+  python3 -c 'import json,sys; data=json.load(open(sys.argv[1])); value=str(data.get("task_id") or data.get("work_item_id") or "").strip(); print(value) if value else sys.exit(1)' "$1"
+}
+"""
+
+
 def pre_commit_script() -> str:
     return guard_prelude() + """\
 OUTPUT="$("$HARNESS_BIN" --product-root "$PRODUCT_ROOT" status 2>&1)" || {
@@ -131,7 +139,7 @@ echo 'HARNESS_GUARD_PASS' >&2
 
 
 def pre_push_script() -> str:
-    return guard_prelude() + """\
+    return guard_prelude() + active_task_resolver() + """\
 ATTEST="$CONFIGURED_ROOT/.harness/scripts/harness_attestation.py"
 REMOTE_NAME="${1:-origin}"
 ATTEST_REFS=()
@@ -140,11 +148,22 @@ while read -r local_ref local_sha remote_ref remote_sha; do
   if [[ "$remote_sha" =~ ^0+$ ]]; then
     ACTIVE="$PRODUCT_ROOT/harness-workspace/runs/active_task.json"
     [[ -f "$ACTIVE" ]] || { echo 'HARNESS_GUARD_ACTIVE_TASK_MISSING' >&2; exit 1; }
-    TASK_ID="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("task_id", ""))' "$ACTIVE")"
+    TASK_ID="$(resolve_active_task_id "$ACTIVE")" || {
+      echo 'HARNESS_GUARD_TASK_ID_MISSING' >&2
+      exit 1
+    }
+    RESULT="$PRODUCT_ROOT/harness-workspace/runs/tasks/$TASK_ID/result.json"
+    [[ -f "$RESULT" ]] || { echo 'HARNESS_GUARD_RESULT_MISSING' >&2; exit 1; }
     BASELINE="$PRODUCT_ROOT/harness-workspace/runs/tasks/$TASK_ID/worktree_baseline.json"
+    [[ -f "$BASELINE" ]] || { echo 'HARNESS_GUARD_BASELINE_MISSING' >&2; exit 1; }
     BASE_SHA="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("repo_head", ""))' "$BASELINE")"
     [[ -n "$BASE_SHA" ]] || { echo 'HARNESS_GUARD_BASELINE_MISSING' >&2; exit 1; }
+    git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null && git merge-base --is-ancestor "$BASE_SHA" "$local_sha" || {
+      echo 'HARNESS_GUARD_BASELINE_INVALID' >&2
+      exit 1
+    }
     COMMITS="$(git rev-list --reverse "$BASE_SHA..$local_sha")"
+    [[ -n "$COMMITS" ]] || COMMITS="$local_sha"
   else
     COMMITS="$(git rev-list --reverse "$remote_sha..$local_sha")"
   fi
@@ -160,6 +179,16 @@ while read -r local_ref local_sha remote_ref remote_sha; do
       ATTEST_REFS+=("refs/harness/gc/$commit:refs/harness/gc/$commit")
     fi
   done <<< "$COMMITS"
+  if [[ "$remote_sha" =~ ^0+$ ]]; then
+    TIP_TASK_ID="$(git show "refs/harness/results/$local_sha" | python3 -c 'import json,sys; print(str(json.load(sys.stdin).get("task_id") or "").strip())')" || {
+      echo 'HARNESS_PUSH_GUARD_BLOCKED: tip result identity is unavailable' >&2
+      exit 1
+    }
+    [[ "$TIP_TASK_ID" == "$TASK_ID" ]] || {
+      echo 'HARNESS_PUSH_GUARD_BLOCKED: tip result does not match active task' >&2
+      exit 1
+    }
+  fi
 done
 if (( ${#ATTEST_REFS[@]} )); then
   git push --atomic --no-verify "$REMOTE_NAME" "${ATTEST_REFS[@]}" >/dev/null || {
@@ -172,7 +201,7 @@ echo 'HARNESS_PUSH_GUARD_PASS' >&2
 
 
 def post_commit_script() -> str:
-    return guard_prelude() + """\
+    return guard_prelude() + active_task_resolver() + """\
 if python3 "$CONFIGURED_ROOT/.harness/scripts/harness_assurance.py" release-candidate-consume --repo "$PRODUCT_ROOT" >/dev/null 2>&1; then
   echo 'HARNESS_RELEASE_CANDIDATE_ATTESTED' >&2
   exit 0
@@ -183,9 +212,15 @@ if python3 "$CONFIGURED_ROOT/.harness/scripts/harness_assurance.py" bootstrap-co
 fi
 ACTIVE="$PRODUCT_ROOT/harness-workspace/runs/active_task.json"
 [[ -f "$ACTIVE" ]] || exit 0
-TASK_ID="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("task_id", ""))' "$ACTIVE")"
+TASK_ID="$(resolve_active_task_id "$ACTIVE")" || {
+  echo 'HARNESS_GUARD_TASK_ID_MISSING' >&2
+  exit 1
+}
 RESULT="$PRODUCT_ROOT/harness-workspace/runs/tasks/$TASK_ID/result.json"
-[[ -f "$RESULT" ]] || exit 0
+[[ -f "$RESULT" ]] || {
+  echo 'HARNESS_GUARD_RESULT_MISSING' >&2
+  exit 1
+}
 python3 "$CONFIGURED_ROOT/.harness/scripts/harness_attestation.py" create \
   --repo "$PRODUCT_ROOT" --commit HEAD --result "$RESULT" >/dev/null || {
   echo 'HARNESS_ATTESTATION_CREATE_FAILED: run harness finish before commit' >&2
