@@ -12,6 +12,7 @@ from typing import Any
 
 SCHEMA = "harness-guarded-release-candidate-v1"
 REF_PREFIX = "refs/harness/release-candidates"
+PENDING_GATE_ORDER = ("T5", "T-GC", "strict_evidence")
 
 
 def _git(repo: Path, *args: str, input_text: str | None = None) -> str:
@@ -36,24 +37,57 @@ def _digest(value: Any) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
-def _eligible(result: dict[str, Any]) -> bool:
+def _pending_gates(result: dict[str, Any]) -> list[str] | None:
     checks = result.get("checks") or {}
     failed = {name for name, check in checks.items() if check.get("decision") != "pass"}
     reason = str((checks.get("qa_evidence") or {}).get("reason") or "")
-    missing = set(re.findall(r"QA_SIGNOFF_MISSING:(T[1-5])", reason))
+    prefix = "QA_EVIDENCE_INVALID:"
+    issues = {part.strip() for part in reason.removeprefix(prefix).split(";") if part.strip()}
+    missing = set(re.findall(r"QA_SIGNOFF_MISSING:(T(?:[1-5]|-GC))", reason))
+    expected_issues = {f"QA_SIGNOFF_MISSING:{task_id}" for task_id in missing}
+    strict = checks.get("strict_evidence") or {}
+    strict_pending = (
+        strict.get("decision") == "block"
+        and strict.get("reason") == "STRICT_EVIDENCE_REQUIRED"
+    )
+    allowed_failed = {"qa_evidence"} | ({"strict_evidence"} if strict_pending else set())
     invariants = result.get("invariants") or {}
-    return (
+    eligible = (
         result.get("state") == "blocked" and result.get("decision") == "block"
-        and not result.get("blockers") and failed == {"qa_evidence"} and missing == {"T5"}
+        and not result.get("blockers") and failed == allowed_failed
+        and reason.startswith(prefix) and issues == expected_issues
+        and "T5" in missing and missing <= {"T5", "T-GC"}
         and all(value == "pass" for name, value in invariants.items() if name != "risk_validation")
         and invariants.get("risk_validation") == "block"
+    )
+    if not eligible:
+        return None
+    pending = set(missing)
+    if strict_pending:
+        pending.add("strict_evidence")
+    return [name for name in PENDING_GATE_ORDER if name in pending]
+
+
+def _eligible(result: dict[str, Any]) -> bool:
+    return _pending_gates(result) is not None
+
+
+def _valid_pending_gates(value: Any) -> bool:
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        return False
+    pending = set(value)
+    return (
+        "T5" in pending
+        and pending <= set(PENDING_GATE_ORDER)
+        and value == [name for name in PENDING_GATE_ORDER if name in pending]
     )
 
 
 def create(repo: Path, result: dict[str, Any], *, guarded: bool) -> dict[str, Any]:
     if not guarded:
         return {"decision": "block", "reason": "RELEASE_CANDIDATE_GUARDED_REQUIRED"}
-    if not _eligible(result):
+    pending_gates = _pending_gates(result)
+    if pending_gates is None:
         return {"decision": "block", "reason": "RELEASE_CANDIDATE_NOT_ELIGIBLE"}
     staged = _staged_paths(repo)
     if not staged or staged != sorted((result.get("subject") or {}).get("paths") or []):
@@ -62,7 +96,7 @@ def create(repo: Path, result: dict[str, Any], *, guarded: bool) -> dict[str, An
         "schema": SCHEMA, "task_id": result.get("task_id"),
         "policy_digest": result.get("policy_digest"),
         "binding_digest": result.get("binding_digest"), "result_digest": _digest(result),
-        "pending_gates": ["T5"], "parent": _git(repo, "rev-parse", "HEAD"),
+        "pending_gates": pending_gates, "parent": _git(repo, "rev-parse", "HEAD"),
         "tree": _git(repo, "write-tree"), "paths": staged,
     }
     if not all(receipt.get(field) for field in ("task_id", "policy_digest", "binding_digest")):
@@ -80,7 +114,7 @@ def check(repo: Path, *, consume: bool = False) -> dict[str, Any]:
         receipt = json.loads(path.read_text())
     except (OSError, json.JSONDecodeError):
         return {"decision": "block", "reason": "RELEASE_CANDIDATE_MISSING"}
-    if receipt.get("schema") != SCHEMA or receipt.get("pending_gates") != ["T5"]:
+    if receipt.get("schema") != SCHEMA or not _valid_pending_gates(receipt.get("pending_gates")):
         return {"decision": "block", "reason": "RELEASE_CANDIDATE_INVALID"}
     if consume:
         valid = (_git(repo, "rev-parse", "HEAD^1") == receipt.get("parent")

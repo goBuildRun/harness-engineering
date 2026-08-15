@@ -88,6 +88,54 @@ class HarnessAssuranceTest(unittest.TestCase):
             result["checks"]["qa_evidence"]["reason"] += "; QA_SIGNOFF_MISSING:T4"
             self.assertEqual(create_release_candidate(product, result)["reason"], "RELEASE_CANDIDATE_NOT_ELIGIBLE")
 
+    def test_strict_release_candidate_allows_only_post_candidate_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            subprocess.run(["git", "init", "-q"], cwd=product, check=True)
+            subprocess.run(["git", "config", "user.email", "harness@example.invalid"], cwd=product, check=True)
+            subprocess.run(["git", "config", "user.name", "Harness Test"], cwd=product, check=True)
+            subprocess.run(["git", "commit", "--allow-empty", "-qm", "base"], cwd=product, check=True)
+            install_guards(product)
+            subprocess.run(["git", "add", ".githooks"], cwd=product, check=True)
+            paths = [".githooks/post-commit", ".githooks/pre-commit", ".githooks/pre-push"]
+            result = self.release_candidate_result(paths)
+            result["checks"]["qa_evidence"]["reason"] += "; QA_SIGNOFF_MISSING:T-GC"
+            result["checks"]["strict_evidence"] = {
+                "decision": "block",
+                "reason": "STRICT_EVIDENCE_REQUIRED",
+            }
+
+            created = create_release_candidate(product, result)
+
+            self.assertEqual(created["decision"], "pass", created)
+            self.assertEqual(created["receipt"]["pending_gates"], ["T5", "T-GC", "strict_evidence"])
+            self.assertEqual(check_release_candidate(product)["decision"], "pass")
+
+    def test_release_candidate_rejects_other_qa_or_strict_evidence_failures(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            subprocess.run(["git", "init", "-q"], cwd=product, check=True)
+            install_guards(product)
+            subprocess.run(["git", "add", ".githooks"], cwd=product, check=True)
+            paths = [".githooks/post-commit", ".githooks/pre-commit", ".githooks/pre-push"]
+
+            invalid_qa = self.release_candidate_result(paths)
+            invalid_qa["checks"]["qa_evidence"]["reason"] += "; QA_REPORT_INVALID:T4"
+            self.assertEqual(
+                create_release_candidate(product, invalid_qa)["reason"],
+                "RELEASE_CANDIDATE_NOT_ELIGIBLE",
+            )
+
+            invalid_strict = self.release_candidate_result(paths)
+            invalid_strict["checks"]["strict_evidence"] = {
+                "decision": "block",
+                "reason": "STRICT_EVIDENCE_BINDING_MISMATCH",
+            }
+            self.assertEqual(
+                create_release_candidate(product, invalid_strict)["reason"],
+                "RELEASE_CANDIDATE_NOT_ELIGIBLE",
+            )
+
     def test_release_candidate_resolves_agent_start_work_item_identity(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product = Path(tmp)
