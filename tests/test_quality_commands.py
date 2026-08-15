@@ -5,15 +5,50 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 SCRIPTS = Path(__file__).resolve().parents[1] / ".harness" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
-from quality_commands import command_cwd, run_builtin, run_command  # noqa: E402
+from quality_commands import command_cwd, command_env, run_builtin, run_command  # noqa: E402
 
 
 class QualityCommandsTest(unittest.TestCase):
+    def test_uv_uses_product_bound_temporary_cache_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(
+            "quality_commands.os.environ", {}, clear=True
+        ):
+            product = Path(tmp)
+            env = command_env(product, ["uv", "run", "python", "-m", "pytest"], {})
+            cache = Path(env["UV_CACHE_DIR"])
+            self.assertEqual(cache.name, "uv")
+            self.assertEqual(cache.parent.parent.name, "harness-quality-cache")
+            self.assertTrue(str(cache).startswith(tempfile.gettempdir()))
+            self.assertEqual(Path(env["PYTHONPYCACHEPREFIX"]).parent, cache.parent)
+
+    def test_uv_preserves_explicit_cache_configuration(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            env = command_env(
+                Path(tmp), ["uv", "run", "python", "-m", "pytest"],
+                {"UV_CACHE_DIR": "/configured/uv-cache"},
+            )
+            self.assertEqual(env["UV_CACHE_DIR"], "/configured/uv-cache")
+
+    def test_python_cache_ignores_inherited_user_cache_but_preserves_product_config(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(
+            "quality_commands.os.environ",
+            {"PYTHONPYCACHEPREFIX": "/inherited/user/cache"}, clear=True,
+        ):
+            product = Path(tmp)
+            isolated = command_env(product, ["python3", "-m", "compileall"], {})
+            explicit = command_env(
+                product, ["python3", "-m", "compileall"],
+                {"PYTHONPYCACHEPREFIX": "/configured/python-cache"},
+            )
+            self.assertNotEqual(isolated["PYTHONPYCACHEPREFIX"], "/inherited/user/cache")
+            self.assertEqual(explicit["PYTHONPYCACHEPREFIX"], "/configured/python-cache")
+
     def test_command_cwd_runs_inside_nested_product_directory(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product = Path(tmp)

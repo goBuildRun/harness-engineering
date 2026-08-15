@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import argparse
 import ast
+import hashlib
 import json
 import os
 import re
 import shlex
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -198,10 +200,21 @@ def commands_for(config: dict[str, Any], kind: str) -> tuple[list[Any], dict[str
     return list(raw), env, required
 
 
-def run_command(product_root: Path, name: str, argv: list[str], extra_env: dict[str, str],
-                timeout: int, cwd: str = "") -> dict[str, Any]:
+def command_env(product_root: Path, argv: list[str], extra_env: dict[str, str]) -> dict[str, str]:
     env = os.environ.copy()
     env.update(extra_env)
+    product_key = hashlib.sha256(str(product_root.resolve()).encode("utf-8")).hexdigest()[:16]
+    cache_root = Path(tempfile.gettempdir()) / "harness-quality-cache" / product_key
+    if os.path.basename(argv[0]) == "uv" and not env.get("UV_CACHE_DIR"):
+        env["UV_CACHE_DIR"] = str(cache_root / "uv")
+    if "PYTHONPYCACHEPREFIX" not in extra_env:
+        env["PYTHONPYCACHEPREFIX"] = str(cache_root / "python")
+    return env
+
+
+def run_command(product_root: Path, name: str, argv: list[str], extra_env: dict[str, str],
+                timeout: int, cwd: str = "") -> dict[str, Any]:
+    env = command_env(product_root, argv, extra_env)
     working_dir, cwd_violation = command_cwd(product_root, cwd)
     if cwd_violation:
         return {"name": name, "argv": argv, "cwd": cwd, "ok": False, "reason": cwd_violation}
