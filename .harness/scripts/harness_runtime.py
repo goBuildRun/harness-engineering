@@ -230,6 +230,7 @@ def apply_code_health(result: dict[str, Any], mechanical: dict[str, Any], *,
     combined["mode"] = "mechanical+agent" if required else "mechanical"
     combined["policy_digest"] = policy_digest
     if required:
+        combined["mechanical_decision"] = mechanical.get("decision", "block")
         valid = valid_gc_result(gc_result, result, subject_digest, policy_digest)
         if not valid:
             combined["decision"] = "block"
@@ -252,7 +253,9 @@ def apply_code_health(result: dict[str, Any], mechanical: dict[str, Any], *,
                 mechanical.get("fingerprint", ""), combined["agent_result_digest"],
             )
             if "DEFERRED_WORK_ITEM_REQUIRED" not in result.get("blockers", []):
-                combined["decision"] = "pass" if mechanical.get("decision") == "pass" else "block"
+                # The mechanical scan intentionally over-approximates. Once an independent,
+                # subject-bound GC review passes, its adjudication is the final local verdict.
+                combined["decision"] = "pass"
     result.setdefault("checks", {})["code_health"] = combined
 
 

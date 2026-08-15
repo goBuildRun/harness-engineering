@@ -28,4 +28,6 @@
 
 `finish` 每次执行 diff 机械扫描，并统一决定是否调用独立 GC。有效 `gc_result.json` 必须同时声明 `role: gc-sweeper`、`independent: true`，并绑定当前 `task_id`、`subject_digest` 和 `policy_digest`；缺任一项都返回 `GC_REQUIRED`。不得依赖 Lead 或 Agent 记住手工步骤。GC 修改代码后，旧测试、结构和 code-health fingerprint 失效并重新验证。
 
+机械扫描负责召回风险，独立 GC 负责最终判定。命中 `debug_output` 或 `large_file` 不代表必须删除结构化命令输出或强拆职责内聚文件；有效、独立且绑定当前 subject/policy 的 GC pass 可以裁决这些误报，结果必须同时保留原始 `mechanical_decision`。GC receipt 无效、返回 block 或留下未绑定 Work Item 的 deferred finding 时仍 fail closed。
+
 GC 默认上下文只包含任务契约、`changed_since_baseline` 文件的真实 patch/新增文件内容、变更文件列表和一层直接依赖。超过 `HARNESS_GC_CONTEXT_MAX_CHARS` 预算时返回 `BUDGET_APPROVAL_REQUIRED`，禁止静默截断证据或无条件读取全仓。

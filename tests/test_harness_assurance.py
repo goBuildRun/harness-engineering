@@ -21,7 +21,7 @@ sys.path.insert(0, str(SCRIPTS))
 from harness_assurance import (audit_guards, check_bootstrap, check_release_candidate,
                                create_bootstrap, create_release_candidate, install_guards,
                                pre_push_script)  # noqa: E402
-from harness_runtime import default_result, load_result  # noqa: E402
+from harness_runtime import apply_code_health, default_result, load_result  # noqa: E402
 from harness_commands import refresh_assurance  # noqa: E402
 from harness_schema import validate_result  # noqa: E402
 from harness_cli import main as harness_main  # noqa: E402
@@ -110,6 +110,38 @@ class HarnessAssuranceTest(unittest.TestCase):
             self.assertEqual(created["decision"], "pass", created)
             self.assertEqual(created["receipt"]["pending_gates"], ["T5", "T-GC", "strict_evidence"])
             self.assertEqual(check_release_candidate(product)["decision"], "pass")
+
+    def test_release_candidate_accepts_independently_adjudicated_code_health(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            subprocess.run(["git", "init", "-q"], cwd=product, check=True)
+            subprocess.run(["git", "config", "user.email", "harness@example.invalid"], cwd=product, check=True)
+            subprocess.run(["git", "config", "user.name", "Harness Test"], cwd=product, check=True)
+            subprocess.run(["git", "commit", "--allow-empty", "-qm", "base"], cwd=product, check=True)
+            install_guards(product)
+            subprocess.run(["git", "add", ".githooks"], cwd=product, check=True)
+            subprocess.run(["git", "commit", "-qm", "guards", "--no-verify"], cwd=product, check=True)
+            candidate = product / "candidate.py"
+            candidate.write_text("print('structured result')\n")
+            subprocess.run(["git", "add", candidate.name], cwd=product, check=True)
+            result = self.release_candidate_result([candidate.name])
+            apply_code_health(
+                result,
+                {"decision": "block", "triggers": ["debug_output"], "findings": 1,
+                 "agent_required": True},
+                gc_result={
+                    "decision": "pass", "role": "gc-sweeper", "independent": True,
+                    "task_id": "task-release", "subject_digest": "subject-1",
+                    "policy_digest": "policy-1", "findings": 1, "remediated": 0,
+                    "deferred_work_items": [],
+                },
+                subject_digest="subject-1", policy_digest="policy-1",
+            )
+
+            created = create_release_candidate(product, result)
+
+            self.assertEqual(result["checks"]["code_health"]["mechanical_decision"], "block")
+            self.assertEqual(created["decision"], "pass", created)
 
     def test_release_candidate_rejects_other_qa_or_strict_evidence_failures(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

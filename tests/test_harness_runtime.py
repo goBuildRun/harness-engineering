@@ -525,6 +525,36 @@ class HarnessRuntimeTest(unittest.TestCase):
         self.assertEqual(result["checks"]["code_health"]["decision"], "block")
         self.assertIn("GC_REQUIRED", result["blockers"])
 
+    def test_valid_independent_gc_adjudicates_mechanical_block(self) -> None:
+        result = default_result("strict-task", initial_tier="strict")
+        check = {
+            "decision": "block",
+            "triggers": ["debug_output"],
+            "findings": 1,
+            "agent_required": True,
+        }
+        gc = {
+            "decision": "pass",
+            "role": "gc-sweeper",
+            "independent": True,
+            "task_id": "strict-task",
+            "subject_digest": "subject-a",
+            "policy_digest": "policy-a",
+            "findings": 1,
+            "remediated": 0,
+            "deferred_work_items": [],
+        }
+
+        apply_code_health(
+            result, check, gc_result=gc,
+            subject_digest="subject-a", policy_digest="policy-a",
+        )
+
+        code_health = result["checks"]["code_health"]
+        self.assertEqual(code_health["decision"], "pass")
+        self.assertEqual(code_health["mechanical_decision"], "block")
+        self.assertEqual(result["blockers"], [])
+
     def test_cache_cannot_cross_subject_or_policy_digest(self) -> None:
         fp = fingerprint("gate", "subject-a", "policy-a")
         cached = {
