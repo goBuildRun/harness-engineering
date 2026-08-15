@@ -628,6 +628,8 @@ Growth 不是固定收尾。只有出现新的失败模式、架构边界、默�
 
 `scan` 生成的报告包含 Work Item 身份，以及对该 Work Item 候选来源路径和候选文本规范化后的 `Evidence digest`。任务身份从 active Planning Gate 读取，也可用 `--work-item` 显式提供；文件名或报告头未绑定该任务的历史 evidence 不参与 freshness。`freshness` 不使用文件系统 `mtime`，因此同一 commit 在 receive/CI 隔离 checkout 中仍可确定性重放。候选内容变化返回 `GROWTH_REPORT_STALE`；旧格式报告没有摘要或 Work Item 绑定时返回 `GROWTH_REPORT_UNBOUND`，必须重新 `scan` 并完成 review。
 
+同一 Work Item 增量 `scan` 时，来源路径和规范化摘要均未变化的已审候选会保留原人工决定与处理结果；新增候选或文本发生变化的候选保持待审。复用键不依赖条目序号，避免新增 evidence 导致旧决定错位或被全部重置。
+
 `agent_start.sh` 会原子启动或恢复同一 Work Item 的 lean runtime，保证 `result.json` 与 worktree/Token baseline 同步存在；恢复任务不会覆盖原 baseline，只会单调增强 tier/scope binding。QA sign-off 只写 `runs/tasks/<work-item>/`，凭证和 TEST/REVIEW 文件均按 Work Item 查找，禁止回退复用全局 `qa_approved_T*.json`。
 
 ---

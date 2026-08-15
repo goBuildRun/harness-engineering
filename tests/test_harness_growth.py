@@ -19,6 +19,7 @@ from harness_growth import (  # noqa: E402
     collect,
     freshness_status,
     render,
+    reviewed_items,
     review_status,
 )
 from harness_knowledge import ensure  # noqa: E402
@@ -47,6 +48,36 @@ work_item:
 
 
 class HarnessGrowthTest(unittest.TestCase):
+    def test_incremental_scan_preserves_only_unchanged_reviewed_candidates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            write_project_config(product)
+            layout = load_layout(ROOT, product)
+            ensure(layout)
+            first = layout.progress_dir / "first.md"
+            second = layout.progress_dir / "second.md"
+            first.write_text("first", encoding="utf-8")
+            second.write_text("second", encoding="utf-8")
+            original = [(first, "失败方案：旧候选保持不变")]
+            report = layout.growth_reports_dir / "2026-06-22-GROWTH.md"
+            report.write_text(
+                render(layout, original)
+                .replace("- **人工决定**：待定", "- **人工决定**：lesson")
+                .replace("- **处理结果**：待处理", "- **处理结果**：已验证并沉淀"),
+                encoding="utf-8",
+            )
+
+            refreshed = render(
+                layout,
+                [*original, (second, "失败原因：新增候选仍需审核")],
+                previous_reviews=reviewed_items(report),
+            )
+
+        self.assertIn("- **人工决定**：lesson", refreshed)
+        self.assertIn("- **处理结果**：已验证并沉淀", refreshed)
+        self.assertEqual(refreshed.count("- **人工决定**：待定"), 1)
+        self.assertEqual(refreshed.count("- **处理结果**：待处理"), 1)
+
     def test_read_only_status_does_not_create_workspace(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product = Path(tmp)

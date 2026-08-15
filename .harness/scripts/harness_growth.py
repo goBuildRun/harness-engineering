@@ -77,7 +77,30 @@ def collect(layout: Phase0Layout, work_item_id: str = "") -> list[tuple[Path, st
     return candidates
 
 
-def render(layout: Phase0Layout, candidates: list[tuple[Path, str]], work_item_id: str = "") -> str:
+def reviewed_items(report: Path) -> dict[tuple[str, str], tuple[str, str]]:
+    try:
+        text = report.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return {}
+    reviewed: dict[tuple[str, str], tuple[str, str]] = {}
+    for block in re.split(r"(?m)^### G-\d+\s*$", text)[1:]:
+        source = re.search(r"(?m)^- \*\*来源\*\*[：:]\s*`([^`]+)`\s*$", block)
+        summary = re.search(r"(?m)^- \*\*原文摘要\*\*[：:]\s*(.+)$", block)
+        decision = re.search(r"(?m)^- \*\*人工决定\*\*[：:]\s*(.+)$", block)
+        outcome = re.search(r"(?m)^- \*\*处理结果\*\*[：:]\s*(.+)$", block)
+        if not all((source, summary, decision, outcome)):
+            continue
+        decision_text = decision.group(1).strip()
+        outcome_text = outcome.group(1).strip()
+        if decision_text != "待定" and outcome_text != "待处理":
+            reviewed[(source.group(1), summary.group(1).strip())] = (
+                decision_text, outcome_text,
+            )
+    return reviewed
+
+
+def render(layout: Phase0Layout, candidates: list[tuple[Path, str]], work_item_id: str = "",
+           previous_reviews: dict[tuple[str, str], tuple[str, str]] | None = None) -> str:
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     lines = [
         "# GROWTH — Harness 自我成长报告",
@@ -97,15 +120,19 @@ def render(layout: Phase0Layout, candidates: list[tuple[Path, str]], work_item_i
     if not candidates:
         lines.extend(["暂无候选。", ""])
     for idx, (path, text) in enumerate(candidates, start=1):
+        source = layout.rel(path)
+        decision, outcome = (previous_reviews or {}).get(
+            (source, text), ("待定", "待处理"),
+        )
         lines.extend(
             [
                 f"### G-{idx:03d}",
                 "",
-                f"- **来源**：`{layout.rel(path)}`",
+                f"- **来源**：`{source}`",
                 f"- **原文摘要**：{text}",
                 "- **建议分类**：lesson / context / architecture / tech-debt / ignore",
-                "- **人工决定**：待定",
-                "- **处理结果**：待处理",
+                f"- **人工决定**：{decision}",
+                f"- **处理结果**：{outcome}",
                 "",
             ]
         )
@@ -333,7 +360,11 @@ def main() -> int:
         layout.growth_reports_dir / f"{datetime.now(timezone.utc).strftime('%Y-%m-%d')}{'-' + work_item_id if work_item_id else ''}-GROWTH.md"
     )
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(render(layout, candidates, work_item_id), encoding="utf-8")
+    previous_reviews = reviewed_items(out) if out.is_file() else {}
+    out.write_text(
+        render(layout, candidates, work_item_id, previous_reviews),
+        encoding="utf-8",
+    )
     emit("pass", f"GROWTH_REPORT_READY: {layout.rel(out)}", candidates=len(candidates), report=layout.rel(out))
     return 0
 
