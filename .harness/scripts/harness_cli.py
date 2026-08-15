@@ -38,7 +38,12 @@ def build_parser() -> argparse.ArgumentParser:
     migrate.add_argument("--reason", required=True)
     amend = sub.add_parser("amend-task")
     amend.add_argument("task_id")
-    amend.add_argument("--scope", action="append", required=True)
+    amend.add_argument(
+        "--scope",
+        action="append",
+        required=True,
+        help="complete replacement scope; repeat --scope for every path that must remain bound",
+    )
     amend.add_argument("--reason", required=True)
     amend.add_argument("--kind", choices=("implementation", "debt-maintenance", "scope-change", "hotfix", "harness-maintenance"), default="")
     usage = sub.add_parser("usage-baseline")

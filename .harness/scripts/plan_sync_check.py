@@ -10,6 +10,7 @@ from pathlib import Path
 
 from business_paths import find_business_paths, is_business_path, load_business_roots
 from harness_output import dump_json
+from harness_scope import paths_within_scope
 from worktree_baseline import capture_baseline, changed_since_baseline
 from workspace_paths import active_planning_gate_path, load_layout
 
@@ -70,7 +71,7 @@ def extract_planned_paths(layout, task_dir: str | None) -> set[str]:
         if not p.is_dir():
             p = Path(task_dir)
         candidates.append(p / "03-实施方案.md")
-    if layout.tasks.is_dir():
+    if not candidates and layout.tasks.is_dir():
         for d in sorted(layout.tasks.iterdir(), reverse=True):
             if d.is_dir() and not d.name.startswith("_"):
                 candidates.append(d / "03-实施方案.md")
@@ -164,7 +165,7 @@ def main() -> int:
         emit("block", f"PLAN_SYNC_NO_PLAN: 有业务变更 {business_changed} 但 03-实施方案 未登记路径")
         return 0
 
-    unplanned = [f for f in business_changed if f not in planned]
+    unplanned = [f for f in business_changed if not paths_within_scope([f], planned)]
     if unplanned:
         emit("block", f"PLAN_SYNC_VIOLATION: 未登记路径 {unplanned}; 已登记 {sorted(planned)}")
         return 0

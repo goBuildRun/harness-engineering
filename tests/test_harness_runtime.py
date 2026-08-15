@@ -35,6 +35,7 @@ from harness_scope import paths_within_scope  # noqa: E402
 from harness_state import invalidate_if_stale  # noqa: E402
 import harness_commands  # noqa: E402
 import harness_ci  # noqa: E402
+import harness_cli  # noqa: E402
 import harness_migration_commands  # noqa: E402
 
 
@@ -260,6 +261,15 @@ class HarnessRuntimeTest(unittest.TestCase):
                 ))
             self.assertEqual(captured[-1]["reason"], "TASK_AMEND_SCOPE_INVALID")
             self.assertEqual(path.read_text(), before)
+
+    def test_amend_task_cli_help_states_that_scope_is_replaced(self) -> None:
+        parser = harness_cli.build_parser()
+        subparsers = next(action for action in parser._actions if action.dest == "command")
+        amend_parser = subparsers.choices["amend-task"]
+        scope_action = next(action for action in amend_parser._actions if action.dest == "scope")
+
+        self.assertIn("complete replacement scope", scope_action.help)
+        self.assertIn("every path that must remain bound", scope_action.help)
 
     def test_cli_lite_start_status_finish_flow(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

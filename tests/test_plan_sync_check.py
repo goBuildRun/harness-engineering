@@ -140,6 +140,39 @@ workspace:
 
             self.assertEqual(json.loads(out)["decision"], "pass", out)
 
+    def test_active_plan_does_not_inherit_scope_from_a_newer_unrelated_task(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product, task_dir, baseline = self._product(Path(tmp))
+            newer = product / "harness-workspace/planning/tasks/2026-08-15-wi-unrelated"
+            newer.mkdir()
+            (newer / "03-实施方案.md").write_text(
+                "| ID | write_files |\n|---|---|\n| T1 | `services/unrelated/new.py` |\n",
+                encoding="utf-8",
+            )
+            capture_baseline(product, baseline, work_item_id="wi-demo")
+            unrelated = product / "services/unrelated/new.py"
+            unrelated.parent.mkdir(parents=True)
+            unrelated.write_text("unplanned task change\n", encoding="utf-8")
+
+            layout = load_layout(ROOT, product)
+            planned = extract_planned_paths(layout, str(task_dir))
+            self.assertNotIn("services/unrelated/new.py", planned)
+            out = subprocess.check_output(
+                [
+                    sys.executable,
+                    str(SCRIPT_DIR / "plan_sync_check.py"),
+                    "--harness-root",
+                    str(ROOT),
+                    "--product-root",
+                    str(product),
+                ],
+                text=True,
+            )
+
+            result = json.loads(out)
+            self.assertEqual(result["decision"], "block", result)
+            self.assertIn("services/unrelated/new.py", result["reason"])
+
     def test_recovery_baseline_requires_reason_and_preserves_planned_change(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product, task_dir, baseline = self._product(Path(tmp))
@@ -199,6 +232,32 @@ workspace:
 
             self.assertEqual(result["decision"], "pass", result)
             self.assertIn("1 个变更路径", result["reason"])
+
+    def test_plan_sync_accepts_declared_directory_but_rejects_near_prefix(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product, task_dir, baseline = self._product(Path(tmp))
+            (task_dir / "03-实施方案.md").write_text(
+                "| ID | write_files |\n|---|---|\n| T1 | `services/gateway/` |\n",
+                encoding="utf-8",
+            )
+            capture_baseline(product, baseline, work_item_id="wi-demo")
+            (product / "services" / "gateway" / "new.py").write_text(
+                "task change\n",
+                encoding="utf-8",
+            )
+
+            allowed = self._run(product, task_dir)
+
+            self.assertEqual(allowed["decision"], "pass", allowed)
+
+            near_prefix = product / "services" / "gateway-archive" / "new.py"
+            near_prefix.parent.mkdir(parents=True)
+            near_prefix.write_text("unplanned\n", encoding="utf-8")
+
+            blocked = self._run(product, task_dir)
+
+            self.assertEqual(blocked["decision"], "block", blocked)
+            self.assertIn("services/gateway-archive/new.py", blocked["reason"])
 
     def test_extract_planned_paths_preserves_spaces_inside_backticks(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
