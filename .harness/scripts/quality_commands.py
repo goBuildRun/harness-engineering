@@ -205,7 +205,7 @@ def command_env(product_root: Path, argv: list[str], extra_env: dict[str, str]) 
     env.update(extra_env)
     product_key = hashlib.sha256(str(product_root.resolve()).encode("utf-8")).hexdigest()[:16]
     cache_root = Path(tempfile.gettempdir()) / "harness-quality-cache" / product_key
-    if os.path.basename(argv[0]) == "uv" and not env.get("UV_CACHE_DIR"):
+    if os.path.basename(argv[0]) == "uv" and "UV_CACHE_DIR" not in extra_env:
         env["UV_CACHE_DIR"] = str(cache_root / "uv")
     if "PYTHONPYCACHEPREFIX" not in extra_env:
         env["PYTHONPYCACHEPREFIX"] = str(cache_root / "python")

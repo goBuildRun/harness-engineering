@@ -35,6 +35,20 @@ class QualityCommandsTest(unittest.TestCase):
             )
             self.assertEqual(env["UV_CACHE_DIR"], "/configured/uv-cache")
 
+    def test_uv_cache_ignores_inherited_user_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(
+            "quality_commands.os.environ",
+            {"UV_CACHE_DIR": "/inherited/user/cache"}, clear=True,
+        ):
+            product = Path(tmp)
+            env = command_env(product, ["uv", "run", "python", "-m", "pytest"], {})
+            self.assertNotEqual(env["UV_CACHE_DIR"], "/inherited/user/cache")
+            self.assertEqual(Path(env["UV_CACHE_DIR"]).name, "uv")
+            self.assertEqual(
+                Path(env["UV_CACHE_DIR"]).parent.parent.name,
+                "harness-quality-cache",
+            )
+
     def test_python_cache_ignores_inherited_user_cache_but_preserves_product_config(self) -> None:
         with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(
             "quality_commands.os.environ",
