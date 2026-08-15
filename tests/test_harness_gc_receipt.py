@@ -32,6 +32,10 @@ class HarnessGcReceiptTest(unittest.TestCase):
                 "decision": "pass", "role": "gc-sweeper", "independent": True,
                 "task_id": "task-1", "subject_digest": "commit-a", "policy_digest": "policy-a",
                 "findings": 1, "remediated": 1, "deferred_work_items": [],
+                "mechanical_adjudication": [{
+                    "trigger": "dead_code", "decision": "remediated",
+                    "reason": "dead helper removed before receipt signing",
+                }],
                 "telemetry": {"agent_calls": 1, "context_chars": 42, "duration_ms": 12,
                               "provider": "compatible", "model": "gc-model"},
             }
@@ -51,6 +55,14 @@ class HarnessGcReceiptTest(unittest.TestCase):
                 allowed_signers=allowed,
             )
             self.assertEqual(stale["reason"], "GC_RECEIPT_BINDING_MISMATCH")
+
+            adjudications = gc_result.pop("mechanical_adjudication")
+            with self.assertRaisesRegex(ValueError, "GC_RECEIPT_ADJUDICATION_INVALID"):
+                build_receipt(
+                    commit="commit-a", task_id="task-1", policy_digest="policy-a",
+                    context=context, triggers=["dead_code"], gc_result=gc_result, signing_key=key,
+                )
+            gc_result["mechanical_adjudication"] = adjudications
 
             gc_result["telemetry"]["agent_calls"] = 2
             with self.assertRaisesRegex(ValueError, "GC_RECEIPT_RESULT_INVALID"):

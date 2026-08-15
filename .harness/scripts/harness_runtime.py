@@ -20,6 +20,7 @@ from harness_schema import assert_result
 from harness_assurance import snapshot as assurance_snapshot
 from harness_tier import TIERS, classify_tier, task_kind_tier
 from harness_gc_context import build_gc_context
+from harness_gc_validation import valid_mechanical_adjudication
 
 SCHEMA_VERSION = 1
 UNKNOWN = "unknown"
@@ -211,13 +212,15 @@ def cache_matches(check: dict[str, Any], expected_fingerprint: str,
 
 
 def valid_gc_result(gc_result: dict[str, Any] | None, result: dict[str, Any],
-                    subject_digest: str, policy_digest: str) -> bool:
+                    subject_digest: str, policy_digest: str,
+                    mechanical: dict[str, Any] | None = None) -> bool:
     return bool(
         gc_result and gc_result.get("decision") == "pass"
         and gc_result.get("role") == "gc-sweeper" and gc_result.get("independent") is True
         and gc_result.get("task_id") == result.get("task_id")
         and gc_result.get("subject_digest") == subject_digest
         and gc_result.get("policy_digest") == policy_digest
+        and valid_mechanical_adjudication(gc_result, mechanical)
     )
 
 
@@ -231,7 +234,9 @@ def apply_code_health(result: dict[str, Any], mechanical: dict[str, Any], *,
     combined["policy_digest"] = policy_digest
     if required:
         combined["mechanical_decision"] = mechanical.get("decision", "block")
-        valid = valid_gc_result(gc_result, result, subject_digest, policy_digest)
+        valid = valid_gc_result(
+            gc_result, result, subject_digest, policy_digest, mechanical=mechanical,
+        )
         if not valid:
             combined["decision"] = "block"
             result["blockers"] = sorted(set(result.get("blockers", [])) | {"GC_REQUIRED"})
@@ -352,7 +357,7 @@ def invoke_gc_once(result: dict[str, Any], task_root: Path, mechanical: dict[str
                    changed: list[str], repo: Path) -> dict[str, Any] | None:
     existing = read_gc_result(task_root)
     if valid_gc_result(existing, result, mechanical.get("subject_digest", ""),
-                       result.get("policy_digest", "")):
+                       result.get("policy_digest", ""), mechanical=mechanical):
         return existing
     argv_json = os.environ.get("HARNESS_GC_AGENT_ARGV", "").strip()
     if not argv_json:

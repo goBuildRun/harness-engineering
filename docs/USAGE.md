@@ -702,7 +702,9 @@ lite onboarding 的风险分类只读取实际产品 execution paths。`start` �
 
 `standard` / `strict` 命中 GC 要求而没有有效独立结果时，`finish` 返回 `GC_REQUIRED`。`gc_result.json` 必须包含 `role: gc-sweeper`、`independent: true`，并绑定当前 `task_id`、`subject_digest`、`policy_digest`；任一不匹配都不可复用。配置 `HARNESS_GC_AGENT_ARGV`（JSON argv 数组）后可自动调用一次 runner；runner 只接收任务 scope、`changed_since_baseline` 文件的真实 patch/新增文件内容、变更文件列表、一层直接依赖、触发信号、限制和结果契约。上下文超过 `HARNESS_GC_CONTEXT_MAX_CHARS`（默认 200000）或超过一次 Agent 调用预算都返回 `BUDGET_APPROVAL_REQUIRED`，不会静默截断或扩读全仓。受控 receive authority 不信任客户端自报的 GC Agent 结论；机械扫描触发独立 GC 时，要求 `refs/harness/gc/<commit>` 指向以 `harness-gc-review` namespace 签名的最小 receipt，并重算 task、policy、context digest、triggers 和 telemetry。缺失、篡改、跨 commit/policy 或 Agent 调用次数不为一均阻断。
 
-机械 code-health 是过近似触发器，不替代独立 GC 的最终裁决。有效 GC receipt 可以把结构化结果 stdout、职责内聚的大文件等误报裁决为通过；结果仍保留 `mechanical_decision` 与 Agent receipt digest 供审计。receipt 无效、存在未绑定 Work Item 的 deferred finding，或 GC 自身返回 block 时仍必须阻断。
+机械 code-health 是过近似触发器，不替代独立 GC 的最终裁决。有效 GC receipt 可以把结构化结果 stdout、职责内聚的大文件等误报裁决为通过；结果仍保留 `mechanical_decision` 与 Agent receipt digest 供审计。机械结果为 block 时，receipt 的 `mechanical_adjudication` 必须用 `retain`、`non_actionable_observation`、`remediated` 或 `deferred` 对每个 trigger 提供唯一、完整且带原因的裁决，缺失、重复、未知 trigger 或未知 decision 均 fail closed。receipt 无效、存在未绑定 Work Item 的 deferred finding，或 GC 自身返回 block 时仍必须阻断。
+
+`release-candidate` 绑定当前非空 index、`write-tree` 和一次性父提交。Work Item 已有中间提交时，当前 staged paths 可以是完整 baseline-relative subject 的子集；但 staged path 必须全部属于 subject，且 subject 中不能残留未暂存或未跟踪改动。
 
 Guarded release candidate 只允许把候选提交后才能真实取得的门禁暂挂：`T5`、可选的最终 `T-GC`，以及 reason 精确为 `STRICT_EVIDENCE_REQUIRED` 的 strict evidence。回执会显式记录这些 pending gates；任何 T1-T4、其它 QA 问题、strict evidence 绑定错误或其它失败检查仍返回 `RELEASE_CANDIDATE_NOT_ELIGIBLE`。候选提交不是最终 attestation，部署和生产验收后仍须补真实 browser/deployment/rollback evidence、完成 QA/GC 并重新运行 `finish`。
 

@@ -32,6 +32,14 @@ def _staged_paths(repo: Path) -> list[str]:
     return sorted(line for line in output.splitlines() if line)
 
 
+def _unstaged_paths(repo: Path) -> list[str]:
+    tracked = _git(repo, "-c", "core.quotePath=false", "diff", "--name-only")
+    untracked = _git(
+        repo, "-c", "core.quotePath=false", "ls-files", "--others", "--exclude-standard",
+    )
+    return sorted({line for output in (tracked, untracked) for line in output.splitlines() if line})
+
+
 def _digest(value: Any) -> str:
     raw = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
@@ -90,7 +98,9 @@ def create(repo: Path, result: dict[str, Any], *, guarded: bool) -> dict[str, An
     if pending_gates is None:
         return {"decision": "block", "reason": "RELEASE_CANDIDATE_NOT_ELIGIBLE"}
     staged = _staged_paths(repo)
-    if not staged or staged != sorted((result.get("subject") or {}).get("paths") or []):
+    subject_paths = set((result.get("subject") or {}).get("paths") or [])
+    unstaged_subject_paths = subject_paths.intersection(_unstaged_paths(repo))
+    if not staged or not set(staged).issubset(subject_paths) or unstaged_subject_paths:
         return {"decision": "block", "reason": "RELEASE_CANDIDATE_INDEX_SCOPE_MISMATCH"}
     receipt = {
         "schema": SCHEMA, "task_id": result.get("task_id"),

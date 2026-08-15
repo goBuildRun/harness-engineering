@@ -543,6 +543,11 @@ class HarnessRuntimeTest(unittest.TestCase):
             "findings": 1,
             "remediated": 0,
             "deferred_work_items": [],
+            "mechanical_adjudication": [{
+                "trigger": "debug_output",
+                "decision": "retain",
+                "reason": "structured command output",
+            }],
         }
 
         apply_code_health(
@@ -554,6 +559,46 @@ class HarnessRuntimeTest(unittest.TestCase):
         self.assertEqual(code_health["decision"], "pass")
         self.assertEqual(code_health["mechanical_decision"], "block")
         self.assertEqual(result["blockers"], [])
+
+    def test_gc_result_requires_complete_unique_mechanical_adjudication(self) -> None:
+        mechanical = {
+            "decision": "block",
+            "triggers": ["debug_output", "large_file"],
+            "findings": 2,
+            "agent_required": True,
+        }
+        base_gc = {
+            "decision": "pass", "role": "gc-sweeper", "independent": True,
+            "task_id": "strict-task", "subject_digest": "subject-a",
+            "policy_digest": "policy-a", "findings": 2, "remediated": 0,
+            "deferred_work_items": [],
+        }
+        invalid_adjudications = (
+            [],
+            [{"trigger": "debug_output", "decision": "retain", "reason": "required output"}],
+            [
+                {"trigger": "debug_output", "decision": "retain", "reason": "required output"},
+                {"trigger": "debug_output", "decision": "retain", "reason": "duplicate"},
+            ],
+            [
+                {"trigger": "debug_output", "decision": "retain", "reason": "required output"},
+                {"trigger": "unknown", "decision": "retain", "reason": "not scanned"},
+            ],
+            [
+                {"trigger": "debug_output", "decision": "pass", "reason": "unknown verdict"},
+                {"trigger": "large_file", "decision": "retain", "reason": "cohesive"},
+            ],
+        )
+        for adjudications in invalid_adjudications:
+            with self.subTest(adjudications=adjudications):
+                result = default_result("strict-task", initial_tier="strict")
+                apply_code_health(
+                    result, mechanical,
+                    gc_result={**base_gc, "mechanical_adjudication": adjudications},
+                    subject_digest="subject-a", policy_digest="policy-a",
+                )
+                self.assertEqual(result["checks"]["code_health"]["decision"], "block")
+                self.assertIn("GC_REQUIRED", result["blockers"])
 
     def test_cache_cannot_cross_subject_or_policy_digest(self) -> None:
         fp = fingerprint("gate", "subject-a", "policy-a")

@@ -88,6 +88,52 @@ class HarnessAssuranceTest(unittest.TestCase):
             result["checks"]["qa_evidence"]["reason"] += "; QA_SIGNOFF_MISSING:T4"
             self.assertEqual(create_release_candidate(product, result)["reason"], "RELEASE_CANDIDATE_NOT_ELIGIBLE")
 
+    def test_release_candidate_accepts_staged_subset_after_intermediate_story_commit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            subprocess.run(["git", "init", "-q"], cwd=product, check=True)
+            subprocess.run(["git", "config", "user.email", "harness@example.invalid"], cwd=product, check=True)
+            subprocess.run(["git", "config", "user.name", "Harness Test"], cwd=product, check=True)
+            install_guards(product)
+            (product / "earlier.txt").write_text("earlier\n")
+            subprocess.run(["git", "add", ".githooks", "earlier.txt"], cwd=product, check=True)
+            subprocess.run(
+                ["git", "commit", "-qm", "intermediate", "--no-verify"],
+                cwd=product, check=True,
+            )
+            (product / "candidate.txt").write_text("candidate\n")
+            subprocess.run(["git", "add", "candidate.txt"], cwd=product, check=True)
+
+            created = create_release_candidate(
+                product, self.release_candidate_result(["earlier.txt", "candidate.txt"]),
+            )
+
+            self.assertEqual(created["decision"], "pass", created)
+            self.assertEqual(created["receipt"]["paths"], ["candidate.txt"])
+
+    def test_release_candidate_rejects_unstaged_subject_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            subprocess.run(["git", "init", "-q"], cwd=product, check=True)
+            subprocess.run(["git", "config", "user.email", "harness@example.invalid"], cwd=product, check=True)
+            subprocess.run(["git", "config", "user.name", "Harness Test"], cwd=product, check=True)
+            install_guards(product)
+            (product / "tracked.txt").write_text("base\n")
+            subprocess.run(["git", "add", ".githooks", "tracked.txt"], cwd=product, check=True)
+            subprocess.run(
+                ["git", "commit", "-qm", "base", "--no-verify"],
+                cwd=product, check=True,
+            )
+            (product / "candidate.txt").write_text("candidate\n")
+            (product / "tracked.txt").write_text("unstaged\n")
+            subprocess.run(["git", "add", "candidate.txt"], cwd=product, check=True)
+
+            created = create_release_candidate(
+                product, self.release_candidate_result(["candidate.txt", "tracked.txt"]),
+            )
+
+            self.assertEqual(created["reason"], "RELEASE_CANDIDATE_INDEX_SCOPE_MISMATCH")
+
     def test_strict_release_candidate_allows_only_post_candidate_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product = Path(tmp)
@@ -134,6 +180,10 @@ class HarnessAssuranceTest(unittest.TestCase):
                     "task_id": "task-release", "subject_digest": "subject-1",
                     "policy_digest": "policy-1", "findings": 1, "remediated": 0,
                     "deferred_work_items": [],
+                    "mechanical_adjudication": [{
+                        "trigger": "debug_output", "decision": "retain",
+                        "reason": "structured command output",
+                    }],
                 },
                 subject_digest="subject-1", policy_digest="policy-1",
             )

@@ -12,6 +12,7 @@ from typing import Any
 
 from harness_runtime import canonical_digest
 from harness_output import dump_json
+from harness_gc_validation import valid_mechanical_adjudication
 
 SCHEMA = "harness-gc-receipt-v1"
 NAMESPACE = "harness-gc-review"
@@ -50,6 +51,9 @@ def build_receipt(*, commit: str, task_id: str, policy_digest: str,
             or not _valid_count(telemetry.get("context_chars"))
             or not _valid_count(telemetry.get("duration_ms"))):
         raise ValueError("GC_RECEIPT_RESULT_INVALID")
+    mechanical = {"decision": "block", "triggers": triggers} if triggers else None
+    if not valid_mechanical_adjudication(gc_result, mechanical):
+        raise ValueError("GC_RECEIPT_ADJUDICATION_INVALID")
     deferred = gc_result.get("deferred_work_items") or []
     if gc_result.get("deferred_findings", 0) and not deferred:
         raise ValueError("GC_RECEIPT_DEFERRED_WORK_ITEM_REQUIRED")

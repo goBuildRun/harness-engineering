@@ -262,6 +262,13 @@ class HarnessReceiveTest(unittest.TestCase):
                 "task_id": "receive-task", "subject_digest": new,
                 "policy_digest": result["policy_digest"], "findings": 1, "remediated": 1,
                 "deferred_work_items": [],
+                "mechanical_adjudication": [
+                    {
+                        "trigger": trigger, "decision": "remediated",
+                        "reason": "independent authority reviewed the trigger",
+                    }
+                    for trigger in mechanical["triggers"]
+                ],
                 "telemetry": {"agent_calls": 1, "context_chars": context_chars, "duration_ms": 10,
                               "provider": "compatible", "model": "gc-model"},
             }
