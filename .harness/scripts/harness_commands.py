@@ -330,6 +330,7 @@ def cmd_finish(args: argparse.Namespace) -> int:
             result["checks"].pop("structure", None)
     apply_code_health(result, mechanical, gc_result=gc_result, subject_digest=subject,
                       policy_digest=result["policy_digest"])
+    post_gate_inputs_changed = False
     if not args.skip_legacy_gates:
         gates = run_gate_plan(
             harness, product, tier=effective, subject_digest=subject,
@@ -339,11 +340,29 @@ def cmd_finish(args: argparse.Namespace) -> int:
         if gates["missing"]:
             result["blockers"].append("REQUIRED_GATE_MISSING")
         result["checks"] = checks_for_tier(result["checks"], effective)
-    result["invariants"]["risk_validation"] = "pass" if all(
-        check.get("decision") == "pass" and not check.get("stale")
-        for check in result["checks"].values()
-    ) else "block"
-    result["invariants"]["final_result"] = "pass"
+        changed_after_gates = (
+            changed_since_baseline(product, baseline) if baseline.is_file()
+            else git_changed(product)
+        )
+        subject_after_gates = subject_for(product, changed_after_gates)
+        policy_after_gates = policy_for(harness, product)
+        post_gate_inputs_changed = (
+            subject_after_gates != subject or policy_after_gates != result["policy_digest"]
+        )
+        if post_gate_inputs_changed:
+            invalidate_if_stale(result, subject_after_gates, policy_after_gates)
+            changed, subject = changed_after_gates, subject_after_gates
+            result["subject"] = {"kind": "worktree", "digest": subject, "paths": changed}
+            result["policy_digest"] = policy_after_gates
+            result["invariants"]["scope"] = "pending"
+    result["invariants"]["risk_validation"] = (
+        "pending" if post_gate_inputs_changed else
+        "pass" if all(
+            check.get("decision") == "pass" and not check.get("stale")
+            for check in result["checks"].values()
+        ) else "block"
+    )
+    result["invariants"]["final_result"] = "pending" if post_gate_inputs_changed else "pass"
     result["cost"]["harness"]["gate_duration_ms"] += int((time.monotonic() - started) * 1000)
     apply_automatic_usage(result, task_id=task_id, subject_digest=subject,
                           policy_digest=result["policy_digest"])
@@ -363,6 +382,9 @@ def cmd_finish(args: argparse.Namespace) -> int:
     finalize(result, finish_decision)
     refresh_assurance(result, product, result["policy_digest"], phase="pre-commit-head")
     atomic_write_result(path, result)
-    reason = result["blockers"][0] if result["blockers"] else "FINISH_OK"
+    reason = (
+        "INPUT_CHANGED" if post_gate_inputs_changed
+        else result["blockers"][0] if result["blockers"] else "FINISH_OK"
+    )
     dump_json({"decision": result["decision"], "reason": reason, "result": result})
     return 0

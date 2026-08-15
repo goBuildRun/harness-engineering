@@ -354,6 +354,61 @@ class HarnessRuntimeTest(unittest.TestCase):
             self.assertIn("INPUT_CHANGED", status["result"]["blockers"])
             self.assertEqual(result_path.read_bytes(), before)
 
+    def test_finish_fails_closed_when_a_gate_changes_the_subject(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            source = product / "docs" / "note.md"
+            source.parent.mkdir(parents=True)
+            source.write_text("base\n")
+            (product / ".gitignore").write_text("harness-workspace/runs/\n")
+            subprocess.run(["git", "init", "-q"], cwd=product, check=True)
+            subprocess.run(["git", "config", "user.email", "harness@example.invalid"], cwd=product, check=True)
+            subprocess.run(["git", "config", "user.name", "Harness Test"], cwd=product, check=True)
+            subprocess.run(["git", "add", "."], cwd=product, check=True)
+            subprocess.run(["git", "commit", "-qm", "base"], cwd=product, check=True)
+            common = {"product_root": str(product), "harness_root": str(ROOT)}
+            with mock.patch.object(harness_commands, "dump_json"):
+                harness_commands.cmd_start(SimpleNamespace(
+                    **common, task_id="gate-mutation", tier="lite", scope=["docs"],
+                    work_item="", kind="implementation", reason="",
+                ))
+            source.write_text("before gate\n")
+            captured = []
+
+            def mutate_subject(*_args, **kwargs):
+                source.write_text("after gate\n")
+                checks = {
+                    name: harness_commands.executed_check(
+                        decision="pass", fingerprint=f"{name}-fingerprint",
+                        subject_digest=kwargs["subject_digest"],
+                        policy_digest=kwargs["policy_digest"],
+                        completed_at=harness_commands.now(),
+                    )
+                    for name in ("harness", "structure", "quality_lint", "quality_test")
+                }
+                return {"decision": "pass", "checks": checks, "missing": []}
+
+            with mock.patch.object(harness_commands, "run_gate_plan", side_effect=mutate_subject), \
+                    mock.patch.object(harness_commands, "dump_json", side_effect=captured.append):
+                harness_commands.cmd_finish(SimpleNamespace(
+                    **common, task_id="gate-mutation", skip_legacy_gates=False,
+                ))
+
+            outcome = captured[-1]
+            result = outcome["result"]
+            changed = harness_commands.changed_since_baseline(
+                product,
+                harness_commands.result_path(product, "gate-mutation").parent / "worktree_baseline.json",
+            )
+            self.assertEqual(outcome["decision"], "block")
+            self.assertEqual(outcome["reason"], "INPUT_CHANGED")
+            self.assertEqual(result["state"], "blocked")
+            self.assertEqual(result["subject"]["digest"], harness_commands.subject_for(product, changed))
+            self.assertEqual(result["invariants"]["scope"], "pending")
+            self.assertEqual(result["invariants"]["risk_validation"], "pending")
+            self.assertEqual(result["invariants"]["final_result"], "pending")
+            self.assertTrue(all(check.get("stale") is True for check in result["checks"].values()))
+
     def test_ci_checks_are_always_executed(self) -> None:
         output = subprocess.check_output([
             "python3", str(SCRIPTS / "harness_runtime.py"),

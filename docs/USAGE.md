@@ -723,6 +723,8 @@ bash .harness/scripts/harness usage-baseline <task-id> --reason '<忽略此前�
 
 `status` 同时重算当前 worktree subject 与 policy digest，但只返回内存中的状态投影，不改写 `result.json`。任一输入变化都会在投影中把 `validated` 退回 `active`，标记旧 checks 为 stale、增加 rerun 计数并返回 `INPUT_CHANGED`；下一次 `finish` 才持久化失效状态、重新执行当前 tier 所需检查并重算派生 blockers。HEAD 已有同任务的有效 attestation 且当前工作树 clean 时，`status` 以 canonical Git result 为准，避免 task-start dirty baseline 在提交后误伤已接收结果。`result.json` 在原子写入和读取时都执行共享 schema 校验，非法 state/tier/check/cost 或伪造的完整遥测会返回 `RESULT_SCHEMA_INVALID`。
 
+`finish` 在全部 gate 结束后再次重算 worktree subject 与 policy。knowledge / Growth 自动同步、质量命令或其它 gate 若改变了受验证输入，本次执行返回 `INPUT_CHANGED`，所有旧 check 标记 stale；必须基于新 subject 刷新 GC、strict evidence 并重新 `finish`，不得把 gate 前结果用于 commit attestation。
+
 本地 `finish` 只在 subject、policy、相关输入和工具 digest 全部一致时复用确定性的 `tier` 与 `scope` 判定，并把命中数累加到 `cost.harness.cache_hits`。diff code-health 每次都以 `source: executed` 重跑；QA、GC Agent、生产、部署和回滚证据不进入缓存。GC 修改代码后，tier、scope、测试、结构和 code-health 的旧 fingerprint 均失效。CI `ci-check` 始终针对目标 commit 重新执行，不读取本地缓存。
 
 设置 `HARNESS_USAGE_RECEIPT=<json-path>` 可把 Agent/provider 成本写入同一 `result.json.cost`。receipt 必须包含与当前执行一致的 `task_id`、`subject_digest`、`policy_digest`，非空 `provider` / `model`，以及 `implementation`、`harness` 两组 `input_tokens`、`output_tokens`、`context_chars`、`agent_calls`。未提供时成本保持 `unknown` 且不单独阻断；提供后若任务、subject、policy 或来源身份不匹配，则返回 `USAGE_RECEIPT_BINDING_MISMATCH` 或 `USAGE_RECEIPT_SOURCE_MISSING`。
