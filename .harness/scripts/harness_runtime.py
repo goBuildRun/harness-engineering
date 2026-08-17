@@ -21,6 +21,7 @@ from harness_assurance import snapshot as assurance_snapshot
 from harness_tier import TIERS, classify_tier, task_kind_tier
 from harness_gc_context import build_gc_context
 from harness_gc_validation import valid_mechanical_adjudication
+from harness_task_resolution import resolve_task_id
 
 SCHEMA_VERSION = 1
 UNKNOWN = "unknown"
@@ -318,24 +319,6 @@ def result_path(product: Path, task_id: str) -> Path:
 
 def active_task_path(product: Path) -> Path:
     return workspace_root(product) / "runs" / "active_task.json"
-
-
-def resolve_task_id(product: Path, requested: str | None) -> tuple[str, list[str]]:
-    if requested:
-        return requested, []
-    try:
-        active = json.loads(active_task_path(product).read_text(encoding="utf-8"))
-        task_id = str(active.get("task_id") or active.get("work_item_id") or "")
-        if task_id and result_path(product, task_id).is_file():
-            return task_id, []
-    except (OSError, json.JSONDecodeError):
-        pass
-    tasks_root = workspace_root(product) / "runs" / "tasks"
-    candidates = sorted(
-        path.parent.name for path in tasks_root.glob("*/result.json")
-        if load_result(path).get("state") in {"active", "blocked"}
-    ) if tasks_root.is_dir() else []
-    return (candidates[0], []) if len(candidates) == 1 else ("", candidates)
 
 
 def policy_for(harness: Path, product: Path) -> str:

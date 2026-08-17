@@ -53,6 +53,7 @@ required_files:
   - .harness/scripts/harness_gc_context.py
   - .harness/scripts/harness_gc_receipt.py
   - .harness/scripts/harness_runtime.py
+  - .harness/scripts/harness_task_resolution.py
   - .harness/scripts/harness_tier.py
   - .harness/scripts/harness_commands.py
   - .harness/scripts/harness_ci.py

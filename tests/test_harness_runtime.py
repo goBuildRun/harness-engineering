@@ -164,6 +164,45 @@ class HarnessRuntimeTest(unittest.TestCase):
             self.assertEqual(task_id, "")
             self.assertEqual(candidates, ["task-a", "task-b"])
 
+    def test_task_inference_resolves_active_work_item_to_slugged_execution_task(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            runs = product / "harness-workspace" / "runs"
+            runs.mkdir(parents=True)
+            (runs / "active_task.json").write_text(
+                json.dumps({"work_item_id": "WI-43.2"}), encoding="utf-8",
+            )
+            target = runs / "tasks" / "WI-43.2-binding-correction" / "result.json"
+            result = default_result("WI-43.2-binding-correction", work_item={"id": "WI-43.2"})
+            result["state"] = "validated"
+            atomic_write_result(target, result)
+            for task_id in ("old-active", "old-blocked"):
+                old = runs / "tasks" / task_id / "result.json"
+                result = default_result(task_id)
+                result["state"] = "active" if task_id == "old-active" else "blocked"
+                atomic_write_result(old, result)
+
+            task_id, candidates = resolve_task_id(product, None)
+            self.assertEqual(task_id, "WI-43.2-binding-correction")
+            self.assertEqual(candidates, [])
+
+    def test_task_inference_keeps_duplicate_active_work_item_ambiguous(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            runs = product / "harness-workspace" / "runs"
+            (runs / "tasks").mkdir(parents=True)
+            (runs / "active_task.json").write_text(
+                json.dumps({"work_item_id": "WI-43.2"}), encoding="utf-8",
+            )
+            for task_id in ("WI-43.2-first", "WI-43.2-second"):
+                result = default_result(task_id, work_item={"id": "WI-43.2"})
+                result["state"] = "validated"
+                atomic_write_result(runs / "tasks" / task_id / "result.json", result)
+
+            task_id, candidates = resolve_task_id(product, None)
+            self.assertEqual(task_id, "")
+            self.assertEqual(candidates, [])
+
     def test_migration_preserves_committed_work_item_identity(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product = Path(tmp)
