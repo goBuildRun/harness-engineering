@@ -204,11 +204,7 @@ class FeishuProvider(FeishuBindingMixin, FeishuPayloadMixin, WorkItemProvider):
         task_id = self._task_id(task)
         if not task_id:
             raise RuntimeError(f"FEISHU_CREATE_FAIL: {data}")
-        created = self._pull_created_with_retry(task_id, "CREATE")
-        ok, reason = self._verify_pulled_binding(created, tasklist_guid or "", "")
-        if not ok:
-            raise RuntimeError(f"FEISHU_CREATE_BINDING_VERIFY_FAIL: {reason}")
-        return created
+        return self._pull_created_with_retry(task_id, "CREATE", tasklist_guid, "")
 
     def update_status(self, work_item_id: str, status: str, note: str = "") -> tuple[bool, str]:
         ok, reason = self.verify(work_item_id)
@@ -302,19 +298,13 @@ class FeishuProvider(FeishuBindingMixin, FeishuPayloadMixin, WorkItemProvider):
         task_id = self._task_id(task)
         if not task_id:
             raise RuntimeError(f"FEISHU_SUBTASK_CREATE_FAIL: {data}")
-        created = self._pull_created_with_retry(task_id, "SUBTASK_CREATE")
-        actual_parent = str(created.raw.get("parent_task_guid") or "")
-        if actual_parent != parent_work_item_id:
-            raise RuntimeError(f"FEISHU_SUBTASK_VERIFY_FAIL: expected={parent_work_item_id}; actual={actual_parent}")
-        ok, reason = self._verify_pulled_binding(
-            created,
+        return self._pull_created_with_retry(
+            task_id,
+            "SUBTASK_CREATE",
             self.tasklist_guid,
             parent_work_item_id,
             parent_item=parent,
         )
-        if not ok:
-            raise RuntimeError(f"FEISHU_SUBTASK_BINDING_VERIFY_FAIL: {reason}")
-        return created
 
     def list_assigned(self, assignee_id: str | None = None) -> list[WorkItem]:
         if not self.configured:

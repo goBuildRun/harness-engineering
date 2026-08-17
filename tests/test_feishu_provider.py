@@ -170,6 +170,31 @@ class FeishuProviderTest(unittest.TestCase):
         sleep.assert_called_once_with(0.2)
         self.assertEqual([call.get_method() for call in fake.calls], ["POST", "POST", "GET", "GET"])
 
+    def test_create_retries_successful_readback_until_binding_is_complete(self) -> None:
+        fake = UrlopenRecorder(
+            [
+                {"code": 0, "tenant_access_token": "token-1", "expire": 7200},
+                {"code": 0, "data": {"task": {"guid": "task_guid_123"}}},
+                {"code": 0, "data": {"task": {
+                    "guid": "task_guid_123",
+                    "summary": "Incomplete binding",
+                    "tasklists": [],
+                }}},
+                {"code": 0, "data": {"task": {
+                    "guid": "task_guid_123",
+                    "summary": "Complete binding",
+                    "tasklists": [{"tasklist_guid": "cfg_tasklist"}],
+                }}},
+            ]
+        )
+        with patch.dict(os.environ, {"FEISHU_APP_ID": "app-id", "FEISHU_APP_SECRET": "app-secret"}, clear=True):
+            p = provider()
+            with patch("urllib.request.urlopen", fake), patch("time.sleep") as sleep:
+                item = p.create("Complete binding")
+
+        self.assertEqual("Complete binding", item.title)
+        sleep.assert_called_once_with(0.2)
+
     def test_pull_rejects_response_guid_mismatch(self) -> None:
         fake = UrlopenRecorder(
             [

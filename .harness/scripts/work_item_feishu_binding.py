@@ -49,15 +49,31 @@ class FeishuBindingMixin:
             access_token=access_token,
         )
 
-    def _pull_created_with_retry(self, task_id: str, operation: str) -> WorkItem:
+    def _pull_created_with_retry(
+        self,
+        task_id: str,
+        operation: str,
+        expected_tasklist: str,
+        expected_parent: str,
+        parent_item: WorkItem | None = None,
+    ) -> WorkItem:
         last_error: Exception | None = None
         for attempt in range(1, self.CREATE_READBACK_ATTEMPTS + 1):
             try:
-                return self.pull(task_id)
+                item = self.pull(task_id)
+                ok, reason = self._verify_pulled_binding(
+                    item,
+                    expected_tasklist,
+                    expected_parent,
+                    parent_item=parent_item,
+                )
+                if ok:
+                    return item
+                last_error = RuntimeError(reason)
             except Exception as exc:
                 last_error = exc
-                if attempt < self.CREATE_READBACK_ATTEMPTS:
-                    time.sleep(0.2 * attempt)
+            if attempt < self.CREATE_READBACK_ATTEMPTS:
+                time.sleep(0.2 * attempt)
         raise RuntimeError(
             f"FEISHU_{operation}_READBACK_FAIL: created_id={task_id}; "
             f"attempts={self.CREATE_READBACK_ATTEMPTS}; last={last_error}"
