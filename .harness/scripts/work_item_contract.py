@@ -161,13 +161,26 @@ def work_item_contract_from_spec(
     else:
         meta = {}
     nested = meta.get("work_item") if isinstance(meta.get("work_item"), dict) else {}
-    parent_id = str(
-        meta.get("work_item_parent_id")
-        or meta.get("parent_work_item_id")
-        or nested.get("parent_id")
-        or ""
-    ).strip()
-    item_type = str(meta.get("work_item_type") or nested.get("type") or "").strip().lower()
+    parent_values = {
+        str(value).strip()
+        for value in (
+            meta.get("work_item_parent_id"),
+            meta.get("parent_work_item_id"),
+            nested.get("parent_id"),
+        )
+        if str(value or "").strip()
+    }
+    if len(parent_values) > 1:
+        raise ValueError(f"WORK_ITEM_PARENT_ALIAS_CONFLICT: values={sorted(parent_values)}")
+    parent_id = next(iter(parent_values), "")
+    type_values = {
+        str(value).strip().lower()
+        for value in (meta.get("work_item_type"), nested.get("type"))
+        if str(value or "").strip()
+    }
+    if len(type_values) > 1:
+        raise ValueError(f"WORK_ITEM_TYPE_ALIAS_CONFLICT: values={sorted(type_values)}")
+    item_type = next(iter(type_values), "")
     level = str(meta.get("spec_level") or meta.get("bmad_level") or "").strip().upper()
     alternate_parent = alternate_parent_id.strip()
     if alternate_parent and parent_id and alternate_parent != parent_id:

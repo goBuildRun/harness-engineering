@@ -377,6 +377,30 @@ work_item_parent_id: epic_parent_123
             with self.assertRaisesRegex(ValueError, "WORK_ITEM_FRONT_MATTER_INVALID"):
                 work_item_contract_from_spec(spec, require_l3_type=True)
 
+    def test_conflicting_parent_aliases_fail_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            spec = Path(tmp) / "conflicting-parent.md"
+            spec.write_text(
+                "---\nwork_item_parent_id: epic_one\n"
+                "work_item:\n  parent_id: epic_two\n---\n\n# Conflict\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "WORK_ITEM_PARENT_ALIAS_CONFLICT"):
+                work_item_contract_from_spec(spec)
+
+    def test_conflicting_type_aliases_fail_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            spec = Path(tmp) / "conflicting-type.md"
+            spec.write_text(
+                "---\nwork_item_type: story\n"
+                "work_item:\n  type: epic\n---\n\n# Conflict\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "WORK_ITEM_TYPE_ALIAS_CONFLICT"):
+                work_item_contract_from_spec(spec)
+
     def test_partial_multi_item_sync_persists_each_created_id(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             spec = Path(tmp) / "partial.md"
