@@ -20,6 +20,9 @@ def emit(decision: str, reason: str, **extra) -> None:
 
 def cmd_diagnose(args) -> int:
     root = Path(args.harness_root)
+    if (args.parent_id or "").strip() and not (args.id or "").strip():
+        emit("block", "WORK_ITEM_DIAGNOSE_PARENT_REQUIRES_ID: --parent-id requires --id")
+        return 0
     cfg = load_config(root)
     provider_name = cfg.get("provider", "noop")
     lines: list[str] = [f"provider={provider_name}"]
@@ -88,7 +91,11 @@ def cmd_diagnose(args) -> int:
                 emit("block", "; ".join(lines + [f"FEISHU_TASKLIST_FAIL: {exc}"]), provider=provider.name)
                 return 0
         if args.id:
-            ok, reason = provider.verify(args.id)
+            ok, reason = provider.verify_binding(
+                args.id,
+                expected_project_id=provider.tasklist_guid or None,
+                expected_parent_id=(args.parent_id or "").strip() or None,
+            )
             lines.append(reason)
             if not ok:
                 emit("block", "; ".join(lines), provider=provider.name, work_item_id=args.id)

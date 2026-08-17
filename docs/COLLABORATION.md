@@ -117,6 +117,7 @@ git push -u origin pm/kb-health-spec
 
 - `draft-spec` 只生成待确认草稿，不写 Teambition / 飞书 / Jira
 - `sync-spec --assignee` 会按产品侧 `harness-workspace/project.yaml` 的 provider 建任务并设置负责人
+- 支持精确层级的 Provider 要求 L3 Product Spec 声明 `work_item_type`；Story 在 front matter 声明 `work_item_parent_id`，或向 `draft-spec` / `sync-spec` 传 `--parent-id`。Harness 会创建子任务并回读父级和产品容器；当前飞书支持精确远端校验，`noop` 仅提供本地 `guarded` 语义，Teambition/Jira 父子级适配完成前会阻断显式父级同步
 - `sync-spec` 使用 `bmad-work-item-v1`，只同步摘要、负责人、状态和 Harness Links；完整 BMAD 产物仍在 `harness-workspace/planning/`
 - 不同产品线可选择不同 provider：Teambition 项目、飞书任务清单或 Jira project
 - 验收标准须可测试、可勾选
@@ -243,6 +244,8 @@ bash .harness/scripts/agent_start.sh <新work-item-id>
 | `DINGTALK_APP_KEY` / `DINGTALK_APP_SECRET` | 本机 `.env` / Secret | Teambition 应用密钥 |
 | `DINGTALK_OPERATOR_USER_ID` | 本机 `.env` | 每人自己的钉钉 userId |
 | `FEISHU_APP_ID` / `FEISHU_APP_SECRET` | 本机 `.env` / Secret | 飞书企业自建应用 |
+| `FEISHU_TASKLIST_GUID` | 本机 `.env` | 兼容默认；仅产品未配置任务清单时生效 |
+| `FEISHU_TASKLIST_GUID_OVERRIDE` | 单次环境变量 | 显式临时覆盖产品任务清单；不得作为多产品共享默认 |
 | `FEISHU_ASSIGNEE_ID` | 本机 `.env` | 覆盖产品默认负责人，按租户 ID 类型 |
 | `TEAMBITION_ASSIGNEE_ID` | 本机 `.env` | 覆盖产品默认负责人 |
 | `JIRA_ASSIGNEE_ID` | 本机 `.env` | 覆盖产品默认 Jira accountId |

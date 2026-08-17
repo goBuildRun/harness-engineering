@@ -196,6 +196,7 @@ def extract_from_task_dir(task_dir: Path) -> tuple[str | None, str | None]:
 
 class WorkItemProvider(ABC):
     name: str
+    requires_l3_hierarchy_contract = False
 
     @abstractmethod
     def verify(self, work_item_id: str) -> tuple[bool, str]:
@@ -221,6 +222,17 @@ class WorkItemProvider(ABC):
 
     def create_subtask(self, parent_work_item_id: str, title: str, note: str = "") -> WorkItem:
         raise NotImplementedError(f"{self.name.upper()}_SUBTASK_CREATE_UNSUPPORTED")
+
+    def verify_binding(
+        self,
+        work_item_id: str,
+        expected_project_id: str | None = None,
+        expected_parent_id: str | None = None,
+    ) -> tuple[bool, str]:
+        """Verify provider placement when the adapter exposes container semantics."""
+        if expected_project_id or expected_parent_id is not None:
+            return False, f"{self.name.upper()}_BINDING_VERIFY_UNSUPPORTED"
+        return self.verify(work_item_id)
 
 
 class NoopProvider(WorkItemProvider):
@@ -256,6 +268,32 @@ class NoopProvider(WorkItemProvider):
     def create(self, title: str, note: str = "", project_id: str | None = None) -> WorkItem:
         synthetic = self._local_id_from_title(title)
         return WorkItem(id=synthetic, title=title, note=note, status="local", provider=self.name)
+
+    def create_subtask(self, parent_work_item_id: str, title: str, note: str = "") -> WorkItem:
+        if not valid_id(parent_work_item_id, self.id_pattern):
+            raise ValueError(f"NOOP_INVALID_PARENT_ID: 须匹配 {self.id_pattern}")
+        item = self.create(title, note)
+        item.raw["parent_work_item_id"] = parent_work_item_id
+        return item
+
+    def verify_binding(
+        self,
+        work_item_id: str,
+        expected_project_id: str | None = None,
+        expected_parent_id: str | None = None,
+    ) -> tuple[bool, str]:
+        ok, reason = self.verify(work_item_id)
+        if not ok:
+            return ok, reason
+        if expected_project_id:
+            return False, "NOOP_PROJECT_BINDING_UNSUPPORTED"
+        if expected_parent_id and not valid_id(expected_parent_id, self.id_pattern):
+            return False, f"NOOP_INVALID_PARENT_ID: 须匹配 {self.id_pattern}"
+        parent = "<unspecified>" if expected_parent_id is None else (expected_parent_id or "<top-level>")
+        return True, (
+            "NOOP_BINDING_LOCAL_ONLY: ID 格式合法；"
+            f"parent={parent}; assurance=guarded; 未调用外部 API"
+        )
 
     def update_status(self, work_item_id: str, status: str, note: str = "") -> tuple[bool, str]:
         ok, _ = self.verify(work_item_id)

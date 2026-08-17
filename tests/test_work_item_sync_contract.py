@@ -8,12 +8,21 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 SCRIPT_DIR = Path(__file__).resolve().parents[1] / ".harness" / "scripts"
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from work_item_providers import NoopProvider, WorkItem, WorkItemProvider, sync_spec_markdown, work_item_drafts_from_spec  # noqa: E402
+from work_item_providers import (  # noqa: E402
+    NoopProvider,
+    WorkItem,
+    WorkItemProvider,
+    gate_check,
+    sync_spec_markdown,
+    work_item_drafts_from_spec,
+)
+from work_item_contract import work_item_contract_from_spec  # noqa: E402
 
 
 class CaptureProvider(WorkItemProvider):
@@ -33,8 +42,24 @@ class CaptureProvider(WorkItemProvider):
         self.created.append({"id": item_id, "title": title, "note": note})
         return WorkItem(id=item_id, title=title, note=note, provider=self.name)
 
+    def create_subtask(self, parent_work_item_id: str, title: str, note: str = "") -> WorkItem:
+        item_id = f"wi_{len(self.created) + 1:08d}"
+        self.created.append({"id": item_id, "title": title, "note": note, "parent_id": parent_work_item_id})
+        return WorkItem(id=item_id, title=title, note=note, provider=self.name)
+
     def update_status(self, work_item_id: str, status: str, note: str = "") -> tuple[bool, str]:
         return True, "ok"
+
+
+class StrictHierarchyCaptureProvider(CaptureProvider):
+    requires_l3_hierarchy_contract = True
+
+
+class FailSecondCreateProvider(CaptureProvider):
+    def create(self, title: str, note: str = "", project_id: str | None = None) -> WorkItem:
+        if self.created:
+            raise RuntimeError("injected second create failure")
+        return super().create(title, note, project_id)
 
 
 class WorkItemSyncContractTest(unittest.TestCase):
@@ -60,6 +85,51 @@ class WorkItemSyncContractTest(unittest.TestCase):
         data = json.loads(output)
         self.assertEqual(data["decision"], "pass")
         self.assertEqual(data["capabilities"]["verify"], "local")
+
+    def test_diagnose_parent_without_id_blocks_before_provider_checks(self) -> None:
+        output = subprocess.check_output(
+            [
+                "python3", str(SCRIPT_DIR / "work_item.py"),
+                "--harness-root", str(SCRIPT_DIR.parents[1]),
+                "diagnose", "--parent-id", "epic_parent_123",
+            ],
+            text=True,
+        )
+        data = json.loads(output)
+
+        self.assertEqual("block", data["decision"])
+        self.assertIn("WORK_ITEM_DIAGNOSE_PARENT_REQUIRES_ID", data["reason"])
+
+    def test_feishu_draft_rejects_untyped_l3_spec_before_confirmation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            workspace = product / "harness-workspace"
+            workspace.mkdir()
+            (workspace / "project.yaml").write_text(
+                "product:\n  id: demo\nworkspace:\n  root: harness-workspace\n"
+                "work_item:\n  provider: feishu\n",
+                encoding="utf-8",
+            )
+            spec = workspace / "planning" / "product-specs" / "untyped.md"
+            spec.parent.mkdir(parents=True)
+            spec.write_text(
+                "---\nspec_level: L3\n---\n\n# Untyped\n\n- [ ] AC\n",
+                encoding="utf-8",
+            )
+            output = subprocess.check_output(
+                [
+                    "python3", str(SCRIPT_DIR / "work_item.py"),
+                    "--harness-root", str(SCRIPT_DIR.parents[1]),
+                    "draft-spec", str(spec),
+                ],
+                cwd=product,
+                env={**os.environ, "HARNESS_PRODUCT_ROOT": str(product), "WORK_ITEM_PROVIDER": "feishu"},
+                text=True,
+            )
+        data = json.loads(output)
+
+        self.assertEqual("block", data["decision"])
+        self.assertIn("WORK_ITEM_TYPE_REQUIRED", data["reason"])
 
     def test_noop_provider_accepts_and_generates_semantic_local_ids(self) -> None:
         provider = NoopProvider(r"^[A-Za-z0-9][A-Za-z0-9._:-]{1,127}$")
@@ -195,6 +265,177 @@ spec_level: L2
         self.assertEqual(drafts[0]["assignee"], "user_001")
         self.assertEqual(drafts[0]["contract"], "bmad-work-item-v1")
         self.assertIn("Assignee: `user_001`", drafts[0]["note"])
+
+    def test_sync_spec_uses_front_matter_parent_for_subtasks(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            spec = product / "harness-workspace" / "planning" / "product-specs" / "story.md"
+            spec.parent.mkdir(parents=True)
+            spec.write_text(
+                """
+---
+spec_level: L3
+work_item_type: story
+work_item_parent_id: epic_parent_123
+---
+
+# Story
+
+## 验收标准
+
+- [ ] 作为 Epic 子任务创建
+""".lstrip(),
+                encoding="utf-8",
+            )
+            provider = CaptureProvider()
+
+            count, message = sync_spec_markdown(provider, spec)
+
+        self.assertEqual(1, count)
+        self.assertEqual("epic_parent_123", provider.created[0]["parent_id"])
+        self.assertIn("parent=epic_parent_123", message)
+
+    def test_sync_spec_rejects_conflicting_cli_and_spec_parents(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            spec = Path(tmp) / "story.md"
+            spec.write_text(
+                "---\nwork_item_parent_id: epic_parent_123\n---\n\n# Story\n\n- [ ] AC\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "WORK_ITEM_PARENT_CONFLICT"):
+                sync_spec_markdown(CaptureProvider(), spec, parent_work_item_id="other_parent_456")
+
+    def test_story_accepts_cli_parent_when_spec_parent_is_absent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            spec = Path(tmp) / "story.md"
+            spec.write_text(
+                "---\nspec_level: L3\nwork_item_type: story\n---\n\n# Story\n\n- [ ] AC\n",
+                encoding="utf-8",
+            )
+            provider = StrictHierarchyCaptureProvider()
+
+            sync_spec_markdown(provider, spec, parent_work_item_id="epic_parent_123")
+
+        self.assertEqual("epic_parent_123", provider.created[0]["parent_id"])
+
+    def test_epic_rejects_cli_parent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            spec = Path(tmp) / "epic.md"
+            spec.write_text(
+                "---\nspec_level: L3\nwork_item_type: epic\n---\n\n# Epic\n\n- [ ] AC\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "WORK_ITEM_PARENT_FORBIDDEN"):
+                sync_spec_markdown(
+                    StrictHierarchyCaptureProvider(),
+                    spec,
+                    parent_work_item_id="epic_parent_123",
+                )
+
+    def test_strict_hierarchy_provider_requires_l3_work_item_type(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            spec = Path(tmp) / "untyped.md"
+            spec.write_text(
+                "---\nspec_level: L3\n---\n\n# Untyped\n\n- [ ] AC\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "WORK_ITEM_TYPE_REQUIRED"):
+                sync_spec_markdown(StrictHierarchyCaptureProvider(), spec)
+
+    def test_noop_l3_without_hierarchy_contract_remains_usable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            spec = Path(tmp) / "local.md"
+            spec.write_text(
+                "---\nspec_level: L3\n---\n\n# Local\n\n- [ ] AC\n",
+                encoding="utf-8",
+            )
+            provider = NoopProvider(r"^[A-Za-z0-9][A-Za-z0-9._:-]{1,127}$")
+
+            count, _ = sync_spec_markdown(provider, spec)
+
+        self.assertEqual(1, count)
+
+    def test_noop_story_parent_uses_explicit_guarded_local_semantics(self) -> None:
+        provider = NoopProvider(r"^[A-Za-z0-9][A-Za-z0-9._:-]{1,127}$")
+        item = provider.create_subtask("epic_parent_123", "Local Story")
+
+        ok, reason = provider.verify_binding(item.id, expected_parent_id="epic_parent_123")
+
+        self.assertTrue(ok)
+        self.assertEqual("epic_parent_123", item.raw["parent_work_item_id"])
+        self.assertIn("assurance=guarded", reason)
+        self.assertNotIn("enforced", reason)
+
+    def test_malformed_front_matter_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            spec = Path(tmp) / "malformed.md"
+            spec.write_text("---\nwork_item: [\n---\n\n# Broken\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "WORK_ITEM_FRONT_MATTER_INVALID"):
+                work_item_contract_from_spec(spec, require_l3_type=True)
+
+    def test_partial_multi_item_sync_persists_each_created_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            spec = Path(tmp) / "partial.md"
+            spec.write_text("# Partial\n\n- [ ] First\n- [ ] Second\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(RuntimeError, "injected second create failure"):
+                sync_spec_markdown(FailSecondCreateProvider(), spec)
+            updated = spec.read_text(encoding="utf-8")
+
+        self.assertIn("- [ ] First #wi_00000001", updated)
+        self.assertIn("- [ ] Second", updated)
+
+    def test_gate_fails_when_bound_product_spec_is_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            product = root / "product"
+            task_dir = product / "harness-workspace" / "planning" / "tasks" / "task"
+            task_dir.mkdir(parents=True)
+            (task_dir / "00-任务卡.md").write_text(
+                "Work Item ID: task_123456\n"
+                "产品规格链接: `harness-workspace/planning/product-specs/missing.md`\n",
+                encoding="utf-8",
+            )
+            provider = NoopProvider(r"^[A-Za-z0-9][A-Za-z0-9._:-]{1,127}$")
+            with (
+                patch("work_item_contract.load_config", return_value={"requirements": {"L3": True}}),
+                patch("work_item_contract.get_provider", return_value=provider),
+                patch("work_item_contract.active_product_root", return_value=product),
+            ):
+                result = gate_check(root, "L3", str(task_dir))
+
+        self.assertFalse(result["ok"])
+        self.assertTrue(any("WORK_ITEM_SPEC_MISSING" in failure for failure in result["failures"]))
+
+    def test_l3_gate_rejects_l2_product_spec(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            product = root / "product"
+            workspace = product / "harness-workspace"
+            task_dir = workspace / "planning" / "tasks" / "task"
+            spec = workspace / "planning" / "product-specs" / "wrong-level.md"
+            task_dir.mkdir(parents=True)
+            spec.parent.mkdir(parents=True)
+            spec.write_text("---\nspec_level: L2\n---\n\n# Wrong level\n", encoding="utf-8")
+            (task_dir / "00-任务卡.md").write_text(
+                "Work Item ID: task_123456\n"
+                "产品规格链接: `harness-workspace/planning/product-specs/wrong-level.md`\n",
+                encoding="utf-8",
+            )
+            provider = NoopProvider(r"^[A-Za-z0-9][A-Za-z0-9._:-]{1,127}$")
+            with (
+                patch("work_item_contract.load_config", return_value={"requirements": {"L3": True}}),
+                patch("work_item_contract.get_provider", return_value=provider),
+                patch("work_item_contract.active_product_root", return_value=product),
+            ):
+                result = gate_check(root, "L3", str(task_dir))
+
+        self.assertFalse(result["ok"])
+        self.assertTrue(any("WORK_ITEM_SPEC_LEVEL_MISMATCH" in failure for failure in result["failures"]))
 
     def test_close_syncs_planning_context_after_status_update(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

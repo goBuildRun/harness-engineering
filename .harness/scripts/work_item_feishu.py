@@ -12,10 +12,10 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+from work_item_feishu_binding import FeishuBindingMixin
 from work_item_feishu_payload import FeishuPayloadMixin
 from work_item_providers import WorkItem, WorkItemProvider, valid_id
-
-class FeishuProvider(FeishuPayloadMixin, WorkItemProvider):
+class FeishuProvider(FeishuBindingMixin, FeishuPayloadMixin, WorkItemProvider):
     """Feishu/Lark Tasks provider.
 
     The default endpoints follow Feishu open platform task v2 conventions and
@@ -23,6 +23,7 @@ class FeishuProvider(FeishuPayloadMixin, WorkItemProvider):
     """
 
     name = "feishu"
+    requires_l3_hierarchy_contract = True
     STATUS_ALIASES = {
         "done": "done",
         "closed": "done",
@@ -46,6 +47,7 @@ class FeishuProvider(FeishuPayloadMixin, WorkItemProvider):
     }
     COMPLETED_MODE_ALIASES = {"completed", "complete", "completed_at", "completion"}
     DESCRIPTION_MODE_ALIASES = {"description", "patch", "note"}
+    CREATE_READBACK_ATTEMPTS = 3
 
     def __init__(self, cfg: dict[str, Any], id_pattern: str) -> None:
         self.id_pattern = id_pattern
@@ -55,7 +57,13 @@ class FeishuProvider(FeishuPayloadMixin, WorkItemProvider):
         self.list_tasks_path = cfg.get("list_tasks_path") or self.tasks_path
         self.app_id = os.environ.get("FEISHU_APP_ID", "")
         self.app_secret = os.environ.get("FEISHU_APP_SECRET", "")
-        self.tasklist_guid = os.environ.get("FEISHU_TASKLIST_GUID", "") or str(cfg.get("tasklist_guid") or "")
+        configured_tasklist = str(cfg.get("tasklist_guid") or "").strip()
+        explicit_override = os.environ.get("FEISHU_TASKLIST_GUID_OVERRIDE", "").strip()
+        legacy_default = os.environ.get("FEISHU_TASKLIST_GUID", "").strip()
+        self.tasklist_guid = explicit_override or configured_tasklist or legacy_default
+        self.tasklist_source = (
+            "override" if explicit_override else "product" if configured_tasklist else "legacy_env" if legacy_default else "unset"
+        )
         self.assignee_id = os.environ.get("FEISHU_ASSIGNEE_ID", "") or str(cfg.get("assignee_id") or "")
         self.list_query = cfg.get("list_query") if isinstance(cfg.get("list_query"), dict) else {}
         self.status_update_mode = str(cfg.get("status_update_mode") or "skip").strip().lower()
@@ -128,27 +136,6 @@ class FeishuProvider(FeishuPayloadMixin, WorkItemProvider):
     def _tasklist_tasks_path(self, tasklist_guid: str) -> str:
         return f"/open-apis/task/v2/tasklists/{urllib.parse.quote(tasklist_guid, safe='')}/tasks"
 
-    def ensure_tasklist_member(
-        self,
-        tasklist_guid: str | None = None,
-        member_id: str | None = None,
-        member_type: str = "app",
-        role: str = "editor",
-        access_token: str | None = None,
-    ) -> dict[str, Any]:
-        guid = tasklist_guid or self.tasklist_guid
-        if not guid:
-            raise RuntimeError("FEISHU_TASKLIST_GUID_MISSING")
-        target_id = member_id or self.app_id
-        if not target_id:
-            raise RuntimeError("FEISHU_TASKLIST_MEMBER_ID_MISSING")
-        return self._request(
-            "POST",
-            f"/open-apis/task/v2/tasklists/{urllib.parse.quote(guid, safe='')}/add_members",
-            {"members": [{"id": target_id, "type": member_type, "role": role}]},
-            access_token=access_token,
-        )
-
     @classmethod
     def _canonical_status(cls, status: str) -> str:
         key = status.strip().lower()
@@ -185,6 +172,9 @@ class FeishuProvider(FeishuPayloadMixin, WorkItemProvider):
         task = self._task_payload(data)
         if not task:
             raise RuntimeError(f"FEISHU_NOT_FOUND: task={work_item_id}")
+        actual_id = self._task_id(task)
+        if actual_id != work_item_id:
+            raise RuntimeError(f"FEISHU_RESPONSE_ID_MISMATCH: expected={work_item_id}; actual={actual_id or '<missing>'}")
         note = str(task.get("description") or task.get("notes") or "")
         return WorkItem(
             id=work_item_id,
@@ -200,29 +190,25 @@ class FeishuProvider(FeishuPayloadMixin, WorkItemProvider):
     def create(self, title: str, note: str = "", project_id: str | None = None) -> WorkItem:
         if not self.configured:
             raise RuntimeError("FEISHU_MISSING_ENV")
+        tasklist_guid = str(project_id or self.tasklist_guid or "").strip()
+        if not tasklist_guid:
+            raise RuntimeError("FEISHU_TASKLIST_GUID_MISSING: refusing to create an unbound task")
         body: dict[str, Any] = {"summary": title}
         if note:
             body["description"] = note
-        tasklist_guid = project_id or self.tasklist_guid
-        if tasklist_guid:
-            body["tasklists"] = [{"tasklist_guid": tasklist_guid}]
+        body["tasklists"] = [{"tasklist_guid": tasklist_guid}]
         if self.assignee_id:
             body["members"] = [{"id": self.assignee_id, "role": "assignee"}]
-        if tasklist_guid:
-            self._request("GET", self._tasklist_tasks_path(tasklist_guid))
         data = self._request("POST", self.tasks_path, body)
         task = self._task_payload(data)
         task_id = self._task_id(task)
         if not task_id:
             raise RuntimeError(f"FEISHU_CREATE_FAIL: {data}")
-        return WorkItem(
-            id=task_id,
-            title=title,
-            note=note,
-            status=str(task.get("status") or "created"),
-            provider=self.name,
-            raw=task,
-        )
+        created = self._pull_created_with_retry(task_id, "CREATE")
+        ok, reason = self._verify_pulled_binding(created, tasklist_guid or "", "")
+        if not ok:
+            raise RuntimeError(f"FEISHU_CREATE_BINDING_VERIFY_FAIL: {reason}")
+        return created
 
     def update_status(self, work_item_id: str, status: str, note: str = "") -> tuple[bool, str]:
         ok, reason = self.verify(work_item_id)
@@ -296,9 +282,15 @@ class FeishuProvider(FeishuPayloadMixin, WorkItemProvider):
         title = title.strip()
         if not title:
             raise ValueError("FEISHU_TITLE_EMPTY")
-        parent_ok, parent_reason = self.verify(parent_work_item_id)
-        if not parent_ok:
-            raise RuntimeError(parent_reason)
+        if not self.tasklist_guid:
+            raise RuntimeError("FEISHU_TASKLIST_GUID_MISSING: refusing to create an unbound subtask")
+        parent = self.pull(parent_work_item_id)
+        if self.tasklist_guid and self.tasklist_guid not in self._tasklist_guids(parent.raw):
+            raise RuntimeError(
+                "FEISHU_PARENT_TASKLIST_MISMATCH: "
+                f"parent={parent_work_item_id}; expected={self.tasklist_guid}; "
+                f"actual={sorted(self._tasklist_guids(parent.raw))}"
+            )
         body: dict[str, Any] = {"summary": title}
         if note:
             body["description"] = note
@@ -310,10 +302,18 @@ class FeishuProvider(FeishuPayloadMixin, WorkItemProvider):
         task_id = self._task_id(task)
         if not task_id:
             raise RuntimeError(f"FEISHU_SUBTASK_CREATE_FAIL: {data}")
-        created = self.pull(task_id)
+        created = self._pull_created_with_retry(task_id, "SUBTASK_CREATE")
         actual_parent = str(created.raw.get("parent_task_guid") or "")
         if actual_parent != parent_work_item_id:
             raise RuntimeError(f"FEISHU_SUBTASK_VERIFY_FAIL: expected={parent_work_item_id}; actual={actual_parent}")
+        ok, reason = self._verify_pulled_binding(
+            created,
+            self.tasklist_guid,
+            parent_work_item_id,
+            parent_item=parent,
+        )
+        if not ok:
+            raise RuntimeError(f"FEISHU_SUBTASK_BINDING_VERIFY_FAIL: {reason}")
         return created
 
     def list_assigned(self, assignee_id: str | None = None) -> list[WorkItem]:

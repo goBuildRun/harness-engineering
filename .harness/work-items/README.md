@@ -238,8 +238,11 @@ work_item:
 ```bash
 FEISHU_APP_ID=
 FEISHU_APP_SECRET=
-# 可选：仅用于临时覆盖产品侧 tasklist_guid / assignee_id
+# 兼容默认：仅在产品侧未配置 tasklist_guid 时使用
 FEISHU_TASKLIST_GUID=
+# 显式临时覆盖产品侧 tasklist_guid
+FEISHU_TASKLIST_GUID_OVERRIDE=
+# 可选：临时覆盖产品侧 assignee_id
 FEISHU_ASSIGNEE_ID=
 # 可选：仅用于一次性初始化清单协作者。必须来自清单 owner/editor 用户授权。
 FEISHU_USER_ACCESS_TOKEN=
@@ -250,13 +253,17 @@ FEISHU_USER_ACCESS_TOKEN=
 - `diagnose`：校验 tenant access token
 - `diagnose`：若产品配置了 `tasklist_guid`，同时校验应用是否有读取该任务清单的权限
 - `feishu-tasklist-member`：把当前 `FEISHU_APP_ID` 作为 `app/editor` 添加到 `tasklist_guid`；如果 tenant token 还没有清单编辑权，请通过 `FEISHU_USER_ACCESS_TOKEN` 或 `--user-access-token` 使用清单 owner/editor 的用户授权执行一次
-- `diagnose --id <task_guid>`：校验 tenant access token，并只读校验一个已有任务
+- `diagnose --id <task_guid>`：校验 tenant access token，并只读校验任务直接属于产品清单，或通过父任务继承该清单
+- `diagnose --id <task_guid> --parent-id <parent_guid>`：额外精确校验父任务绑定
 - `diagnose --create-smoke-title "Harness smoke"`：显式创建一个 smoke 任务，用于真实写入联调；默认 diagnose 不写飞书
 - `verify` / `pull`：按 task guid 读取任务
 - `draft-spec`：生成待确认任务草稿，不写飞书
-- `sync-spec --assignee <id>`：创建任务、设置负责人并回写 `#<task_guid>`
+- `sync-spec --assignee <id>`：创建任务、设置负责人、回读校验容器并回写 `#<task_guid>`
+- `sync-spec --parent-id <parent_guid>`：创建子任务并精确回读父级；也可在 Product Spec front matter 写 `work_item_parent_id`。飞书 L3 Spec 还须声明 `work_item_type: story|epic|task`；Story 必须有父级，Epic 禁止有父级
 - `list-mine`：默认用 `tasklist_guid` 调用 `/open-apis/task/v2/tasklists/{tasklist_guid}/tasks`，也可用 `list_query` / `list_tasks_path` 适配租户差异，并在本地按负责人过滤
 - `close`：默认只本地返回 pass，不改飞书状态；产品侧配置 `status_update_mode: completed` 后，`close --status done` 会 PATCH 任务 `completed_at=<当前毫秒时间戳>`，`close --status in_progress` / `todo` 会清为 `"0"`。写入后会重新拉取任务并核对 canonical `done/open` 状态；飞书把 `in_progress` 与 `todo` 都表示为未完成时，结果会同时报告 requested status、真实 provider status 和 canonical status，不把 provider 的 `todo` 冒充为精确 `in_progress`。
+
+创建任务或子任务后，Provider 会在有限次数内回读并校验 task GUID、产品清单和父级。读回耗尽时错误会保留 `created_id` 供人工恢复，避免重复创建；多验收项同步会在每次创建成功后立即回写对应 ID，后续项失败不会丢失已创建项的本地绑定。
 
 推荐飞书接入测试顺序：
 

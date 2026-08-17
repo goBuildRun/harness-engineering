@@ -9,6 +9,7 @@ from typing import Any
 from work_item_providers import (
     ACCEPTANCE_ITEM_RE,
     WorkItemProvider,
+    active_product_root,
     extract_from_task_dir,
     get_provider,
     load_config,
@@ -135,11 +136,94 @@ def build_work_item_note(spec_path: Path, acceptance_title: str, assignee: str =
     return "\n".join(lines).rstrip()
 
 
-def work_item_drafts_from_spec(spec_path: Path, assignee: str = "") -> list[dict[str, Any]]:
+def parent_work_item_id_from_spec(spec_path: Path) -> str:
+    return str(work_item_contract_from_spec(spec_path)["parent_id"] or "")
+
+
+def work_item_contract_from_spec(
+    spec_path: Path,
+    require_l3_type: bool = False,
+    alternate_parent_id: str = "",
+) -> dict[str, Any]:
+    if not spec_path.is_file():
+        raise ValueError(f"WORK_ITEM_SPEC_MISSING: {spec_path}")
+    text = spec_path.read_text(encoding="utf-8")
+    if text.startswith("---"):
+        parts = text.split("---", 2)
+        if len(parts) < 3 or yaml is None:
+            raise ValueError(f"WORK_ITEM_FRONT_MATTER_INVALID: {spec_path}")
+        try:
+            meta = yaml.safe_load(parts[1].strip()) or {}
+        except Exception as exc:
+            raise ValueError(f"WORK_ITEM_FRONT_MATTER_INVALID: {spec_path}: {exc}") from exc
+        if not isinstance(meta, dict):
+            raise ValueError(f"WORK_ITEM_FRONT_MATTER_INVALID: {spec_path}: expected mapping")
+    else:
+        meta = {}
+    nested = meta.get("work_item") if isinstance(meta.get("work_item"), dict) else {}
+    parent_id = str(
+        meta.get("work_item_parent_id")
+        or meta.get("parent_work_item_id")
+        or nested.get("parent_id")
+        or ""
+    ).strip()
+    item_type = str(meta.get("work_item_type") or nested.get("type") or "").strip().lower()
+    level = str(meta.get("spec_level") or meta.get("bmad_level") or "").strip().upper()
+    alternate_parent = alternate_parent_id.strip()
+    if alternate_parent and parent_id and alternate_parent != parent_id:
+        raise ValueError(
+            f"WORK_ITEM_PARENT_CONFLICT: cli={alternate_parent}; spec={parent_id}; source={spec_path}"
+        )
+    effective_parent = alternate_parent or parent_id
+    if item_type and item_type not in {"epic", "story", "task"}:
+        raise ValueError(f"WORK_ITEM_TYPE_INVALID: {item_type}; expected epic/story/task")
+    if require_l3_type and level == "L3" and not item_type:
+        raise ValueError("WORK_ITEM_TYPE_REQUIRED: L3 sync must declare work_item_type=epic|story|task")
+    if item_type == "story" and not effective_parent:
+        raise ValueError(
+            "WORK_ITEM_PARENT_REQUIRED: work_item_type=story requires "
+            "work_item_parent_id or --parent-id"
+        )
+    if item_type == "epic" and effective_parent:
+        raise ValueError("WORK_ITEM_PARENT_FORBIDDEN: work_item_type=epic must be top-level")
+    expected_parent: str | None = effective_parent or ("" if item_type == "epic" else None)
+    return {
+        "level": level,
+        "item_type": item_type,
+        "parent_id": parent_id,
+        "effective_parent_id": effective_parent,
+        "expected_parent_id": expected_parent,
+    }
+
+
+def resolve_parent_work_item_id(
+    spec_path: Path,
+    explicit_parent_id: str = "",
+    require_l3_type: bool = False,
+) -> str:
+    contract = work_item_contract_from_spec(
+        spec_path,
+        require_l3_type=require_l3_type,
+        alternate_parent_id=explicit_parent_id,
+    )
+    return str(contract["effective_parent_id"] or "")
+
+
+def work_item_drafts_from_spec(
+    spec_path: Path,
+    assignee: str = "",
+    parent_work_item_id: str = "",
+    require_l3_type: bool = False,
+) -> list[dict[str, Any]]:
     text = spec_path.read_text(encoding="utf-8")
     product_root = product_root_for(spec_path)
     spec_rel = rel_to_product(spec_path, product_root)
     drafts: list[dict[str, Any]] = []
+    parent_id = resolve_parent_work_item_id(
+        spec_path,
+        parent_work_item_id,
+        require_l3_type=require_l3_type,
+    )
     for index, match in enumerate(ACCEPTANCE_ITEM_RE.finditer(text), start=1):
         title = match.group(1).strip()
         drafts.append(
@@ -149,6 +233,7 @@ def work_item_drafts_from_spec(spec_path: Path, assignee: str = "") -> list[dict
                 "assignee": assignee,
                 "source": spec_rel,
                 "contract": "bmad-work-item-v1",
+                "parent_work_item_id": parent_id,
                 "note": build_work_item_note(spec_path, title, assignee),
             }
         )
@@ -160,22 +245,48 @@ def apply_assignee(provider: WorkItemProvider, assignee: str) -> None:
         setattr(provider, "assignee_id", assignee)
 
 
-def sync_spec_markdown(provider: WorkItemProvider, spec_path: Path, assignee: str = "") -> tuple[int, str]:
+def sync_spec_markdown(
+    provider: WorkItemProvider,
+    spec_path: Path,
+    assignee: str = "",
+    parent_work_item_id: str = "",
+) -> tuple[int, str]:
     text = spec_path.read_text(encoding="utf-8")
     count = 0
+    parent_id = resolve_parent_work_item_id(
+        spec_path,
+        parent_work_item_id,
+        require_l3_type=bool(getattr(provider, "requires_l3_hierarchy_contract", False)),
+    )
 
     def repl(match: re.Match[str]) -> str:
         nonlocal count
         title = match.group(1).strip()
         note = build_work_item_note(spec_path, title, assignee)
-        item = provider.create(title=title, note=note)
+        item = (
+            provider.create_subtask(parent_id, title=title, note=note)
+            if parent_id
+            else provider.create(title=title, note=note)
+        )
         count += 1
         return f"- [ ] {title} #{item.id}"
 
-    new_text = ACCEPTANCE_ITEM_RE.sub(repl, text)
-    if new_text != text:
-        spec_path.write_text(new_text, encoding="utf-8")
-    return count, f"synced {count} items with bmad-work-item-v1 contract"
+    while True:
+        match = ACCEPTANCE_ITEM_RE.search(text)
+        if not match:
+            break
+        replacement = repl(match)
+        new_text = text[:match.start()] + replacement + text[match.end():]
+        created_id = replacement.rsplit("#", 1)[-1]
+        try:
+            spec_path.write_text(new_text, encoding="utf-8")
+        except OSError as exc:
+            raise RuntimeError(
+                f"WORK_ITEM_CREATED_SPEC_WRITE_FAILED: created_id={created_id}; spec={spec_path}; error={exc}"
+            ) from exc
+        text = new_text
+    parent_detail = f"; parent={parent_id}" if parent_id else ""
+    return count, f"synced {count} items with bmad-work-item-v1 contract{parent_detail}"
 
 
 def gate_check(harness_root: Path, level: str, task_dir: str | None) -> dict[str, Any]:
@@ -195,7 +306,35 @@ def gate_check(harness_root: Path, level: str, task_dir: str | None) -> dict[str
     if not wi_id:
         failures.append("NO_WORK_ITEM_ID: 00-任务卡.md 须填写当前产品 provider 的 Work Item ID（L2/L3 必填）")
     else:
-        ok, reason = provider.verify(wi_id)
+        expected_parent: str | None = None
+        product_root = active_product_root(harness_root)
+        if not spec:
+            failures.append("NO_PRODUCT_SPEC_FOR_WORK_ITEM_BINDING")
+        elif not product_root:
+            failures.append("NO_PRODUCT_ROOT_FOR_WORK_ITEM_BINDING")
+        else:
+            spec_path = product_root / spec
+            try:
+                contract = work_item_contract_from_spec(
+                    spec_path,
+                    require_l3_type=bool(getattr(provider, "requires_l3_hierarchy_contract", False)),
+                )
+                gate_level = level.strip().upper()
+                if gate_level in {"L2", "L3"} and contract["level"] != gate_level:
+                    failures.append(
+                        "WORK_ITEM_SPEC_LEVEL_MISMATCH: "
+                        f"gate={gate_level}; spec={contract['level'] or '<missing>'}; source={spec_path}"
+                    )
+                expected_parent = contract["expected_parent_id"]
+            except ValueError as exc:
+                failures.append(str(exc))
+        if failures:
+            return {"ok": False, "failures": failures, "work_item": None, "provider": provider.name}
+        ok, reason = provider.verify_binding(
+            wi_id,
+            expected_project_id=str(getattr(provider, "tasklist_guid", "") or "") or None,
+            expected_parent_id=expected_parent,
+        )
         if not ok:
             failures.append(reason)
         else:
@@ -205,6 +344,7 @@ def gate_check(harness_root: Path, level: str, task_dir: str | None) -> dict[str
                 "product_spec": spec,
                 "verified": ok,
                 "verify_reason": reason,
+                "expected_parent_id": expected_parent,
             }
 
     return {"ok": not failures, "failures": failures, "work_item": work_item, "provider": provider.name}

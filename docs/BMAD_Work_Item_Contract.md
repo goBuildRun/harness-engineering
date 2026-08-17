@@ -56,6 +56,22 @@ bash .harness/scripts/work_item.sh sync-spec \
 
 `sync-spec --assignee` 优先级高于产品侧默认负责人和本机环境变量。同步成功后，开发人员或自动化 Agent 从 Teambition、飞书或 Jira 领取分派给自己的 Work Item，并通过 `agent_start.sh <work-item-id>` 进入 Harness Execution。
 
+支持精确层级的 Provider（当前为飞书）要求 L3 Product Spec 声明 `work_item_type`。Story 的父 Work Item 可写在 front matter，或通过 CLI 显式传入；两者同时存在但不一致时同步会阻断，Epic 携带父级也会阻断：
+
+```yaml
+---
+spec_level: L3
+work_item_type: story
+work_item_parent_id: <epic-work-item-id>
+---
+```
+
+```bash
+bash .harness/scripts/work_item.sh sync-spec \
+  "$PRODUCT_ROOT/harness-workspace/planning/product-specs/某-story.md" \
+  --parent-id <epic-work-item-id>
+```
+
 Planning Gate、Harness Execution 或 QA 状态变化后，使用显式描述文件同步既有任务，不创建重复 Work Item：
 
 ```bash
@@ -100,7 +116,7 @@ bash .harness/scripts/work_item.sh update-description \
 - [ ] 手机号登录成功后进入首页 #<work-item-id>
 ```
 
-L2/L3 进入 Planning Gate 前，需要把这个 ID 填入 `00-任务卡.md` 的“任务编号”。
+L2/L3 进入 Planning Gate 前，需要把这个 ID 填入 `00-任务卡.md` 的“任务编号”。Gate 不只校验 ID 存在：支持容器语义的 provider 还必须证明任务属于产品配置的项目/清单；声明了 `work_item_parent_id` 时，必须同时精确匹配父任务。
 
 ## 5. 状态语义
 
@@ -131,12 +147,12 @@ growth-review-required
 
 当前 provider 能力边界：
 
-| Provider | 创建任务 | 读取/校验 | list-mine | 状态回写 |
-|----------|----------|-----------|-----------|----------|
-| `teambition` | 已支持 | 已支持 | 已支持 | `stage_id_map` 配置后支持 |
-| `feishu` | 已支持 | 已支持 | 配置 tasklist/list_query 后支持 | 默认 skip；配置 `status_update_mode: completed` 后支持完成态回写 |
-| `jira` | 已支持 | 已支持 | 已支持 | transition 配置后启用 |
-| `noop` | 本地 ID | 本地校验 | 空列表 | 本地 pass |
+| Provider | 创建任务 | 容器/父级绑定 | list-mine | 状态回写 |
+|----------|----------|---------------|-----------|----------|
+| `teambition` | 已支持 | 父子级适配未实现；显式父级会阻断 | 已支持 | `stage_id_map` 配置后支持 |
+| `feishu` | 已支持 | 精确校验 tasklist、parent 和父级 tasklist；创建后有界重试回读 | 配置 tasklist/list_query 后支持 | 默认 skip；配置 `status_update_mode: completed` 后支持完成态回写 |
+| `jira` | 已支持 | 父子级适配未实现；显式父级会阻断 | 已支持 | transition 配置后启用 |
+| `noop` | 本地 ID | 本地格式与父级参数校验，`guarded` 且不调用外部 API | 空列表 | 本地 pass |
 
 ## 6. Teambition 管理建议
 
@@ -153,11 +169,13 @@ growth-review-required
 ## 7. 飞书任务管理建议
 
 - 产品侧 `project.yaml` 配置 `providers.feishu.tasklist_guid`，把任务创建到固定任务清单。
+- 产品配置的 `tasklist_guid` 优先于兼容变量 `FEISHU_TASKLIST_GUID`；只有显式 `FEISHU_TASKLIST_GUID_OVERRIDE` 才能临时覆盖产品配置，避免通用 Harness 清单污染产品任务。
+- L3 Story 声明 `work_item_type: story`，并使用 `work_item_parent_id` 或 `sync-spec --parent-id` 创建子任务；Epic 声明 `work_item_type: epic` 且不得有父级。飞书子任务自身可以没有 `tasklists` 字段，Harness 会精确校验 `parent_task_guid`，并证明父任务直接属于产品清单。即使子任务已直接加入正确清单，也不会跳过父 Epic 的清单验证。
 - 如租户任务列表接口不同，可配置 `providers.feishu.list_tasks_path` 与 `providers.feishu.list_query`，`list-mine` 会拉取后按负责人本地过滤。
 - `providers.feishu.assignee_id` 可配置产品默认负责人；个人本地覆盖用 `FEISHU_ASSIGNEE_ID`。
 - `providers.feishu.status_update_mode: completed` 会把 Harness `done/closed/mr_merged` 映射为飞书任务 `completed_at=<当前毫秒时间戳>`；`in_progress/todo` 会清为 `"0"`，用于重新打开。Provider 必须在 PATCH 后回读并核对 canonical `done/open` 状态；当飞书只返回 `todo` 表示未完成时，结果保留 requested status 与真实 provider status 的区别。
 - 飞书任务描述里只放摘要和链接，不复制完整 PRD。
-- Webhook 需要按租户继续增强；短期用 `diagnose --id`、`verify`、`pull` 校验具体任务。
+- Webhook 需要按租户继续增强；短期用 `diagnose --id [--parent-id]` 校验清单和父级绑定，用 `verify` / `pull` 做存在性与原始数据排障。
 
 ## 8. Jira 管理建议
 

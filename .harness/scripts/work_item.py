@@ -46,7 +46,12 @@ def cmd_sync_spec(args: argparse.Namespace) -> int:
         emit("block", f"SYNC_SPEC_MISSING: {spec}")
         return 0
     try:
-        count, msg = sync_spec_markdown(provider, spec, assignee=assignee)
+        count, msg = sync_spec_markdown(
+            provider,
+            spec,
+            assignee=assignee,
+            parent_work_item_id=(args.parent_id or "").strip(),
+        )
     except Exception as e:
         emit("block", f"WORK_ITEM_SYNC_FAILED: {e}", provider=provider.name)
         return 0
@@ -55,20 +60,28 @@ def cmd_sync_spec(args: argparse.Namespace) -> int:
 
 
 def cmd_draft_spec(args: argparse.Namespace) -> int:
+    root = Path(args.harness_root or harness_root_from_script())
+    provider = get_provider(root)
     spec = Path(args.spec)
     if not spec.is_file():
         emit("block", f"DRAFT_SPEC_MISSING: {spec}")
         return 0
     assignee = (args.assignee or "").strip()
     try:
-        drafts = work_item_drafts_from_spec(spec, assignee=assignee)
+        drafts = work_item_drafts_from_spec(
+            spec,
+            assignee=assignee,
+            parent_work_item_id=(args.parent_id or "").strip(),
+            require_l3_type=bool(getattr(provider, "requires_l3_hierarchy_contract", False)),
+        )
     except Exception as e:
-        emit("block", f"WORK_ITEM_DRAFT_FAILED: {e}")
+        emit("block", f"WORK_ITEM_DRAFT_FAILED: {e}", provider=provider.name)
         return 0
     emit(
         "pass",
         f"WORK_ITEM_DRAFT: {len(drafts)} items generated for confirmation",
         contract="bmad-work-item-v1",
+        provider=provider.name,
         count=len(drafts),
         assignee=assignee,
         drafts=drafts,
@@ -85,7 +98,11 @@ def cmd_verify(args: argparse.Namespace) -> int:
     if args.level and not level_requires_work_item(cfg, args.level):
         emit("pass", f"WORK_ITEM_SKIP: {args.level} 豁免 Work Item 绑定")
         return 0
-    ok, reason = provider.verify(args.id)
+    ok, reason = provider.verify_binding(
+        args.id,
+        expected_project_id=str(getattr(provider, "tasklist_guid", "") or "") or None,
+        expected_parent_id=(args.parent_id or "").strip() or None,
+    )
     emit("pass" if ok else "block", reason, provider=provider.name, work_item_id=args.id)
     return 0
 
@@ -282,16 +299,19 @@ def main() -> int:
     p_draft = sub.add_parser("draft-spec")
     p_draft.add_argument("spec")
     p_draft.add_argument("--assignee", default="", help="可选：确认后要分配的 provider 用户 ID")
+    p_draft.add_argument("--parent-id", default="", help="可选：父 Work Item ID；须与 spec front matter 一致")
     p_draft.set_defaults(func=cmd_draft_spec)
 
     p_sync = sub.add_parser("sync-spec")
     p_sync.add_argument("spec")
     p_sync.add_argument("--assignee", default="", help="可选：覆盖本次创建任务的负责人 ID")
+    p_sync.add_argument("--parent-id", default="", help="可选：父 Work Item ID；须与 spec front matter 一致")
     p_sync.set_defaults(func=cmd_sync_spec)
 
     p_v = sub.add_parser("verify")
     p_v.add_argument("--id", required=True)
     p_v.add_argument("--level", default="")
+    p_v.add_argument("--parent-id", default="", help="可选：同时精确校验父 Work Item ID")
     p_v.set_defaults(func=cmd_verify)
 
     p_pull = sub.add_parser("pull")
@@ -332,6 +352,7 @@ def main() -> int:
 
     p_diag = sub.add_parser("diagnose")
     p_diag.add_argument("--id", default="", help="可选：只读校验一个已有 Work Item ID")
+    p_diag.add_argument("--parent-id", default="", help="可选：同时精确校验父 Work Item ID")
     p_diag.add_argument("--create-smoke-title", default="", help="可选：显式创建一个 smoke task 用于真实写入联调")
     p_diag.set_defaults(func=cmd_diagnose)
 

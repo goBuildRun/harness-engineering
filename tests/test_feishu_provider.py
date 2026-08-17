@@ -90,14 +90,21 @@ class FeishuProviderTest(unittest.TestCase):
         fake = UrlopenRecorder(
             [
                 {"code": 0, "tenant_access_token": "token-1", "expire": 7200},
-                {"code": 0, "data": {"items": []}},
                 {"code": 0, "data": {"task": {"guid": "task_guid_123", "status": "todo"}}},
+                {
+                    "code": 0,
+                    "data": {"task": {
+                        "guid": "task_guid_123",
+                        "status": "todo",
+                        "tasklists": [{"tasklist_guid": "env_tasklist"}],
+                    }},
+                },
             ]
         )
         env = {
             "FEISHU_APP_ID": "app-id",
             "FEISHU_APP_SECRET": "app-secret",
-            "FEISHU_TASKLIST_GUID": "env_tasklist",
+            "FEISHU_TASKLIST_GUID_OVERRIDE": "env_tasklist",
             "FEISHU_ASSIGNEE_ID": "ou_user_1",
         }
         with patch.dict(os.environ, env, clear=True):
@@ -107,8 +114,8 @@ class FeishuProviderTest(unittest.TestCase):
 
         self.assertEqual(item.id, "task_guid_123")
         self.assertEqual(item.provider, "feishu")
-        self.assertEqual([call.get_method() for call in fake.calls], ["POST", "GET", "POST"])
-        create_call = fake.calls[2]
+        self.assertEqual([call.get_method() for call in fake.calls], ["POST", "POST", "GET"])
+        create_call = fake.calls[1]
         self.assertEqual(create_call.get_method(), "POST")
         self.assertTrue(create_call.full_url.endswith("/open-apis/task/v2/tasks"))
         body = fake.body(create_call)
@@ -121,8 +128,15 @@ class FeishuProviderTest(unittest.TestCase):
         fake = UrlopenRecorder(
             [
                 {"code": 0, "tenant_access_token": "token-1", "expire": 7200},
-                {"code": 0, "data": {"items": []}},
                 {"code": 0, "data": {"task": {"guid": "task_guid_123", "status": "todo"}}},
+                {
+                    "code": 0,
+                    "data": {"task": {
+                        "guid": "task_guid_123",
+                        "status": "todo",
+                        "tasklists": [{"tasklist_guid": "cfg_tasklist"}],
+                    }},
+                },
             ]
         )
         with patch.dict(os.environ, {"FEISHU_APP_ID": "app-id", "FEISHU_APP_SECRET": "app-secret"}, clear=True):
@@ -130,9 +144,86 @@ class FeishuProviderTest(unittest.TestCase):
             with patch("urllib.request.urlopen", fake):
                 p.create("默认负责人验证")
 
-        body = fake.body(fake.calls[2])
+        body = fake.body(fake.calls[1])
         self.assertEqual(body["tasklists"], [{"tasklist_guid": "cfg_tasklist"}])
         self.assertEqual(body["members"], [{"id": "ou_default_owner", "role": "assignee"}])
+
+    def test_create_retries_bounded_readback_after_eventual_consistency(self) -> None:
+        fake = UrlopenRecorder(
+            [
+                {"code": 0, "tenant_access_token": "token-1", "expire": 7200},
+                {"code": 0, "data": {"task": {"guid": "task_guid_123"}}},
+                {"code": 0, "data": {}},
+                {"code": 0, "data": {"task": {
+                    "guid": "task_guid_123",
+                    "summary": "Eventually visible",
+                    "tasklists": [{"tasklist_guid": "cfg_tasklist"}],
+                }}},
+            ]
+        )
+        with patch.dict(os.environ, {"FEISHU_APP_ID": "app-id", "FEISHU_APP_SECRET": "app-secret"}, clear=True):
+            p = provider()
+            with patch("urllib.request.urlopen", fake), patch("time.sleep") as sleep:
+                item = p.create("Eventually visible")
+
+        self.assertEqual("task_guid_123", item.id)
+        sleep.assert_called_once_with(0.2)
+        self.assertEqual([call.get_method() for call in fake.calls], ["POST", "POST", "GET", "GET"])
+
+    def test_pull_rejects_response_guid_mismatch(self) -> None:
+        fake = UrlopenRecorder(
+            [
+                {"code": 0, "tenant_access_token": "token-1", "expire": 7200},
+                {"code": 0, "data": {"task": {"guid": "different_guid_456", "summary": "Wrong"}}},
+            ]
+        )
+        with patch.dict(os.environ, {"FEISHU_APP_ID": "app-id", "FEISHU_APP_SECRET": "app-secret"}, clear=True):
+            p = provider()
+            with patch("urllib.request.urlopen", fake):
+                with self.assertRaisesRegex(RuntimeError, "FEISHU_RESPONSE_ID_MISMATCH"):
+                    p.pull("task_guid_123")
+
+    def test_verify_binding_rejects_unconfigured_tasklist(self) -> None:
+        with patch.dict(os.environ, {"FEISHU_APP_ID": "app-id", "FEISHU_APP_SECRET": "app-secret"}, clear=True):
+            p = provider({"tasklist_guid": ""})
+            ok, reason = p.verify_binding("task_guid_123")
+
+        self.assertFalse(ok)
+        self.assertIn("FEISHU_TASKLIST_UNCONFIGURED", reason)
+
+    def test_create_rejects_unconfigured_tasklist_without_network(self) -> None:
+        with patch.dict(os.environ, {"FEISHU_APP_ID": "app-id", "FEISHU_APP_SECRET": "app-secret"}, clear=True):
+            p = provider({"tasklist_guid": ""})
+            with patch("urllib.request.urlopen") as urlopen:
+                with self.assertRaisesRegex(RuntimeError, "FEISHU_TASKLIST_GUID_MISSING"):
+                    p.create("Unbound task")
+
+        urlopen.assert_not_called()
+
+    def test_product_tasklist_beats_legacy_global_env_default(self) -> None:
+        env = {
+            "FEISHU_APP_ID": "app-id",
+            "FEISHU_APP_SECRET": "app-secret",
+            "FEISHU_TASKLIST_GUID": "global_harness_tasklist",
+        }
+        with patch.dict(os.environ, env, clear=True):
+            p = provider()
+
+        self.assertEqual("cfg_tasklist", p.tasklist_guid)
+        self.assertEqual("product", p.tasklist_source)
+
+    def test_explicit_tasklist_override_beats_product_config(self) -> None:
+        env = {
+            "FEISHU_APP_ID": "app-id",
+            "FEISHU_APP_SECRET": "app-secret",
+            "FEISHU_TASKLIST_GUID": "legacy_default",
+            "FEISHU_TASKLIST_GUID_OVERRIDE": "intentional_override",
+        }
+        with patch.dict(os.environ, env, clear=True):
+            p = provider()
+
+        self.assertEqual("intentional_override", p.tasklist_guid)
+        self.assertEqual("override", p.tasklist_source)
 
     def test_ensure_tasklist_member_adds_current_app_as_editor(self) -> None:
         fake = UrlopenRecorder(
@@ -407,7 +498,11 @@ class FeishuProviderTest(unittest.TestCase):
         fake = UrlopenRecorder(
             [
                 {"code": 0, "tenant_access_token": "token-1", "expire": 7200},
-                {"code": 0, "data": {"task": {"guid": "parent_guid_456", "summary": "Epic"}}},
+                {"code": 0, "data": {"task": {
+                    "guid": "parent_guid_456",
+                    "summary": "Epic",
+                    "tasklists": [{"tasklist_guid": "cfg_tasklist"}],
+                }}},
                 {"code": 0, "data": {"subtask": {"guid": "task_guid_123", "summary": "Story"}}},
                 {
                     "code": 0,
@@ -434,11 +529,102 @@ class FeishuProviderTest(unittest.TestCase):
             {"summary": "Story", "description": "Harness child"},
         )
 
+    def test_verify_binding_accepts_tasklist_inherited_from_exact_parent(self) -> None:
+        fake = UrlopenRecorder(
+            [
+                {"code": 0, "tenant_access_token": "token-1", "expire": 7200},
+                {"code": 0, "data": {"task": {
+                    "guid": "task_guid_123",
+                    "summary": "Story",
+                    "parent_task_guid": "parent_guid_456",
+                    "tasklists": [],
+                }}},
+                {"code": 0, "data": {"task": {
+                    "guid": "parent_guid_456",
+                    "summary": "Epic",
+                    "tasklists": [{"tasklist_guid": "cfg_tasklist"}],
+                }}},
+            ]
+        )
+        with patch.dict(os.environ, {"FEISHU_APP_ID": "app-id", "FEISHU_APP_SECRET": "app-secret"}, clear=True):
+            p = provider()
+            with patch("urllib.request.urlopen", fake):
+                ok, reason = p.verify_binding(
+                    "task_guid_123",
+                    expected_project_id="cfg_tasklist",
+                    expected_parent_id="parent_guid_456",
+                )
+
+        self.assertTrue(ok)
+        self.assertIn("membership=inherited:parent_guid_456", reason)
+
+    def test_verify_binding_rejects_wrong_tasklist_and_parent(self) -> None:
+        fake = UrlopenRecorder(
+            [
+                {"code": 0, "tenant_access_token": "token-1", "expire": 7200},
+                {"code": 0, "data": {"task": {
+                    "guid": "task_guid_123",
+                    "summary": "Story",
+                    "parent_task_guid": "wrong_parent_456",
+                    "tasklists": [{"tasklist_guid": "wrong_tasklist"}],
+                }}},
+            ]
+        )
+        with patch.dict(os.environ, {"FEISHU_APP_ID": "app-id", "FEISHU_APP_SECRET": "app-secret"}, clear=True):
+            p = provider()
+            with patch("urllib.request.urlopen", fake):
+                ok, reason = p.verify_binding(
+                    "task_guid_123",
+                    expected_project_id="cfg_tasklist",
+                    expected_parent_id="parent_guid_456",
+                )
+
+        self.assertFalse(ok)
+        self.assertIn("FEISHU_PARENT_MISMATCH", reason)
+
+    def test_verify_binding_rejects_direct_child_when_exact_parent_is_in_wrong_tasklist(self) -> None:
+        fake = UrlopenRecorder(
+            [
+                {"code": 0, "tenant_access_token": "token-1", "expire": 7200},
+                {"code": 0, "data": {"task": {
+                    "guid": "task_guid_123",
+                    "summary": "Story",
+                    "parent_task_guid": "parent_guid_456",
+                    "tasklists": [{"tasklist_guid": "cfg_tasklist"}],
+                }}},
+                {"code": 0, "data": {"task": {
+                    "guid": "parent_guid_456",
+                    "summary": "Epic",
+                    "tasklists": [{"tasklist_guid": "wrong_tasklist"}],
+                }}},
+            ]
+        )
+        with patch.dict(os.environ, {"FEISHU_APP_ID": "app-id", "FEISHU_APP_SECRET": "app-secret"}, clear=True):
+            p = provider()
+            with patch("urllib.request.urlopen", fake):
+                ok, reason = p.verify_binding(
+                    "task_guid_123",
+                    expected_project_id="cfg_tasklist",
+                    expected_parent_id="parent_guid_456",
+                )
+
+        self.assertFalse(ok)
+        self.assertIn("FEISHU_TASKLIST_MISMATCH", reason)
+
     def test_create_subtask_rejects_invalid_parent_without_network(self) -> None:
         with patch.dict(os.environ, {"FEISHU_APP_ID": "app-id", "FEISHU_APP_SECRET": "app-secret"}, clear=True):
             p = provider()
             with self.assertRaisesRegex(ValueError, "FEISHU_INVALID_PARENT_ID"):
                 p.create_subtask("bad", "Story")
+
+    def test_create_subtask_rejects_unconfigured_tasklist_without_network(self) -> None:
+        with patch.dict(os.environ, {"FEISHU_APP_ID": "app-id", "FEISHU_APP_SECRET": "app-secret"}, clear=True):
+            p = provider({"tasklist_guid": ""})
+            with patch("urllib.request.urlopen") as urlopen:
+                with self.assertRaisesRegex(RuntimeError, "FEISHU_TASKLIST_GUID_MISSING"):
+                    p.create_subtask("parent_guid_456", "Story")
+
+        urlopen.assert_not_called()
 
     def test_list_assigned_filters_tasklist_by_assignee(self) -> None:
         fake = UrlopenRecorder(

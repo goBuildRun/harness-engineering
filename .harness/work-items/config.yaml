@@ -69,9 +69,10 @@ providers:
     list_query: {}
     status_update_mode: skip
     # 密钥从环境变量读取，勿写入仓库；tasklist_guid / assignee_id / list_query 可在产品侧
-    # project.yaml 设置长期默认值，也可用环境变量临时覆盖：
+    # project.yaml 设置长期默认值；任务清单的环境变量优先级见下：
     #   FEISHU_APP_ID, FEISHU_APP_SECRET
-    #   FEISHU_TASKLIST_GUID         （可选覆盖：任务清单 / 项目任务容器）
+    #   FEISHU_TASKLIST_GUID          （兼容默认：仅产品未配置时生效）
+    #   FEISHU_TASKLIST_GUID_OVERRIDE （显式临时覆盖产品任务清单）
     #   FEISHU_ASSIGNEE_ID           （可选覆盖：默认负责人 open_id/union_id，按租户配置）
     # list-mine 会使用 tasklist_guid 或 list_query 调用 list_tasks_path，并在本地按 assignee 过滤。
   jira:
