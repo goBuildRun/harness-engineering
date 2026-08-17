@@ -123,6 +123,29 @@ class HarnessMigrationTest(unittest.TestCase):
             self.assertEqual(captured[-1]["decision"], "block")
             self.assertFalse((product / "harness-workspace/runs/tasks/done-task").exists())
 
+    def test_migrate_rejects_task_card_path_traversal_without_workspace_write(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp) / "product"
+            task = product / "harness-workspace/planning/tasks/unsafe-card"
+            task.mkdir(parents=True)
+            (task / "00-任务卡.md").write_text(
+                "- 任务编号：../../escape\n- 当前状态：进行中\n"
+            )
+            (task / "planning_gate_pass.json").write_text('{"decision":"pass"}')
+            report = audit_workspace(product)
+            self.assertEqual(report["invalid_task_ids"], ["../../escape"])
+            self.assertEqual(report["needs_migration"], [])
+
+            captured = []
+            with mock.patch.object(harness_migration_commands, "dump_json", side_effect=captured.append):
+                harness_migration_commands.cmd_migrate(SimpleNamespace(
+                    product_root=str(product), harness_root=str(SCRIPTS.parents[1]),
+                    task_id="../../escape", reason="must remain contained",
+                ))
+            self.assertEqual(captured[-1]["reason"], "TASK_ID_INVALID")
+            self.assertFalse((product / "harness-workspace/runs").exists())
+            self.assertFalse((product / "harness-workspace/escape").exists())
+
     def test_workspace_audit_is_read_only(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product = Path(tmp)

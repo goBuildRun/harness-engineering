@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from harness_runtime import atomic_write_result, canonical_digest, load_result, workspace_root
+from harness_task_resolution import valid_task_id
 
 
 TASK_ID = re.compile(r"(?:Harness Task ID|任务编号)\s*[:：]\s*([^\s]+)", re.IGNORECASE)
@@ -62,11 +63,15 @@ def audit_workspace(product: Path) -> dict[str, list[str]]:
     runs = workspace_root(product) / "runs" / "tasks"
     report: dict[str, list[str]] = {
         "new_format": [], "legacy": [], "needs_migration": [], "missing_credentials": [],
+        "invalid_task_ids": [],
     }
     if not tasks.is_dir():
         return report
     for task in sorted(path for path in tasks.iterdir() if path.is_dir() and not path.name.startswith("_")):
         task_id = stable_task_id(task)
+        if not valid_task_id(task_id):
+            report["invalid_task_ids"].append(task_id)
+            continue
         if (runs / task_id / "result.json").is_file():
             report["new_format"].append(task_id)
         elif task_is_completed(task):

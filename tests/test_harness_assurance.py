@@ -25,6 +25,7 @@ from harness_runtime import apply_code_health, default_result, load_result  # no
 from harness_commands import refresh_assurance  # noqa: E402
 from harness_schema import validate_result  # noqa: E402
 from harness_cli import main as harness_main  # noqa: E402
+from worktree_baseline import capture_baseline  # noqa: E402
 
 
 class HarnessAssuranceTest(unittest.TestCase):
@@ -466,7 +467,7 @@ class HarnessAssuranceTest(unittest.TestCase):
                 text=True, capture_output=True,
             )
             self.assertNotEqual(missing_result.returncode, 0)
-            self.assertIn("HARNESS_GUARD_RESULT_MISSING", missing_result.stderr)
+            self.assertIn("HARNESS_GUARD_TASK_ID_MISSING", missing_result.stderr)
 
             task_root = product / "harness-workspace/runs/tasks/missing-state"
             task_root.mkdir(parents=True)
@@ -474,6 +475,16 @@ class HarnessAssuranceTest(unittest.TestCase):
             result_path.write_text(
                 json.dumps(default_result("missing-state")), encoding="utf-8",
             )
+            active.write_text(json.dumps({
+                "task_id": "missing-state", "work_item_id": "WI-conflict",
+            }), encoding="utf-8")
+            conflicting_identity = subprocess.run(
+                [str(product / ".githooks/post-commit")], cwd=product,
+                text=True, capture_output=True,
+            )
+            self.assertNotEqual(conflicting_identity.returncode, 0)
+            self.assertIn("HARNESS_GUARD_TASK_ID_MISSING", conflicting_identity.stderr)
+            active.write_text(json.dumps({"work_item_id": "missing-state"}), encoding="utf-8")
             missing_baseline = subprocess.run(
                 [str(product / ".githooks/pre-push")], cwd=product,
                 text=True, input=f"refs/heads/main {head} refs/heads/main {'0' * 40}\n",
@@ -482,8 +493,8 @@ class HarnessAssuranceTest(unittest.TestCase):
             self.assertNotEqual(missing_baseline.returncode, 0)
             self.assertIn("HARNESS_GUARD_BASELINE_MISSING", missing_baseline.stderr)
 
-            (task_root / "worktree_baseline.json").write_text(
-                json.dumps({"repo_head": head}), encoding="utf-8",
+            capture_baseline(
+                product, task_root / "worktree_baseline.json", work_item_id="missing-state",
             )
             result_path.unlink()
             empty_range_missing_result = subprocess.run(
@@ -492,7 +503,7 @@ class HarnessAssuranceTest(unittest.TestCase):
                 capture_output=True,
             )
             self.assertNotEqual(empty_range_missing_result.returncode, 0)
-            self.assertIn("HARNESS_GUARD_RESULT_MISSING", empty_range_missing_result.stderr)
+            self.assertIn("HARNESS_GUARD_TASK_ID_MISSING", empty_range_missing_result.stderr)
 
             result_path.write_text(
                 json.dumps(default_result("missing-state")), encoding="utf-8",

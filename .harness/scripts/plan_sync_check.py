@@ -11,6 +11,7 @@ from pathlib import Path
 from business_paths import find_business_paths, is_business_path, load_business_roots
 from harness_output import dump_json
 from harness_scope import paths_within_scope
+from harness_task_resolution import valid_task_id
 from worktree_baseline import capture_baseline, changed_since_baseline
 from workspace_paths import active_planning_gate_path, load_layout
 
@@ -39,6 +40,8 @@ def active_task_baseline(layout) -> tuple[str, Path | None]:
     work_item_id = str(active.get("work_item_id") or active.get("task_id") or "").strip()
     if not work_item_id:
         return "", None
+    if not valid_task_id(work_item_id):
+        raise ValueError("TASK_ID_INVALID")
     return work_item_id, layout.agent_workspace / "tasks" / work_item_id / "worktree_baseline.json"
 
 
@@ -105,7 +108,11 @@ def main() -> int:
     )
 
     task_dir = args.task_dir
-    active_dir = active_task_planning_dir(layout)
+    try:
+        active_dir = active_task_planning_dir(layout)
+    except ValueError as exc:
+        emit("block", f"PLAN_SYNC_ACTIVE_TASK_INVALID: {exc}")
+        return 0
     if not task_dir and active_dir is not None and (active_dir / "03-实施方案.md").is_file():
         task_dir = str(active_dir)
     gate = active_planning_gate_path(layout)

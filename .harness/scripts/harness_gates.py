@@ -13,6 +13,7 @@ from typing import Any
 from harness_runtime import canonical_digest, now
 from harness_output import dump_json
 from process_control import run_process_group
+from harness_task_resolution import valid_task_id
 from workspace_paths import active_planning_gate_path, load_layout
 
 
@@ -119,6 +120,8 @@ def _strict_evidence(subject_digest: str) -> dict[str, Any]:
 
 
 def prepare_ci_task(harness: Path, product: Path, task_id: str) -> bool:
+    if not valid_task_id(task_id):
+        return False
     layout = load_layout(harness, product)
     task_dir = layout.tasks / task_id
     if not task_dir.is_dir() and layout.tasks.is_dir():
@@ -169,6 +172,8 @@ def _task_work_item(task_dir: Path) -> dict[str, str] | None:
 
 
 def committed_work_item(harness: Path, product: Path, task_id: str) -> dict[str, str] | None:
+    if not valid_task_id(task_id):
+        return None
     tasks = load_layout(harness, product).tasks
     direct = _task_work_item(tasks / task_id)
     if direct:

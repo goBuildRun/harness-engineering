@@ -202,7 +202,7 @@ class HarnessRuntimeTest(unittest.TestCase):
 
             task_id, candidates = resolve_task_id(product, None)
             self.assertEqual(task_id, "")
-            self.assertEqual(candidates, [])
+            self.assertEqual(candidates, ["WI-43.2-first", "WI-43.2-second"])
 
     def test_active_task_binding_preserves_workspace_fields_and_rejects_conflicts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -218,6 +218,53 @@ class HarnessRuntimeTest(unittest.TestCase):
             self.assertEqual(strengthened["task_id"], "story-43.2-fix")
             self.assertEqual(strengthened["task_dir"], "/planning/story-43.2")
             self.assertFalse(bind_active_task(product, "other-task", "WI-43.2"))
+            self.assertFalse(bind_active_task(product, "story-43.2-fix", ""))
+            self.assertEqual(json.loads(active.read_text()), strengthened)
+
+    def test_task_resolution_rejects_conflicting_dual_identity_and_unknown_active_work_item(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            runs = product / "harness-workspace" / "runs"
+            (runs / "tasks" / "execution-a").mkdir(parents=True)
+            (runs / "active_task.json").write_text(json.dumps({
+                "task_id": "execution-a", "work_item_id": "WI-current",
+            }))
+            conflicting = default_result("execution-a", work_item={"id": "WI-other"})
+            conflicting["state"] = "validated"
+            atomic_write_result(runs / "tasks" / "execution-a" / "result.json", conflicting)
+            matching = default_result("execution-b", work_item={"id": "WI-current"})
+            matching["state"] = "validated"
+            atomic_write_result(runs / "tasks" / "execution-b" / "result.json", matching)
+            old = default_result("old-active")
+            atomic_write_result(runs / "tasks" / "old-active" / "result.json", old)
+
+            task_id, candidates = resolve_task_id(product, None)
+            self.assertEqual(task_id, "")
+            self.assertEqual(candidates, [])
+
+            (runs / "active_task.json").write_text(json.dumps({"work_item_id": "WI-missing"}))
+            task_id, candidates = resolve_task_id(product, None)
+            self.assertEqual(task_id, "")
+            self.assertEqual(candidates, [])
+
+    def test_runtime_task_ids_reject_path_traversal_without_writing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp) / "product"
+            product.mkdir()
+            captured = []
+            with mock.patch.object(harness_commands, "dump_json", side_effect=captured.append):
+                harness_commands.cmd_start(SimpleNamespace(
+                    product_root=str(product), harness_root=str(ROOT), task_id="../../escape",
+                    work_item="", kind="implementation", reason="", tier="lite", scope=["docs"],
+                ))
+            self.assertEqual(captured[-1]["reason"], "TASK_ID_INVALID")
+            self.assertFalse((Path(tmp) / "escape").exists())
+            self.assertEqual(resolve_task_id(product, "../escape"), ("", ["TASK_ID_INVALID"]))
+
+            active = product / "harness-workspace/runs/active_task.json"
+            active.parent.mkdir(parents=True)
+            active.write_text(json.dumps({"task_id": "../escape"}))
+            self.assertEqual(resolve_task_id(product, None), ("", ["TASK_ID_INVALID"]))
 
     def test_migration_preserves_committed_work_item_identity(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

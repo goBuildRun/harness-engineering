@@ -18,6 +18,7 @@ from harness_runtime import (
 )
 from harness_scope import paths_within_scope
 from harness_telemetry import apply_gc_telemetry, apply_usage_receipt, enforce_budget
+from harness_task_resolution import valid_task_id
 
 
 def commit_sha(repo: Path, value: str) -> str:
@@ -32,6 +33,9 @@ def commit_sha(repo: Path, value: str) -> str:
 def cmd_ci_check(args: argparse.Namespace) -> int:
     started = time.monotonic()
     product, harness = Path(args.product_root).resolve(), Path(args.harness_root).resolve()
+    if not valid_task_id(args.task_id):
+        dump_json({"decision": "block", "reason": "TASK_ID_INVALID"})
+        return 0
     sha = commit_sha(product, args.commit)
     if not sha:
         dump_json({"decision": "block", "reason": "CI_COMMIT_INVALID"})

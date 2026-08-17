@@ -14,10 +14,85 @@ SCRIPTS = ROOT / ".harness" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 from qa_evidence_check import qa_candidates, validate_qa_json  # noqa: E402
+from task_workspace import activate_task, qa_evidence_path, task_workspace_dir  # noqa: E402
 from workspace_paths import load_layout  # noqa: E402
 
 
 class QaEvidenceTest(unittest.TestCase):
+    def test_activation_rejects_invalid_gate_identity_without_external_write(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp) / "product"
+            task = product / "harness-workspace/planning/tasks/unsafe-gate"
+            task.mkdir(parents=True)
+            (product / "harness-workspace/project.yaml").write_text(
+                "product:\n  id: demo\nworkspace:\n  root: harness-workspace\n  planning: planning\n  runs: runs\n",
+                encoding="utf-8",
+            )
+            (task / "planning_gate_pass.json").write_text(json.dumps({
+                "decision": "pass", "work_item": {"id": "../../escape"},
+                "task_dir": str(task),
+            }))
+            layout = load_layout(ROOT, product)
+
+            result = activate_task(layout, "")
+
+            self.assertEqual(result, {"ok": False, "reason": "TASK_ID_INVALID"})
+            with self.assertRaisesRegex(ValueError, "TASK_ID_INVALID"):
+                task_workspace_dir(layout, "../../escape")
+            self.assertFalse((product / "harness-workspace/escape").exists())
+
+    def test_qa_sign_off_rejects_invalid_active_identity_without_external_write(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp) / "product"
+            runs = product / "harness-workspace/runs"
+            runs.mkdir(parents=True)
+            (product / "harness-workspace/project.yaml").write_text(
+                "product:\n  id: demo\nworkspace:\n  root: harness-workspace\n  runs: runs\n  evidence: evidence\n",
+                encoding="utf-8",
+            )
+            (runs / "active_task.json").write_text(json.dumps({"work_item_id": "../../escape"}))
+
+            completed = subprocess.run(
+                ["bash", str(SCRIPTS / "qa_sign_off.sh"), "T1", "fail", "reject identity"],
+                cwd=product, env={**os.environ, "HARNESS_PRODUCT_ROOT": str(product)},
+                text=True, capture_output=True, check=True,
+            )
+
+            self.assertEqual(json.loads(completed.stdout)["reason"], "ACTIVE_TASK_ID_INVALID")
+            self.assertFalse((product / "harness-workspace/escape").exists())
+
+    def test_malformed_active_task_cannot_fall_back_to_legacy_qa_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp) / "product"
+            runs = product / "harness-workspace/runs"
+            runs.mkdir(parents=True)
+            (product / "harness-workspace/project.yaml").write_text(
+                "product:\n  id: demo\nworkspace:\n  root: harness-workspace\n  runs: runs\n  evidence: evidence\n",
+                encoding="utf-8",
+            )
+            (runs / "active_task.json").write_text("[]")
+            (runs / "qa_approved_T1.json").write_text(json.dumps({
+                "decision": "pass", "task_id": "T1", "reviewer": "qa-evaluator",
+                "structure_gate": "pass", "paths_reviewed": [],
+            }))
+            env = {**os.environ, "HARNESS_PRODUCT_ROOT": str(product)}
+
+            sign_off = subprocess.run(
+                ["bash", str(SCRIPTS / "qa_sign_off.sh"), "T1", "fail", "must block"],
+                cwd=product, env=env, text=True, capture_output=True, check=True,
+            )
+            gate = subprocess.run(
+                ["bash", str(SCRIPTS / "subagent-pr-gate.sh"), "T1"],
+                cwd=product, env=env, text=True, capture_output=True, check=True,
+            )
+            layout = load_layout(ROOT, product)
+
+            self.assertEqual(json.loads(sign_off.stdout)["reason"], "ACTIVE_TASK_INVALID")
+            self.assertEqual(json.loads(gate.stdout)["decision"], "block")
+            self.assertEqual(json.loads(gate.stdout)["reason"], "ACTIVE_TASK_ID_INVALID")
+            with self.assertRaisesRegex(ValueError, "ACTIVE_TASK_INVALID"):
+                qa_evidence_path(layout, "T1")
+
     def test_qa_sign_off_scopes_lean_runtime_task_id(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product = Path(tmp)

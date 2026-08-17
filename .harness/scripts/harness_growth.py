@@ -12,6 +12,7 @@ from harness_growth_capture import capture_evidence
 from harness_knowledge import ensure
 from harness_growth_review import apply_review, resolve_report
 from harness_output import dump_json
+from harness_task_resolution import valid_task_id
 from workspace_paths import Phase0Layout, load_active_planning_gate, load_layout
 
 SIGNAL = re.compile(
@@ -308,11 +309,19 @@ def main() -> int:
         Path(args.harness_root).resolve(),
         Path(args.product_root).resolve() if args.product_root else None,
     )
+    gate = load_active_planning_gate(layout)
+    gate_work_item = (gate or {}).get("work_item") or {}
+    gate_work_item_id = (
+        str(gate_work_item.get("id") or "").strip()
+        if isinstance(gate_work_item, dict) else ""
+    )
+    work_item_id = args.work_item.strip() or gate_work_item_id
+    if work_item_id and not valid_task_id(work_item_id):
+        emit("block", "TASK_ID_INVALID")
+        return 0
     if args.cmd in {"scan", "apply-review", "capture"}:
         ensure(layout)
 
-    gate = load_active_planning_gate(layout)
-    work_item_id = args.work_item.strip() or str(((gate or {}).get("work_item") or {}).get("id") or "").strip()
     candidates = collect(layout, work_item_id)
     if args.cmd == "capture":
         summary = args.summary.strip()

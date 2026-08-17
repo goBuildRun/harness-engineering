@@ -101,6 +101,17 @@ class CiGcReviewTest(unittest.TestCase):
             self.assertEqual(lite["decision"], "pass")
             self.assertFalse(lite["required"])
 
+    def test_review_rejects_invalid_task_id_before_readback_or_network(self) -> None:
+        args = type("Args", (), {
+            "product_root": "/not/read", "harness_root": str(ROOT),
+            "task_id": "../../escape", "commit": "HEAD", "tier": "standard", "scope": ["."],
+        })()
+        with patch("ci_gc_review.resolve_commit") as resolve, patch("urllib.request.urlopen") as request:
+            result = review(args)
+        self.assertEqual(result, {"decision": "block", "reason": "TASK_ID_INVALID"})
+        resolve.assert_not_called()
+        request.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

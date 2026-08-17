@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -48,6 +49,34 @@ work_item:
 
 
 class HarnessGrowthTest(unittest.TestCase):
+    def test_growth_rejects_invalid_identity_before_creating_workspace(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp) / "product"
+            product.mkdir()
+            env = {**os.environ, "HARNESS_PRODUCT_ROOT": str(product)}
+            completed = subprocess.run(
+                [
+                    "bash", str(SCRIPT_DIR / "harness_growth.sh"), "capture",
+                    "--work-item", "../../escape", "--summary", "must stay contained",
+                ],
+                cwd=ROOT, env=env, text=True, capture_output=True, check=True,
+            )
+
+            self.assertEqual(json.loads(completed.stdout)["reason"], "TASK_ID_INVALID")
+            self.assertFalse((product / "harness-workspace").exists())
+
+    def test_capture_helper_rejects_invalid_identity_without_writing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            write_project_config(product)
+            layout = load_layout(ROOT, product)
+            with self.assertRaisesRegex(ValueError, "TASK_ID_INVALID"):
+                capture_evidence(
+                    layout, title="bounded", summary="must stay contained",
+                    work_item_id="../../escape",
+                )
+            self.assertFalse(layout.progress_dir.exists())
+
     def test_incremental_scan_preserves_only_unchanged_reviewed_candidates(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product = Path(tmp)

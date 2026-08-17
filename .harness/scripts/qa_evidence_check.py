@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from harness_output import dump_json
+from harness_task_resolution import valid_task_id
 from task_contract_check import parse_task_rows
 from workspace_paths import Phase0Layout, load_active_planning_gate, load_layout
 
@@ -41,6 +42,8 @@ def task_dir_from_args(args: argparse.Namespace, layout: Phase0Layout, gate: dic
 
 
 def qa_candidates(layout: Phase0Layout, wid: str, task_id: str) -> list[Path]:
+    if not valid_task_id(task_id) or (wid and not valid_task_id(wid)):
+        return []
     if wid:
         return [layout.agent_workspace / "tasks" / wid / f"qa_approved_{task_id}.json"]
     return [layout.agent_workspace / f"qa_approved_{task_id}.json"]
@@ -136,9 +139,15 @@ def main() -> int:
 
     wid = work_item_id(planning_gate)
     issues: list[str] = []
+    if wid and not valid_task_id(wid):
+        emit("block", "QA_EVIDENCE_WORK_ITEM_ID_INVALID", task_count=len(rows))
+        return 0
     checked: list[dict[str, str]] = []
     for row in rows:
         task_id = row.get("id", "").strip("` ")
+        if not valid_task_id(task_id):
+            issues.append(f"QA_TASK_ID_INVALID:{task_id}")
+            continue
         qa_path = first_existing(qa_candidates(layout, wid, task_id))
         if not qa_path:
             issues.append(f"QA_SIGNOFF_MISSING:{task_id}")

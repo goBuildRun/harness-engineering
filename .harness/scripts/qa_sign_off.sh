@@ -19,6 +19,11 @@ if [[ -z "$TASK_ID" || -z "$DECISION" ]]; then
   exit 0
 fi
 
+if ! python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); from harness_task_resolution import valid_task_id; sys.exit(0 if valid_task_id(sys.argv[2]) else 1)' "$SCRIPT_DIR" "$TASK_ID"; then
+  python3 "$EMIT" block "TASK_ID_INVALID"
+  exit 0
+fi
+
 if [[ "$DECISION" != "pass" && "$DECISION" != "fail" ]]; then
   python3 "$EMIT" block "INVALID_DECISION: 仅允许 pass 或 fail"
   exit 0
@@ -54,7 +59,26 @@ TS="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
 ACTIVE_WI=""
 if [[ -f "$AGENT_WS/active_task.json" ]]; then
-  ACTIVE_WI=$(python3 -c "import json; d=json.load(open('$AGENT_WS/active_task.json')); print(d.get('work_item_id') or d.get('task_id') or '')" 2>/dev/null || echo "")
+  if ! ACTIVE_WI=$(python3 - "$AGENT_WS/active_task.json" <<'PY'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as handle:
+    data = json.load(handle)
+if not isinstance(data, dict):
+    raise SystemExit(1)
+value = str(data.get("work_item_id") or data.get("task_id") or "").strip()
+if not value:
+    raise SystemExit(1)
+print(value)
+PY
+  ); then
+    python3 "$EMIT" block "ACTIVE_TASK_INVALID"
+    exit 0
+  fi
+fi
+
+if [[ -n "$ACTIVE_WI" ]] && ! python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); from harness_task_resolution import valid_task_id; sys.exit(0 if valid_task_id(sys.argv[2]) else 1)' "$SCRIPT_DIR" "$ACTIVE_WI"; then
+  python3 "$EMIT" block "ACTIVE_TASK_ID_INVALID"
+  exit 0
 fi
 
 if [[ -n "$ACTIVE_WI" ]]; then

@@ -26,21 +26,12 @@ from harness_runtime import (
     mechanical_code_health, now, policy_for, resolve_task_id, result_path,
     subject_for, workspace_root,
 )
-from harness_scope import paths_within_scope
+from harness_scope import execution_paths, paths_within_scope
 from harness_state import invalidate_if_stale
 from worktree_baseline import capture_baseline, changed_since_baseline
 from harness_ci import cmd_ci_check
 from harness_task_binding import strengthen_resumed_task
-from harness_task_resolution import bind_active_task
-
-def execution_paths(product: Path, task_id: str, changed: list[str]) -> list[str]:
-    generated = workspace_root(product) / "planning" / "tasks" / task_id / "task.json"
-    try:
-        generated_rel = str(generated.relative_to(product))
-    except ValueError:
-        generated_rel = ""
-    runs = str((workspace_root(product) / "runs").relative_to(product)).rstrip("/") + "/"
-    return [path for path in changed if path != generated_rel and not path.startswith(runs)]
+from harness_task_resolution import bind_active_task, valid_task_id
 
 
 def refresh_assurance(result: dict, product: Path, policy_digest: str, *, phase: str) -> None:
@@ -52,6 +43,9 @@ def refresh_assurance(result: dict, product: Path, policy_digest: str, *, phase:
 def cmd_start(args: argparse.Namespace) -> int:
     product, harness = Path(args.product_root).resolve(), Path(args.harness_root).resolve()
     task_id = args.task_id or f"task-{uuid.uuid4().hex[:12]}"
+    if not valid_task_id(task_id):
+        dump_json({"decision": "block", "reason": "TASK_ID_INVALID"})
+        return 0
     path = result_path(product, task_id)
     if path.exists():
         outcome = strengthen_resumed_task(load_result(path), args, task_id, harness, product)
@@ -95,6 +89,9 @@ def cmd_start(args: argparse.Namespace) -> int:
 
 def cmd_amend(args: argparse.Namespace) -> int:
     product, harness = Path(args.product_root).resolve(), Path(args.harness_root).resolve()
+    if not valid_task_id(args.task_id):
+        dump_json({"decision": "block", "reason": "TASK_ID_INVALID"})
+        return 0
     path = result_path(product, args.task_id)
     if not path.is_file():
         dump_json({"decision": "block", "reason": "TASK_NOT_FOUND"})
@@ -148,6 +145,9 @@ def cmd_amend(args: argparse.Namespace) -> int:
 
 def cmd_usage_baseline(args: argparse.Namespace) -> int:
     product, harness = Path(args.product_root).resolve(), Path(args.harness_root).resolve()
+    if not valid_task_id(args.task_id):
+        dump_json({"decision": "block", "reason": "TASK_ID_INVALID"})
+        return 0
     path = result_path(product, args.task_id)
     reason = str(args.reason or "").strip()
     if not path.is_file():
@@ -184,7 +184,8 @@ def cmd_status(args: argparse.Namespace) -> int:
     product = Path(args.product_root).resolve()
     task_id, candidates = resolve_task_id(product, args.task_id)
     if not task_id:
-        dump_json({"decision": "block", "reason": "TASK_INFERENCE_AMBIGUOUS", "candidates": candidates})
+        reason = "TASK_ID_INVALID" if candidates == ["TASK_ID_INVALID"] else "TASK_INFERENCE_AMBIGUOUS"
+        dump_json({"decision": "block", "reason": reason, "candidates": candidates})
         return 0
     path = result_path(product, task_id)
     if not path.is_file():
@@ -215,7 +216,8 @@ def cmd_finish(args: argparse.Namespace) -> int:
     product, harness = Path(args.product_root).resolve(), Path(args.harness_root).resolve()
     task_id, candidates = resolve_task_id(product, args.task_id)
     if not task_id:
-        dump_json({"decision": "block", "reason": "TASK_INFERENCE_AMBIGUOUS", "candidates": candidates})
+        reason = "TASK_ID_INVALID" if candidates == ["TASK_ID_INVALID"] else "TASK_INFERENCE_AMBIGUOUS"
+        dump_json({"decision": "block", "reason": reason, "candidates": candidates})
         return 0
     path = result_path(product, task_id)
     if not path.is_file():

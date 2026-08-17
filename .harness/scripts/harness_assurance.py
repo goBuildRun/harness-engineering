@@ -111,7 +111,9 @@ fi
 def active_task_resolver() -> str:
     return """\
 resolve_active_task_id() {
-  python3 -c 'import json,sys; data=json.load(open(sys.argv[1])); value=str(data.get("task_id") or data.get("work_item_id") or "").strip(); print(value) if value else sys.exit(1)' "$1"
+  local output
+  output="$("$HARNESS_BIN" --product-root "$PRODUCT_ROOT" status 2>/dev/null)" || return 1
+  python3 -c 'import json,sys; data=json.loads(sys.argv[1]); result=data.get("result") or {}; value=str(result.get("task_id") or "").strip(); ok=data.get("decision")=="pass" and value; print(value) if ok else sys.exit(1)' "$output"
 }
 """
 

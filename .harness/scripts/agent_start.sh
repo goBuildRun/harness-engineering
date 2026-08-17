@@ -15,6 +15,11 @@ fi
 
 WORK_ITEM_ID="$1"
 
+if ! python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); from harness_task_resolution import valid_task_id; sys.exit(0 if valid_task_id(sys.argv[2]) else 1)' "$SCRIPT_DIR" "$WORK_ITEM_ID"; then
+  python3 "$EMIT" block "TASK_ID_INVALID"
+  exit 0
+fi
+
 WORKSPACE_JSON=$(python3 "$SCRIPT_DIR/workspace_paths.py" --harness-root "$HARNESS_ROOT" --product-root "$PRODUCT_ROOT" json)
 AGENT_WS=$(echo "$WORKSPACE_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['agent_workspace'])")
 TASKS_ROOT=$(echo "$WORKSPACE_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['tasks'])")
@@ -43,17 +48,17 @@ fi
 
 LEVEL=$(python3 -c "import json; print(json.load(open('$GATE_FILE'))['level'])")
 TASK_DIR=$(python3 -c "import json; d=json.load(open('$GATE_FILE')); print(d.get('task_dir') or 'N/A')")
+BOUND_ID=$(python3 -c "import json; d=json.load(open('$GATE_FILE')); w=d.get('work_item') or {}; print(w.get('id') or '' if isinstance(w, dict) else '')")
+if [[ -z "$BOUND_ID" ]]; then
+  python3 "$EMIT" block "NO_WORK_ITEM_IN_PLANNING_GATE: 重新 planning_gate"
+  exit 0
+fi
+if [[ "$WORK_ITEM_ID" != "$BOUND_ID" ]]; then
+  python3 "$EMIT" block "WORK_ITEM_MISMATCH: 参数 ${WORK_ITEM_ID} 与 planning gate ${BOUND_ID} 不一致"
+  exit 0
+fi
 
 if [[ "$LEVEL" == "L2" || "$LEVEL" == "L3" ]]; then
-  BOUND_ID=$(python3 -c "import json; d=json.load(open('$GATE_FILE')); w=d.get('work_item') or {}; print(w.get('id') or '')")
-  if [[ -z "$BOUND_ID" ]]; then
-    python3 "$EMIT" block "NO_WORK_ITEM_IN_PLANNING_GATE: 重新 planning_gate"
-    exit 0
-  fi
-  if [[ "$WORK_ITEM_ID" != "$BOUND_ID" ]]; then
-    python3 "$EMIT" block "WORK_ITEM_MISMATCH: 参数 ${WORK_ITEM_ID} 与 planning gate ${BOUND_ID} 不一致"
-    exit 0
-  fi
   WI_VERIFY=$(bash "$SCRIPT_DIR/work_item.sh" verify --id "$WORK_ITEM_ID" --level "$LEVEL")
   if ! echo "$WI_VERIFY" | python3 -c "import sys,json; d=json.load(sys.stdin); sys.exit(0 if d.get('decision')=='pass' else 1)" 2>/dev/null; then
     harness_print_json "$WI_VERIFY"

@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from harness_output import dump_json
+from harness_task_resolution import valid_task_id
 from workspace_paths import Phase0Layout, load_layout
 
 
@@ -22,7 +23,8 @@ def load_json(path: Path) -> dict | None:
     if not path.is_file():
         return None
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else None
     except (json.JSONDecodeError, OSError):
         return None
 
@@ -31,7 +33,7 @@ def work_item_id_from_gate(data: dict | None) -> str:
     if not data:
         return ""
     wi = data.get("work_item") or {}
-    return str(wi.get("id") or "")
+    return str(wi.get("id") or "") if isinstance(wi, dict) else ""
 
 
 def find_gate_in_tasks(layout: Phase0Layout, work_item_id: str = "") -> Path | None:
@@ -55,6 +57,8 @@ def find_gate_in_tasks(layout: Phase0Layout, work_item_id: str = "") -> Path | N
 
 
 def task_workspace_dir(layout: Phase0Layout, work_item_id: str) -> Path:
+    if not valid_task_id(work_item_id):
+        raise ValueError("TASK_ID_INVALID")
     return layout.agent_workspace / "tasks" / work_item_id
 
 
@@ -75,6 +79,8 @@ def legacy_context(layout: Phase0Layout) -> Path:
 
 
 def activate_task(layout: Phase0Layout, work_item_id: str) -> dict:
+    if work_item_id and not valid_task_id(work_item_id):
+        return {"ok": False, "reason": "TASK_ID_INVALID"}
     src = find_gate_in_tasks(layout, work_item_id)
     if not src:
         rel = layout.rel(layout.tasks)
@@ -85,6 +91,8 @@ def activate_task(layout: Phase0Layout, work_item_id: str) -> dict:
         return {"ok": False, "reason": "PLANNING_GATE_INVALID: 任务目录内 planning gate 凭证无效"}
 
     wid = work_item_id_from_gate(data) or work_item_id
+    if not valid_task_id(wid):
+        return {"ok": False, "reason": "TASK_ID_INVALID"}
     ws = task_workspace_dir(layout, wid)
     ws.mkdir(parents=True, exist_ok=True)
 
@@ -143,12 +151,17 @@ def infer_task_dir_from_git_diff(layout: Phase0Layout) -> str | None:
 
 
 def qa_evidence_path(layout: Phase0Layout, dag_task_id: str) -> Path:
-    active = load_json(active_task_file(layout))
-    wid = (active or {}).get("work_item_id", "")
-    if wid:
-        p = task_workspace_dir(layout, wid) / f"qa_approved_{dag_task_id}.json"
-        if p.is_file():
-            return p
+    if not valid_task_id(dag_task_id):
+        raise ValueError("TASK_ID_INVALID")
+    active_path = active_task_file(layout)
+    if active_path.is_file():
+        active = load_json(active_path)
+        if active is None:
+            raise ValueError("ACTIVE_TASK_INVALID")
+        wid = str(active.get("work_item_id") or active.get("task_id") or "").strip()
+        if not wid:
+            raise ValueError("ACTIVE_TASK_INVALID")
+        return task_workspace_dir(layout, wid) / f"qa_approved_{dag_task_id}.json"
     return layout.agent_workspace / f"qa_approved_{dag_task_id}.json"
 
 
@@ -191,7 +204,11 @@ def cmd_infer_mr(layout: Phase0Layout) -> int:
 
 
 def cmd_qa_path(dag_task_id: str, layout: Phase0Layout) -> int:
-    p = qa_evidence_path(layout, dag_task_id)
+    try:
+        p = qa_evidence_path(layout, dag_task_id)
+    except ValueError as exc:
+        emit("block", str(exc))
+        return 0
     emit("pass" if p.is_file() else "block", str(p), exists=p.is_file())
     return 0
 

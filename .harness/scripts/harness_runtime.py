@@ -21,7 +21,7 @@ from harness_assurance import snapshot as assurance_snapshot
 from harness_tier import TIERS, classify_tier, task_kind_tier
 from harness_gc_context import build_gc_context
 from harness_gc_validation import valid_mechanical_adjudication
-from harness_task_resolution import resolve_task_id
+from harness_task_resolution import resolve_task_id, valid_task_id
 
 SCHEMA_VERSION = 1
 UNKNOWN = "unknown"
@@ -314,6 +314,8 @@ def workspace_root(product: Path) -> Path:
 
 
 def result_path(product: Path, task_id: str) -> Path:
+    if not valid_task_id(task_id):
+        raise ValueError("TASK_ID_INVALID")
     return workspace_root(product) / "runs" / "tasks" / task_id / "result.json"
 
 

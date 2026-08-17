@@ -16,8 +16,17 @@ if [[ -z "$TASK_ID" ]]; then
   exit 0
 fi
 
+if ! python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); from harness_task_resolution import valid_task_id; sys.exit(0 if valid_task_id(sys.argv[2]) else 1)' "$SCRIPT_DIR" "$TASK_ID"; then
+  python3 "$EMIT" block "TASK_ID_INVALID"
+  exit 0
+fi
+
 QA_RES=$(bash "$SCRIPT_DIR/task_workspace.sh" qa-path "$TASK_ID" 2>/dev/null || true)
 QA_EVIDENCE_FILE=$(echo "$QA_RES" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('reason',''))" 2>/dev/null || echo "")
+if [[ "$QA_EVIDENCE_FILE" == "TASK_ID_INVALID" || "$QA_EVIDENCE_FILE" == "ACTIVE_TASK_INVALID" ]]; then
+  python3 "$EMIT" block "ACTIVE_TASK_ID_INVALID"
+  exit 0
+fi
 if [[ -z "$QA_EVIDENCE_FILE" || ! -f "$QA_EVIDENCE_FILE" ]]; then
   QA_EVIDENCE_FILE="$AGENT_WS/qa_approved_${TASK_ID}.json"
 fi

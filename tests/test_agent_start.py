@@ -14,6 +14,56 @@ SCRIPT_DIR = ROOT / ".harness" / "scripts"
 
 
 class AgentStartTest(unittest.TestCase):
+    def test_agent_start_rejects_invalid_identity_before_legacy_gate_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp) / "product"
+            workspace = product / "harness-workspace"
+            task_dir = workspace / "planning/tasks/existing"
+            runs = workspace / "runs"
+            task_dir.mkdir(parents=True)
+            runs.mkdir()
+            (workspace / "project.yaml").write_text(
+                "product:\n  id: demo\nworkspace:\n  root: harness-workspace\n  planning: planning\n  runs: runs\n",
+                encoding="utf-8",
+            )
+            (runs / "planning_gate_pass.json").write_text(json.dumps({
+                "decision": "pass", "level": "L1", "task_dir": str(task_dir),
+            }))
+            completed = subprocess.run(
+                ["bash", str(SCRIPT_DIR / "agent_start.sh"), "../../escape"],
+                cwd=ROOT, env={**os.environ, "HARNESS_PRODUCT_ROOT": str(product)},
+                text=True, capture_output=True, check=True,
+            )
+
+            self.assertEqual(json.loads(completed.stdout)["reason"], "TASK_ID_INVALID")
+            self.assertFalse((workspace / "escape").exists())
+
+    def test_agent_start_rejects_stale_l1_gate_bound_to_another_task(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp) / "product"
+            workspace = product / "harness-workspace"
+            task_dir = workspace / "planning/tasks/existing"
+            runs = workspace / "runs"
+            task_dir.mkdir(parents=True)
+            runs.mkdir()
+            (workspace / "project.yaml").write_text(
+                "product:\n  id: demo\nworkspace:\n  root: harness-workspace\n  planning: planning\n  runs: runs\n",
+                encoding="utf-8",
+            )
+            (runs / "planning_gate_pass.json").write_text(json.dumps({
+                "decision": "pass", "level": "L1", "task_dir": str(task_dir),
+                "work_item": {"id": "local-old", "provider": "noop"},
+            }))
+            completed = subprocess.run(
+                ["bash", str(SCRIPT_DIR / "agent_start.sh"), "local-new"],
+                cwd=ROOT, env={**os.environ, "HARNESS_PRODUCT_ROOT": str(product)},
+                text=True, capture_output=True, check=True,
+            )
+
+            self.assertEqual(json.loads(completed.stdout)["decision"], "block")
+            self.assertIn("WORK_ITEM_MISMATCH", json.loads(completed.stdout)["reason"])
+            self.assertFalse((runs / "tasks/local-new").exists())
+
     def test_l3_agent_start_requests_strict_tier_and_planned_write_scope(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product = Path(tmp)

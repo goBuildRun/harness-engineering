@@ -7,6 +7,7 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
+from harness_task_resolution import valid_task_id
 from workspace_paths import Phase0Layout
 
 
@@ -54,6 +55,8 @@ def capture_evidence(
     command: str = "",
     work_item_id: str = "",
 ) -> Path:
+    if work_item_id and not valid_task_id(work_item_id):
+        raise ValueError("TASK_ID_INVALID")
     created_at = datetime.now(timezone.utc)
     safe_title = slugify(sanitize_capture_text(title) or sanitize_capture_text(summary) or "growth-capture")
     prefix = f"{work_item_id}-" if work_item_id else ""

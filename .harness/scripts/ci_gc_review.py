@@ -19,6 +19,7 @@ from harness_runtime import (
     git_changed, valid_gc_result,
 )
 from harness_gates import committed_work_item
+from harness_task_resolution import valid_task_id
 
 
 def resolve_commit(product: Path, value: str) -> str:
@@ -38,6 +39,8 @@ def emit_file(path: Path, payload: dict) -> None:
 
 def review(args: argparse.Namespace) -> dict:
     product, harness = Path(args.product_root).resolve(), Path(args.harness_root).resolve()
+    if not valid_task_id(args.task_id):
+        return {"decision": "block", "reason": "TASK_ID_INVALID"}
     sha = resolve_commit(product, args.commit)
     if not sha:
         return {"decision": "block", "reason": "CI_COMMIT_INVALID"}

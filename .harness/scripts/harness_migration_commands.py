@@ -9,6 +9,7 @@ from harness_gates import committed_work_item
 from harness_migration import audit_workspace, migration_eligibility, repair_migrated_identity
 from harness_output import dump_json
 from harness_runtime import atomic_write_result, canonical_digest, default_result, policy_for, result_path
+from harness_task_resolution import valid_task_id
 from worktree_baseline import capture_baseline
 
 
@@ -20,6 +21,9 @@ def cmd_audit(args) -> int:
 
 def cmd_migrate(args) -> int:
     product, harness = Path(args.product_root).resolve(), Path(args.harness_root).resolve()
+    if not valid_task_id(args.task_id):
+        dump_json({"decision": "block", "reason": "TASK_ID_INVALID"})
+        return 0
     path = result_path(product, args.task_id)
     work_item = committed_work_item(harness, product, args.task_id)
     if path.exists():
