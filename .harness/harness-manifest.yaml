@@ -119,6 +119,7 @@ required_files:
   - .harness/scripts/qa_evidence_check.sh
   - .harness/scripts/quality_commands.py
   - .harness/scripts/quality_commands.sh
+  - .harness/scripts/process_control.py
   - .harness/scripts/release_preflight.py
   - .harness/scripts/release_preflight.sh
   - .harness/scripts/mr_ready.py

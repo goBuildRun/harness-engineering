@@ -12,6 +12,7 @@ from typing import Any
 
 from harness_runtime import canonical_digest, now
 from harness_output import dump_json
+from process_control import run_process_group
 from workspace_paths import active_planning_gate_path, load_layout
 
 
@@ -28,6 +29,7 @@ TIER_GATES = {
         "quality_lint", "quality_test", "strict_evidence",
     ),
 }
+DEFAULT_GATE_TIMEOUT_SECONDS = 3600
 
 
 def checks_for_tier(checks: dict[str, dict[str, Any]], tier: str) -> dict[str, dict[str, Any]]:
@@ -73,6 +75,30 @@ def _payload(output: str, returncode: int) -> dict[str, Any]:
         value["decision"] = "block"
         value["reason"] = f"GATE_EXIT_{returncode}: {value.get('reason', '')}"
     return value
+
+
+def _gate_timeout_seconds() -> int:
+    raw = os.environ.get("HARNESS_GATE_TIMEOUT_SECONDS", "")
+    try:
+        return max(1, int(raw or DEFAULT_GATE_TIMEOUT_SECONDS))
+    except ValueError:
+        return DEFAULT_GATE_TIMEOUT_SECONDS
+
+
+def _run_gate_command(command: list[str], *, gate: str, cwd: Path,
+                      env: dict[str, str], timeout: int) -> tuple[dict[str, Any], int]:
+    try:
+        completed = run_process_group(command, cwd=cwd, env=env, timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        output = exc.stdout or ""
+        if isinstance(output, bytes):
+            output = output.decode("utf-8", errors="replace")
+        log = " ".join(str(output).splitlines()[-25:])[:2000]
+        reason = f"GATE_TIMEOUT: gate={gate}; timeout={timeout}s"
+        if log:
+            reason += f"; log={log}"
+        return {"decision": "block", "reason": reason}, 124
+    return _payload(completed.stdout, completed.returncode), completed.returncode
 
 
 def _strict_evidence(subject_digest: str) -> dict[str, Any]:
@@ -170,6 +196,7 @@ def run_gate_plan(harness: Path, product: Path, *, tier: str,
     autosync = not read_only and not any(env.get(name, "").lower() == "true" for name in (
         "CI", "GITHUB_ACTIONS", "GITLAB_CI",
     ))
+    timeout = _gate_timeout_seconds()
     checks: dict[str, dict[str, Any]] = {}
     for name in required_gates:
         started = time.monotonic()
@@ -202,43 +229,38 @@ def run_gate_plan(harness: Path, product: Path, *, tier: str,
                     "--action", "audit", "--harness-root", str(harness),
                     "--product-root", str(product),
                 ]
-                completed = subprocess.run(
-                    command, cwd=harness, env=env, text=True,
-                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False,
+                payload, returncode = _run_gate_command(
+                    command, gate=name, cwd=harness, env=env, timeout=timeout,
                 )
-                payload = _payload(completed.stdout, completed.returncode)
-                returncode = completed.returncode
         else:
-            completed = subprocess.run(
-                commands[name], cwd=harness, env=env, text=True,
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False,
+            payload, returncode = _run_gate_command(
+                commands[name], gate=name, cwd=harness, env=env, timeout=timeout,
             )
-            payload = _payload(completed.stdout, completed.returncode)
-            returncode = completed.returncode
             command = commands[name]
-            if autosync and payload["decision"] == "block" and name == "knowledge":
-                subprocess.run(
+            if (autosync and payload["decision"] == "block" and name == "knowledge"
+                    and not str(payload.get("reason") or "").startswith("GATE_TIMEOUT:")):
+                sync_payload, _ = _run_gate_command(
                     ["bash", str(harness / ".harness/scripts/harness_knowledge.sh"), "sync-planning"],
-                    cwd=harness, env=env, text=True, stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT, check=False,
+                    gate="knowledge_autosync", cwd=harness, env=env, timeout=timeout,
                 )
-                completed = subprocess.run(
-                    command, cwd=harness, env=env, text=True,
-                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False,
-                )
-                payload = _payload(completed.stdout, completed.returncode)
+                if sync_payload["decision"] == "pass":
+                    payload, returncode = _run_gate_command(
+                        command, gate=name, cwd=harness, env=env, timeout=timeout,
+                    )
+                else:
+                    payload = sync_payload
             if (autosync and payload["decision"] == "block" and name == "growth_freshness"
                     and payload.get("reason") == "GROWTH_REPORT_MISSING"):
-                subprocess.run(
+                sync_payload, _ = _run_gate_command(
                     ["bash", str(harness / ".harness/scripts/harness_growth.sh"), "scan"],
-                    cwd=harness, env=env, text=True, stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT, check=False,
+                    gate="growth_autosync", cwd=harness, env=env, timeout=timeout,
                 )
-                completed = subprocess.run(
-                    command, cwd=harness, env=env, text=True,
-                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False,
-                )
-                payload = _payload(completed.stdout, completed.returncode)
+                if sync_payload["decision"] == "pass":
+                    payload, returncode = _run_gate_command(
+                        command, gate=name, cwd=harness, env=env, timeout=timeout,
+                    )
+                else:
+                    payload = sync_payload
         duration = int((time.monotonic() - started) * 1000)
         checks[name] = {
             "decision": payload["decision"], "source": "executed",

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -84,6 +85,33 @@ class QualityCommandsTest(unittest.TestCase):
                 resolved, reason = command_cwd(product, value)
                 self.assertIsNone(resolved)
                 self.assertIn("QUALITY_COMMAND_UNSAFE_CWD", reason or "")
+
+    def test_command_timeout_terminates_descendants_before_they_can_write(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            marker = product / "late-write"
+            result = run_command(
+                product, "timeout descendants",
+                ["bash", "-c", '(sleep 2; touch "$1") & wait', "_", str(marker)],
+                {}, 1,
+            )
+            time.sleep(1.5)
+            self.assertFalse(marker.exists())
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["reason"], "timeout=1s")
+
+    def test_command_success_cleans_up_detached_descendants(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            marker = product / "late-write"
+            result = run_command(
+                product, "successful wrapper",
+                ["bash", "-c", '(sleep 1; touch "$1") >/dev/null 2>&1 &', "_", str(marker)],
+                {}, 5,
+            )
+            time.sleep(1.2)
+            self.assertFalse(marker.exists())
+        self.assertTrue(result["ok"], result)
 
     def test_python_import_boundary_blocks_forbidden_layer(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -15,7 +17,8 @@ SCRIPTS = ROOT / ".harness" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 from harness_gates import (  # noqa: E402
-    TIER_GATES, browser_required, committed_work_item, prepare_ci_task, run_gate_plan,
+    TIER_GATES, _run_gate_command, browser_required, committed_work_item, prepare_ci_task,
+    run_gate_plan,
 )
 
 
@@ -66,7 +69,7 @@ class HarnessGatesTest(unittest.TestCase):
         completed = mock.Mock(returncode=0, stdout='{"decision":"pass","reason":"OK"}')
         credential = mock.Mock()
         credential.read_text.return_value = '{"decision":"pass"}'
-        with mock.patch("harness_gates.subprocess.run", return_value=completed), \
+        with mock.patch("harness_gates.run_process_group", return_value=completed), \
                 mock.patch("harness_gates.active_planning_gate_path", return_value=credential), \
                 mock.patch.dict(os.environ, {"CI": "true"}, clear=True):
             result = run_gate_plan(
@@ -128,7 +131,7 @@ class HarnessGatesTest(unittest.TestCase):
 
         credential = mock.Mock()
         credential.read_text.return_value = '{"decision":"pass"}'
-        with mock.patch("harness_gates.subprocess.run", side_effect=completed), \
+        with mock.patch("harness_gates.run_process_group", side_effect=completed), \
                 mock.patch("harness_gates.active_planning_gate_path", return_value=credential), \
                 mock.patch.dict(os.environ, {"CI": "true"}):
             result = run_gate_plan(
@@ -136,6 +139,70 @@ class HarnessGatesTest(unittest.TestCase):
             )
         self.assertEqual(result["checks"]["qa_evidence"]["decision"], "block")
         self.assertEqual(result["decision"], "block")
+
+    def test_gate_timeout_fails_closed_with_gate_identity(self) -> None:
+        credential = mock.Mock()
+        credential.read_text.return_value = '{"decision":"pass"}'
+        expired = subprocess.TimeoutExpired(["bash", "gate.sh"], 7, output="partial output")
+
+        def started(*_args, **_kwargs):
+            if not getattr(started, "called", False):
+                started.called = True
+                raise expired
+            return mock.Mock(returncode=0, stdout='{"decision":"pass","reason":"OK"}')
+
+        with mock.patch("harness_gates.run_process_group", side_effect=started) as runner, \
+                mock.patch("harness_gates.active_planning_gate_path", return_value=credential), \
+                mock.patch.dict(os.environ, {
+                    "CI": "true", "HARNESS_GATE_TIMEOUT_SECONDS": "7",
+                }, clear=True):
+            result = run_gate_plan(
+                ROOT, ROOT, tier="standard", subject_digest="subject", policy_digest="policy",
+            )
+        self.assertEqual(result["decision"], "block")
+        self.assertEqual(result["checks"]["harness"]["decision"], "block")
+        self.assertEqual(
+            result["checks"]["harness"]["reason"],
+            "GATE_TIMEOUT: gate=harness; timeout=7s; log=partial output",
+        )
+        self.assertEqual(runner.call_args_list[0].kwargs["timeout"], 7)
+
+    def test_gate_timeout_terminates_descendants_before_they_can_write(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            marker = Path(tmp) / "late-write"
+            payload, returncode = _run_gate_command(
+                [
+                    "bash", "-c",
+                    '(trap "" TERM; sleep 3; touch "$1") >/dev/null 2>&1 & wait',
+                    "_", str(marker),
+                ],
+                gate="integration", cwd=ROOT, env=dict(os.environ), timeout=1,
+            )
+            time.sleep(1.5)
+            self.assertFalse(marker.exists())
+        self.assertEqual(returncode, 124)
+        self.assertEqual(payload["decision"], "block")
+
+    def test_knowledge_timeout_is_not_hidden_by_autosync(self) -> None:
+        calls = []
+
+        def gate_result(_command, *, gate, **_kwargs):
+            calls.append(gate)
+            if gate == "knowledge":
+                return {"decision": "block", "reason": "GATE_TIMEOUT: gate=knowledge; timeout=7s"}, 124
+            return {"decision": "pass", "reason": "OK"}, 0
+
+        credential = mock.Mock()
+        credential.read_text.return_value = '{"decision":"pass"}'
+        with mock.patch("harness_gates._run_gate_command", side_effect=gate_result), \
+                mock.patch("harness_gates.active_planning_gate_path", return_value=credential), \
+                mock.patch.dict(os.environ, {}, clear=True):
+            result = run_gate_plan(
+                ROOT, ROOT, tier="standard", subject_digest="subject", policy_digest="policy",
+            )
+        self.assertEqual(result["decision"], "block")
+        self.assertEqual(result["checks"]["knowledge"]["decision"], "block")
+        self.assertNotIn("knowledge_autosync", calls)
 
     def test_strict_requires_subject_bound_production_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -149,7 +216,7 @@ class HarnessGatesTest(unittest.TestCase):
             completed = mock.Mock(returncode=0, stdout='{"decision":"pass","reason":"OK"}')
             credential = mock.Mock()
             credential.read_text.return_value = '{"decision":"pass"}'
-            with mock.patch("harness_gates.subprocess.run", return_value=completed), \
+            with mock.patch("harness_gates.run_process_group", return_value=completed), \
                     mock.patch("harness_gates.active_planning_gate_path", return_value=credential), \
                     mock.patch.dict(os.environ, {"HARNESS_STRICT_EVIDENCE": str(receipt)}):
                 passed = run_gate_plan(

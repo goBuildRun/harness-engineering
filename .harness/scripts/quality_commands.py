@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from harness_output import dump_json
+from process_control import run_process_group
 from workspace_paths import load_layout
 from sandbox_exec import reject as sandbox_reject
 
@@ -219,16 +220,7 @@ def run_command(product_root: Path, name: str, argv: list[str], extra_env: dict[
     if cwd_violation:
         return {"name": name, "argv": argv, "cwd": cwd, "ok": False, "reason": cwd_violation}
     try:
-        proc = subprocess.run(
-            argv,
-            cwd=working_dir,
-            env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            timeout=timeout,
-            check=False,
-        )
+        proc = run_process_group(argv, cwd=working_dir, env=env, timeout=timeout)
     except FileNotFoundError:
         return {"name": name, "argv": argv, "ok": False, "reason": f"command_not_found={argv[0]}"}
     except subprocess.TimeoutExpired as exc:

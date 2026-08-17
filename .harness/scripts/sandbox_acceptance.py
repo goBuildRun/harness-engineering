@@ -8,19 +8,13 @@ import subprocess
 from pathlib import Path
 
 from harness_output import dump_json
+from process_control import run_process_group
 from sandbox_exec import docker_command
 
 
 def run_probe(argv: list[str], cwd: Path, timeout: int) -> tuple[bool, str]:
     try:
-        result = subprocess.run(
-            docker_command(argv, cwd),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            timeout=timeout,
-            check=False,
-        )
+        result = run_process_group(docker_command(argv, cwd), timeout=timeout)
     except FileNotFoundError:
         return False, "docker command not found"
     except subprocess.TimeoutExpired:

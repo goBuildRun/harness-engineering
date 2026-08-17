@@ -15,6 +15,7 @@ import urllib.request
 from pathlib import Path
 
 from harness_output import dump_json
+from process_control import run_process_group
 
 SHELL_CONTROL = re.compile(r"[;&|><`\n\r]")
 SHELLS = {"bash", "dash", "fish", "sh", "zsh"}
@@ -63,15 +64,7 @@ def reject(argv: list[str]) -> str | None:
 def run_controlled(argv: list[str], cwd: Path, timeout: int) -> tuple[bool, str]:
     print(f"[ControlledExec] cwd={cwd} 执行: {shlex.join(argv)}", file=sys.stderr)
     try:
-        proc = subprocess.run(
-            argv,
-            cwd=cwd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            timeout=timeout,
-            check=False,
-        )
+        proc = run_process_group(argv, cwd=cwd, timeout=timeout)
     except FileNotFoundError:
         return False, f"CONTROLLED_EXEC_FAILED: command_not_found={argv[0]}"
     except subprocess.TimeoutExpired as exc:
@@ -108,14 +101,7 @@ def run_docker(argv: list[str], cwd: Path, timeout: int) -> tuple[bool, str]:
     network = docker_argv[4]
     print(f"[DockerSandbox] image={image} network={network} cwd={cwd} 执行: {shlex.join(argv)}", file=sys.stderr)
     try:
-        proc = subprocess.run(
-            docker_argv,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            timeout=timeout,
-            check=False,
-        )
+        proc = run_process_group(docker_argv, timeout=timeout)
     except FileNotFoundError:
         return False, "DOCKER_SANDBOX_UNAVAILABLE: command_not_found=docker"
     except subprocess.TimeoutExpired as exc:
