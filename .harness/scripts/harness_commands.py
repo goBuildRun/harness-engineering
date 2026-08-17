@@ -31,6 +31,7 @@ from harness_state import invalidate_if_stale
 from worktree_baseline import capture_baseline, changed_since_baseline
 from harness_ci import cmd_ci_check
 from harness_task_binding import strengthen_resumed_task
+from harness_task_resolution import bind_active_task
 
 def execution_paths(product: Path, task_id: str, changed: list[str]) -> list[str]:
     generated = workspace_root(product) / "planning" / "tasks" / task_id / "task.json"
@@ -221,6 +222,11 @@ def cmd_finish(args: argparse.Namespace) -> int:
         dump_json({"decision": "block", "reason": "TASK_NOT_FOUND"})
         return 0
     result = load_result(path)
+    work_item = result.get("work_item") or {}
+    work_item_id = str(work_item.get("id") or "") if isinstance(work_item, dict) else ""
+    if not bind_active_task(product, task_id, work_item_id):
+        dump_json({"decision": "block", "reason": "ACTIVE_TASK_BINDING_CONFLICT"})
+        return 0
     previous_checks = deepcopy(result.get("checks", {}))
     had_checks = bool(result.get("checks"))
     result["blockers"] = []

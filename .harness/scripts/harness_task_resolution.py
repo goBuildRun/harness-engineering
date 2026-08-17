@@ -29,6 +29,29 @@ def _work_item_id(result: dict[str, Any]) -> str:
     return str(work_item.get("id") or "").strip()
 
 
+def bind_active_task(product: Path, task_id: str, work_item_id: str) -> bool:
+    path = product / "harness-workspace" / "runs" / "active_task.json"
+    try:
+        active = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        active = {}
+    except (OSError, json.JSONDecodeError, TypeError):
+        return False
+    if not isinstance(active, dict):
+        return False
+    existing_task = str(active.get("task_id") or "").strip()
+    existing_work_item = str(active.get("work_item_id") or "").strip()
+    if ((existing_task and existing_task != task_id)
+            or (existing_work_item and work_item_id and existing_work_item != work_item_id)):
+        return False
+    active["task_id"] = task_id
+    if work_item_id:
+        active["work_item_id"] = work_item_id
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(active, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return True
+
+
 def resolve_task_id(product: Path, requested: str | None) -> tuple[str, list[str]]:
     if requested:
         return requested, []

@@ -388,7 +388,10 @@ class HarnessAssuranceTest(unittest.TestCase):
             subprocess.run(["git", "add", ".githooks"], cwd=product, check=True)
             subprocess.run(["git", "commit", "-qm", "guarded onboarding", "--no-verify"], cwd=product, check=True)
             command = [str(SCRIPTS / "harness"), "--product-root", str(product)]
-            subprocess.check_output([*command, "start", "guarded-task", "--tier", "lite", "--scope", "docs"])
+            subprocess.check_output([
+                *command, "start", "guarded-execution", "--work-item", "guarded-task",
+                "--tier", "lite", "--scope", "docs",
+            ])
             (product / "harness-workspace/runs/active_task.json").write_text(
                 json.dumps({"work_item_id": "guarded-task"}), encoding="utf-8",
             )
@@ -397,6 +400,9 @@ class HarnessAssuranceTest(unittest.TestCase):
                 env={**dict(os.environ), "HARNESS_PRODUCT_ROOT": str(product)},
             ))
             self.assertEqual(binding_result["decision"], "pass")
+            active = json.loads((product / "harness-workspace/runs/active_task.json").read_text())
+            self.assertEqual(active["task_id"], "guarded-execution")
+            self.assertEqual(active["work_item_id"], "guarded-task")
             subprocess.run(["git", "add", "."], cwd=product, check=True)
             subprocess.run(["git", "commit", "-qm", "binding"], cwd=product, check=True)
             (product / "docs/note.md").write_text("changed\n")

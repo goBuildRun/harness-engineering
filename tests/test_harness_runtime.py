@@ -33,6 +33,7 @@ from harness_runtime import (  # noqa: E402
 )
 from harness_scope import paths_within_scope  # noqa: E402
 from harness_state import invalidate_if_stale  # noqa: E402
+from harness_task_resolution import bind_active_task  # noqa: E402
 import harness_commands  # noqa: E402
 import harness_ci  # noqa: E402
 import harness_cli  # noqa: E402
@@ -202,6 +203,21 @@ class HarnessRuntimeTest(unittest.TestCase):
             task_id, candidates = resolve_task_id(product, None)
             self.assertEqual(task_id, "")
             self.assertEqual(candidates, [])
+
+    def test_active_task_binding_preserves_workspace_fields_and_rejects_conflicts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            active = product / "harness-workspace/runs/active_task.json"
+            active.parent.mkdir(parents=True)
+            active.write_text(json.dumps({
+                "work_item_id": "WI-43.2", "task_dir": "/planning/story-43.2",
+            }))
+
+            self.assertTrue(bind_active_task(product, "story-43.2-fix", "WI-43.2"))
+            strengthened = json.loads(active.read_text())
+            self.assertEqual(strengthened["task_id"], "story-43.2-fix")
+            self.assertEqual(strengthened["task_dir"], "/planning/story-43.2")
+            self.assertFalse(bind_active_task(product, "other-task", "WI-43.2"))
 
     def test_migration_preserves_committed_work_item_identity(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
