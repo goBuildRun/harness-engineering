@@ -56,7 +56,7 @@ bash .harness/scripts/work_item.sh sync-spec \
 
 `sync-spec --assignee` 优先级高于产品侧默认负责人和本机环境变量。同步成功后，开发人员或自动化 Agent 从 Teambition、飞书或 Jira 领取分派给自己的 Work Item，并通过 `agent_start.sh <work-item-id>` 进入 Harness Execution。
 
-支持精确层级的 Provider（当前为飞书）要求 L3 Product Spec 声明 `work_item_type`。Story 的父 Work Item 可写在 front matter，或通过 CLI 显式传入；两者同时存在但不一致时同步会阻断，Epic 携带父级也会阻断：
+所有 provider 的 L3 Product Spec 都必须声明 `work_item_type`。`story`/`task` 的父 Work Item 可写在 front matter，或通过 CLI 显式传入；两者同时存在但不一致时同步会阻断，`epic` 携带父级也会阻断：
 
 ```yaml
 ---
@@ -110,7 +110,7 @@ bash .harness/scripts/work_item.sh update-description \
 - [ ] 对应验收项
 ```
 
-创建后，`sync-spec` 会把外部任务 ID 回写到 Product Spec 的验收项行尾：
+创建后，`sync-spec` 会先用 provider 的 `verify_binding` 核对期望的项目/任务清单和父级，再把外部任务 ID 回写到 Product Spec 的验收项行尾。provider 未提供 placement-aware 校验时，若规格声明了项目或父级期望会直接 guarded block，不写回 ID：
 
 ```md
 - [ ] 手机号登录成功后进入首页 #<work-item-id>
@@ -149,9 +149,9 @@ growth-review-required
 
 | Provider | 创建任务 | 容器/父级绑定 | list-mine | 状态回写 |
 |----------|----------|---------------|-----------|----------|
-| `teambition` | 已支持 | 父子级适配未实现；显式父级会阻断 | 已支持 | `stage_id_map` 配置后支持 |
+| `teambition` | 已支持 | placement-aware 校验未实现；配置项目或显式父级时同步/Gate 会阻断 | 已支持 | `stage_id_map` 配置后支持 |
 | `feishu` | 已支持 | 精确校验 tasklist、parent 和父级 tasklist；创建后有界重试回读 | 配置 tasklist/list_query 后支持 | 默认 skip；配置 `status_update_mode: completed` 后支持完成态回写 |
-| `jira` | 已支持 | 父子级适配未实现；显式父级会阻断 | 已支持 | transition 配置后启用 |
+| `jira` | 已支持 | placement-aware 校验未实现；配置项目或显式父级时同步/Gate 会阻断 | 已支持 | transition 配置后启用 |
 | `noop` | 本地 ID | 本地格式与父级参数校验，`guarded` 且不调用外部 API | 空列表 | 本地 pass |
 
 ## 6. Teambition 管理建议

@@ -235,6 +235,14 @@ class WorkItemProvider(ABC):
         return self.verify(work_item_id)
 
 
+def provider_expected_project_id(provider: WorkItemProvider) -> str | None:
+    for attribute in ("tasklist_guid", "project_id", "project_key"):
+        value = str(getattr(provider, attribute, "") or "").strip()
+        if value:
+            return value
+    return None
+
+
 class NoopProvider(WorkItemProvider):
     name = "noop"
 

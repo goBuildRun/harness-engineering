@@ -13,6 +13,7 @@ from work_item_providers import (
     extract_from_task_dir,
     get_provider,
     load_config,
+    provider_expected_project_id,
     yaml,
 )
 
@@ -140,6 +141,14 @@ def parent_work_item_id_from_spec(spec_path: Path) -> str:
     return str(work_item_contract_from_spec(spec_path)["parent_id"] or "")
 
 
+def _metadata_string(value: Any, field: str) -> str:
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        raise ValueError(f"{field}_INVALID: expected string, got {type(value).__name__}")
+    return value.strip()
+
+
 def work_item_contract_from_spec(
     spec_path: Path,
     require_l3_type: bool = False,
@@ -160,23 +169,31 @@ def work_item_contract_from_spec(
             raise ValueError(f"WORK_ITEM_FRONT_MATTER_INVALID: {spec_path}: expected mapping")
     else:
         meta = {}
-    nested = meta.get("work_item") if isinstance(meta.get("work_item"), dict) else {}
-    parent_values = {
-        str(value).strip()
-        for value in (
-            meta.get("work_item_parent_id"),
-            meta.get("parent_work_item_id"),
-            nested.get("parent_id"),
+    raw_nested = meta.get("work_item")
+    if raw_nested is not None and not isinstance(raw_nested, dict):
+        raise ValueError(
+            f"WORK_ITEM_METADATA_INVALID: expected mapping, got {type(raw_nested).__name__}"
         )
-        if str(value or "").strip()
+    nested = raw_nested or {}
+    parent_values = {
+        value
+        for value in (
+            _metadata_string(meta.get("work_item_parent_id"), "WORK_ITEM_PARENT"),
+            _metadata_string(meta.get("parent_work_item_id"), "WORK_ITEM_PARENT"),
+            _metadata_string(nested.get("parent_id"), "WORK_ITEM_PARENT"),
+        )
+        if value
     }
     if len(parent_values) > 1:
         raise ValueError(f"WORK_ITEM_PARENT_ALIAS_CONFLICT: values={sorted(parent_values)}")
     parent_id = next(iter(parent_values), "")
     type_values = {
-        str(value).strip().lower()
-        for value in (meta.get("work_item_type"), nested.get("type"))
-        if str(value or "").strip()
+        value.lower()
+        for value in (
+            _metadata_string(meta.get("work_item_type"), "WORK_ITEM_TYPE"),
+            _metadata_string(nested.get("type"), "WORK_ITEM_TYPE"),
+        )
+        if value
     }
     if len(type_values) > 1:
         raise ValueError(f"WORK_ITEM_TYPE_ALIAS_CONFLICT: values={sorted(type_values)}")
@@ -192,9 +209,9 @@ def work_item_contract_from_spec(
         raise ValueError(f"WORK_ITEM_TYPE_INVALID: {item_type}; expected epic/story/task")
     if require_l3_type and level == "L3" and not item_type:
         raise ValueError("WORK_ITEM_TYPE_REQUIRED: L3 sync must declare work_item_type=epic|story|task")
-    if item_type == "story" and not effective_parent:
+    if item_type in {"story", "task"} and not effective_parent:
         raise ValueError(
-            "WORK_ITEM_PARENT_REQUIRED: work_item_type=story requires "
+            f"WORK_ITEM_PARENT_REQUIRED: work_item_type={item_type} requires "
             "work_item_parent_id or --parent-id"
         )
     if item_type == "epic" and effective_parent:
@@ -266,11 +283,18 @@ def sync_spec_markdown(
 ) -> tuple[int, str]:
     text = spec_path.read_text(encoding="utf-8")
     count = 0
-    parent_id = resolve_parent_work_item_id(
+    contract = work_item_contract_from_spec(
         spec_path,
-        parent_work_item_id,
-        require_l3_type=bool(getattr(provider, "requires_l3_hierarchy_contract", False)),
+        require_l3_type=True,
+        alternate_parent_id=parent_work_item_id,
     )
+    parent_id = str(contract["effective_parent_id"] or "")
+    expected_parent = contract["expected_parent_id"]
+    expected_project = provider_expected_project_id(provider)
+    if (expected_project or expected_parent is not None) and (
+        type(provider).verify_binding is WorkItemProvider.verify_binding
+    ):
+        raise ValueError(f"{provider.name.upper()}_BINDING_VERIFY_UNSUPPORTED")
 
     def repl(match: re.Match[str]) -> str:
         nonlocal count
@@ -281,6 +305,15 @@ def sync_spec_markdown(
             if parent_id
             else provider.create(title=title, note=note)
         )
+        ok, reason = provider.verify_binding(
+            item.id,
+            expected_project_id=expected_project,
+            expected_parent_id=expected_parent,
+        )
+        if not ok:
+            raise RuntimeError(
+                f"WORK_ITEM_BINDING_VERIFY_FAILED: created_id={item.id}; {reason}"
+            )
         count += 1
         return f"- [ ] {title} #{item.id}"
 
@@ -330,7 +363,7 @@ def gate_check(harness_root: Path, level: str, task_dir: str | None) -> dict[str
             try:
                 contract = work_item_contract_from_spec(
                     spec_path,
-                    require_l3_type=bool(getattr(provider, "requires_l3_hierarchy_contract", False)),
+                    require_l3_type=True,
                 )
                 gate_level = level.strip().upper()
                 if gate_level in {"L2", "L3"} and contract["level"] != gate_level:
@@ -345,7 +378,7 @@ def gate_check(harness_root: Path, level: str, task_dir: str | None) -> dict[str
             return {"ok": False, "failures": failures, "work_item": None, "provider": provider.name}
         ok, reason = provider.verify_binding(
             wi_id,
-            expected_project_id=str(getattr(provider, "tasklist_guid", "") or "") or None,
+            expected_project_id=provider_expected_project_id(provider),
             expected_parent_id=expected_parent,
         )
         if not ok:

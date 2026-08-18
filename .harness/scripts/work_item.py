@@ -23,6 +23,7 @@ from work_item_providers import (
     gate_check,
     get_provider,
     load_config,
+    provider_expected_project_id,
     sync_spec_markdown,
     work_item_drafts_from_spec,
 )
@@ -72,7 +73,7 @@ def cmd_draft_spec(args: argparse.Namespace) -> int:
             spec,
             assignee=assignee,
             parent_work_item_id=(args.parent_id or "").strip(),
-            require_l3_type=bool(getattr(provider, "requires_l3_hierarchy_contract", False)),
+            require_l3_type=True,
         )
     except Exception as e:
         emit("block", f"WORK_ITEM_DRAFT_FAILED: {e}", provider=provider.name)
@@ -100,7 +101,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
         return 0
     ok, reason = provider.verify_binding(
         args.id,
-        expected_project_id=str(getattr(provider, "tasklist_guid", "") or "") or None,
+        expected_project_id=provider_expected_project_id(provider),
         expected_parent_id=(args.parent_id or "").strip() or None,
     )
     emit("pass" if ok else "block", reason, provider=provider.name, work_item_id=args.id)

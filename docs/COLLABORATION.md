@@ -117,7 +117,7 @@ git push -u origin pm/kb-health-spec
 
 - `draft-spec` 只生成待确认草稿，不写 Teambition / 飞书 / Jira
 - `sync-spec --assignee` 会按产品侧 `harness-workspace/project.yaml` 的 provider 建任务并设置负责人
-- 支持精确层级的 Provider 要求 L3 Product Spec 声明 `work_item_type`；Story 在 front matter 声明 `work_item_parent_id`，或向 `draft-spec` / `sync-spec` 传 `--parent-id`。Harness 会创建子任务并回读父级和产品容器；当前飞书支持精确远端校验，`noop` 仅提供本地 `guarded` 语义，Teambition/Jira 父子级适配完成前会阻断显式父级同步
+- 所有 provider 的 L3 Product Spec 都必须声明 `work_item_type`；`story`/`task` 必须在 front matter 声明 `work_item_parent_id`，或向 `draft-spec` / `sync-spec` 传 `--parent-id`，`epic` 必须为顶层。Harness 会在写回 ID 前验证产品容器和父级落点；当前飞书支持精确远端校验，`noop` 仅提供本地 `guarded` 语义，无法提供 placement-aware `verify_binding` 的 provider 会 guarded block，不会静默降级
 - `sync-spec` 使用 `bmad-work-item-v1`，只同步摘要、负责人、状态和 Harness Links；完整 BMAD 产物仍在 `harness-workspace/planning/`
 - 不同产品线可选择不同 provider：Teambition 项目、飞书任务清单或 Jira project
 - 验收标准须可测试、可勾选
