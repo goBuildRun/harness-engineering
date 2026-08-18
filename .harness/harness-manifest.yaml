@@ -130,6 +130,7 @@ required_files:
   - .harness/scripts/task_contract_check.sh
   - .harness/scripts/plan_sync_check.py
   - .harness/scripts/plan_sync_check.sh
+  - .harness/scripts/diff_integrity_check.py
   - .harness/scripts/dag_sync_check.py
   - .harness/scripts/dag_sync_check.sh
   - .harness/templates/product-spec.md
@@ -182,6 +183,7 @@ required_files:
   - tests/test_harness_usage_ledger.py
   - tests/test_worktree_baseline.py
   - tests/test_plan_sync_check.py
+  - tests/test_diff_integrity_check.py
   - .harness/scripts/task_workspace.sh
   - .harness/scripts/task_workspace.py
   - tasks/_templates/00-任务卡.md

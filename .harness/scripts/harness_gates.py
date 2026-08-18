@@ -18,14 +18,14 @@ from workspace_paths import active_planning_gate_path, load_layout
 
 
 TIER_GATES = {
-    "lite": ("harness", "structure", "quality_lint", "quality_test"),
+    "lite": ("harness", "structure", "diff_integrity", "quality_lint", "quality_test"),
     "standard": (
-        "planning", "harness", "structure", "plan_sync", "dag_sync",
+        "planning", "harness", "structure", "diff_integrity", "plan_sync", "dag_sync",
         "qa_evidence", "knowledge", "growth_review", "growth_freshness",
         "quality_lint", "quality_test",
     ),
     "strict": (
-        "planning", "harness", "structure", "plan_sync", "dag_sync",
+        "planning", "harness", "structure", "diff_integrity", "plan_sync", "dag_sync",
         "qa_evidence", "knowledge", "growth_review", "growth_freshness",
         "quality_lint", "quality_test", "strict_evidence",
     ),
@@ -54,6 +54,10 @@ def _commands(harness: Path) -> dict[str, list[str]]:
     return {
         "harness": ["bash", str(scripts / "validate_harness.sh")],
         "structure": ["bash", str(scripts / "structure_guard.sh"), "--diff"],
+        "diff_integrity": [
+            "python3", str(scripts / "diff_integrity_check.py"),
+            "--harness-root", str(harness),
+        ],
         "plan_sync": ["bash", str(scripts / "plan_sync_check.sh")],
         "dag_sync": ["bash", str(scripts / "dag_sync_check.sh")],
         "qa_evidence": ["bash", str(scripts / "qa_evidence_check.sh")],
@@ -238,6 +242,8 @@ def run_gate_plan(harness: Path, product: Path, *, tier: str,
                     command, gate=name, cwd=harness, env=env, timeout=timeout,
                 )
         else:
+            if name == "diff_integrity" and read_only:
+                commands[name] = [*commands[name], "--commit", subject_digest]
             payload, returncode = _run_gate_command(
                 commands[name], gate=name, cwd=harness, env=env, timeout=timeout,
             )

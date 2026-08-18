@@ -21,6 +21,7 @@
 - `bash .harness/scripts/validate_harness.sh` — Harness 结构完整
 - `bash .harness/scripts/harness_intake.sh status` — 已有项目接入信号检查
 - `bash .harness/scripts/structure_guard.sh --diff` — **路径白名单 / 错放目录**
+- `python3 .harness/scripts/diff_integrity_check.py` — 按当前 Work Item baseline 检查 tracked、staged 与新增未跟踪文件的 Git 空白错误
 - `bash .harness/scripts/structure_guard.sh --path <拟建路径>` — 写文件前
 - `bash .harness/scripts/task_contract_check.sh --task-dir <harness-workspace/planning/tasks/...>` — 任务 7 字段契约
 - `bash .harness/scripts/dag_sync_check.sh --task-dir <harness-workspace/planning/tasks/...>` — DAG 与实施方案同步；默认读取任务目录内 `tasks-dag.md`
@@ -36,7 +37,7 @@
 - `python3 .harness/scripts/browser_qa.py <url> --action scenario --scenario <path.json>` — 受限交互步骤、逐步结果、截图和 trace
 - `mr_ready.sh` 的 diff-bound review checklist + 独立 receipt — correctness/security/tests/scope 四视角，禁止实现角色自签
 - `bash .harness/scripts/release_preflight.sh` — 开源发布前防泄漏检查，不属于日常产品 MR 门禁
-- `bash .harness/scripts/check.sh` — Planning Gate + validate + structure + plan_sync + dag_sync + qa_evidence + knowledge_freshness + growth_freshness + quality；本地可自动刷新 planning CONTEXT、生成缺失 GROWTH 报告，CI 与未绑定/内容过期的 GROWTH 报告会阻断
+- `bash .harness/scripts/check.sh` — Planning Gate + validate + structure + diff_integrity + plan_sync + dag_sync + qa_evidence + knowledge_freshness + growth_freshness + quality；本地可自动刷新 planning CONTEXT、生成缺失 GROWTH 报告，CI 与未绑定/内容过期的 GROWTH 报告会阻断
 - `bash .harness/scripts/subagent-pr-gate.sh <TASK>` — QA 凭证
 
 通用结构规则由 active profile 和 `structure_guard` 决定；产品专用规则只能放入对应 profile，不得进入 generic 默认值。

@@ -293,12 +293,17 @@ class HarnessReceiveTest(unittest.TestCase):
             self.attest(repo, new)
             with mock.patch("harness_receive.run_gate_plan", return_value={
                 "decision": "block",
-                "checks": {"quality_test": {"decision": "block"}},
+                "checks": {"quality_test": {
+                    "decision": "block", "reason": "QUALITY_TEST_FAILED",
+                }},
                 "missing": [],
             }):
                 outcome = verify_updates(repo, ROOT, [(old, new, "refs/heads/main")])
             self.assertEqual(outcome["reason"], "RECEIVE_GATE_BLOCK")
             self.assertEqual(outcome["blocked_gates"], ["quality_test"])
+            self.assertEqual(outcome["gate_reasons"], {
+                "quality_test": "QUALITY_TEST_FAILED",
+            })
 
     def test_acceptance_receipt_is_derived_from_verified_commit_binding(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

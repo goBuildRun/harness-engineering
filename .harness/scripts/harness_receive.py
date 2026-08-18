@@ -207,11 +207,14 @@ def verify_commit(repo: Path, harness: Path, commit: str, *,
             ci_task_id=str(result.get("task_id") or ""), changed_files=changed, read_only=True,
         )
         if gates["decision"] != "pass" or gates["missing"]:
+            blocked = {
+                name: str(check.get("reason") or "")
+                for name, check in gates["checks"].items()
+                if check.get("decision") != "pass"
+            }
             return {"decision": "block", "reason": "RECEIVE_GATE_BLOCK", "commit": commit,
-                    "blocked_gates": sorted(
-                        name for name, check in gates["checks"].items()
-                        if check.get("decision") != "pass"
-                    ) + list(gates["missing"])}
+                    "blocked_gates": sorted(blocked) + list(gates["missing"]),
+                    "gate_reasons": blocked}
     return {"decision": "pass", "reason": "RECEIVE_COMMIT_VALID", "commit": commit,
             "task_id": result["task_id"], "work_item": result.get("work_item"),
             "attestation_object": attested["object"]}

@@ -45,6 +45,7 @@
 | `dag_sync_check.sh` | 校验 DAG 与实施方案一致 |
 | `structure_guard.sh` | 校验写入路径和 diff |
 | `plan_sync_check.sh` | 校验相对任务 baseline 的 tracked/untracked 变更与实施方案路径表一致 |
+| `diff_integrity_check.py` | 对任务 baseline 后的 tracked/untracked 变更执行 Git 空白完整性检查 |
 | `qa_sign_off.sh` | QA 独立签章 |
 | `qa_evidence_check.sh` | QA 签章 + TEST/REVIEW 报告门禁 |
 | `quality_commands.sh` | 执行产品侧 `quality.commands.lint/test` |
