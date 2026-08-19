@@ -9,15 +9,42 @@ from typing import Any
 from harness_runtime import TIERS, canonical_digest, now, policy_for, task_kind_tier
 
 
+def resolve_start_work_item(
+    planning: dict[str, Any],
+    requested_work_item: str,
+) -> dict[str, Any]:
+    requested = str(requested_work_item or "").strip()
+    if planning["status"] == "ambiguous":
+        return {
+            "decision": "block",
+            "reason": "TASK_START_WORK_ITEM_AMBIGUOUS",
+            "candidates": planning["candidates"],
+        }
+    planned_work_item = planning["work_item"]
+    if requested and planned_work_item and requested != planned_work_item["id"]:
+        return {
+            "decision": "block",
+            "reason": "TASK_START_WORK_ITEM_MISMATCH",
+            "requested_work_item": requested,
+            "committed_work_item": planned_work_item["id"],
+        }
+    work_item = planned_work_item or ({"id": requested} if requested else None)
+    return {"decision": "pass", "work_item": work_item}
+
+
 def strengthen_resumed_task(
     result: dict[str, Any],
     args: Namespace,
     task_id: str,
     harness: Path,
     product: Path,
+    *,
+    resolved_work_item: dict[str, str] | None = None,
 ) -> dict[str, Any]:
-    requested_work_item = str(getattr(args, "work_item", "") or "").strip()
-    current_work_item = str(((result.get("work_item") or {}).get("id") or "")).strip()
+    current = result.get("work_item") or {}
+    current_work_item = str(current.get("id") or "").strip()
+    resolved_work_item = resolved_work_item or {}
+    requested_work_item = str(resolved_work_item.get("id") or "").strip()
     if requested_work_item and current_work_item and requested_work_item != current_work_item:
         return {
             "decision": "block",
@@ -26,6 +53,20 @@ def strengthen_resumed_task(
             "current_work_item": current_work_item,
             "changed": False,
         }
+    current_provider = str(current.get("provider") or "").strip()
+    requested_provider = str(resolved_work_item.get("provider") or "").strip()
+    if current_provider and requested_provider and current_provider != requested_provider:
+        return {
+            "decision": "block", "reason": "TASK_RESUME_WORK_ITEM_PROVIDER_MISMATCH",
+            "requested_provider": requested_provider, "current_provider": current_provider,
+            "changed": False,
+        }
+    target_work_item = None
+    if requested_work_item or current_work_item:
+        target_work_item = {"id": requested_work_item or current_work_item}
+        provider = requested_provider or current_provider
+        if provider:
+            target_work_item["provider"] = provider
 
     requested_tier = task_kind_tier(
         str(getattr(args, "kind", "implementation") or "implementation"),
@@ -46,9 +87,9 @@ def strengthen_resumed_task(
     }
     merged_scope = sorted(current_scope | requested_scope)
     strengthened = target_tier != current_tier or merged_scope != sorted(current_scope)
-    if requested_work_item and not current_work_item:
+    if target_work_item != (current or None):
         strengthened = True
-        result["work_item"] = {"id": requested_work_item}
+        result["work_item"] = target_work_item
 
     if not strengthened:
         return {"decision": "pass", "reason": "TASK_RESUMED", "result": result, "changed": False}
@@ -59,7 +100,7 @@ def strengthen_resumed_task(
         "task_id": task_id,
         "scope": merged_scope,
         "tier_floor": target_tier,
-        "work_item": requested_work_item or current_work_item or previous_task.get("work_item"),
+        "work_item": (target_work_item or {}).get("id") or previous_task.get("work_item"),
         "kind": previous_task.get("kind") or getattr(args, "kind", "implementation"),
     }
     result["task"] = binding

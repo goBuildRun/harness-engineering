@@ -694,6 +694,10 @@ bash .harness/scripts/harness status demo-login-task
 bash .harness/scripts/harness finish demo-login-task
 ```
 
+无论 fresh start 还是 resume，当 `<task-id>` 能从产品侧 `harness-workspace/planning/tasks/*/task.json`、`planning_gate_pass.json` 或兼容 `phase0_pass.json` 唯一解析到 Work Item 时，`start` 都复用完整 `{id, provider}` 绑定，无需重复传 `--work-item`。已有 `work_item: null` run 会单调补齐该绑定；自动补绑本身不重建 baseline、不覆盖已有 scope/tier，并按 binding strengthening 语义使旧 gate 失效后重验。resume 显式传入的更强 tier 或新增 scope 仍沿用原有单调加严规则；显式 Work Item 与已提交规划绑定冲突时立即 `block`。
+
+同一任务目录内的三个结构化凭证必须兼容：相同 ID 可由空 provider 单调补全为唯一非空 provider；Work Item ID 冲突或多个非空 provider 冲突均视为歧义。多个任务目录映射到同一 task/Work Item 也视为歧义。上述情况中，`start` 都在任何 baseline、result 或 active-task 写入前以 `TASK_START_WORK_ITEM_AMBIGUOUS` 和稳定排序的 `source/id/provider` 候选来源 `block`，不会创建 `work_item: null` run。没有已提交 Planning 映射的本地任务仍可显式传 `--work-item`，保持 Task ID 与外部协同 ID 可分离。
+
 lite onboarding 的风险分类只读取实际产品 execution paths。`start` 自动生成的本地 `runs/` 状态和最小 `planning/tasks/<task-id>/task.json` 不会把 lite 自行升级为 standard 或造成 scope 越界；它们仍包含在完整 subject/attestation 中，不能被提交后静默替换。
 
 范围变更和紧急修复仍通过 `start` 建档，不增加公共命令。使用 `--kind scope-change|hotfix --reason '<原因>'`；`scope-change` 最低为 standard，`hotfix` 强制提升到 strict，不能用显式 `--tier lite` 降级，也不豁免 planning、scope、测试、GC 或最终结果不变式。

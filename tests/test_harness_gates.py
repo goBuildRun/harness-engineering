@@ -17,8 +17,8 @@ SCRIPTS = ROOT / ".harness" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 from harness_gates import (  # noqa: E402
-    TIER_GATES, _run_gate_command, browser_required, committed_work_item, prepare_ci_task,
-    run_gate_plan,
+    TIER_GATES, _run_gate_command, browser_required, committed_work_item,
+    committed_work_item_resolution, prepare_ci_task, run_gate_plan,
 )
 
 
@@ -34,6 +34,12 @@ class HarnessGatesTest(unittest.TestCase):
             self.assertEqual(
                 committed_work_item(ROOT, product, "task-1"),
                 {"id": "WI-42", "provider": "jira"},
+            )
+            self.assertEqual(
+                committed_work_item_resolution(ROOT, product, "task-1"),
+                {"status": "unique", "work_item": {"id": "WI-42", "provider": "jira"},
+                 "candidates": [{"source": "task-1/task.json", "id": "WI-42",
+                                  "provider": "jira"}]},
             )
 
     def test_legacy_task_resolves_by_unique_work_item_id(self) -> None:
@@ -59,6 +65,62 @@ class HarnessGatesTest(unittest.TestCase):
                 "work_item": {"id": "WI-42", "provider": "jira"},
             }))
             self.assertIsNone(committed_work_item(ROOT, product, "WI-42"))
+            resolution = committed_work_item_resolution(ROOT, product, "WI-42")
+            self.assertEqual(resolution["status"], "ambiguous")
+            self.assertEqual([item["source"] for item in resolution["candidates"]], [
+                "2026-08-12-WI-42-story/planning_gate_pass.json", "duplicate/task.json",
+            ])
+
+    def test_direct_task_and_legacy_work_item_duplicate_is_ambiguous(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            tasks = product / "harness-workspace/planning/tasks"
+            direct = tasks / "execution-1"
+            direct.mkdir(parents=True)
+            (direct / "task.json").write_text(json.dumps({
+                "work_item": {"id": "WI-42", "provider": "feishu"},
+            }))
+            legacy = tasks / "2026-WI-42-story"
+            legacy.mkdir()
+            (legacy / "planning_gate_pass.json").write_text(json.dumps({
+                "decision": "pass", "work_item": {"id": "WI-42", "provider": "feishu"},
+            }))
+
+            resolution = committed_work_item_resolution(ROOT, product, "execution-1")
+            self.assertEqual(resolution["status"], "ambiguous")
+            self.assertEqual([item["source"] for item in resolution["candidates"]], [
+                "2026-WI-42-story/planning_gate_pass.json", "execution-1/task.json",
+            ])
+
+    def test_same_id_merges_provider_but_conflicting_providers_are_ambiguous(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            task_id = "provider-merge"
+            task = product / "harness-workspace/planning/tasks" / task_id
+            task.mkdir(parents=True)
+            (task / "task.json").write_text(json.dumps({
+                "work_item": {"id": "WI-42", "provider": ""},
+            }))
+            gate = task / "planning_gate_pass.json"
+            gate.write_text(json.dumps({
+                "work_item": {"id": "WI-42", "provider": "feishu"},
+            }))
+            self.assertEqual(
+                committed_work_item_resolution(ROOT, product, task_id)["work_item"],
+                {"id": "WI-42", "provider": "feishu"},
+            )
+
+            gate.write_text(json.dumps({
+                "work_item": {"id": "WI-42", "provider": "jira"},
+            }))
+            (task / "phase0_pass.json").write_text(json.dumps({
+                "work_item": {"id": "WI-42", "provider": "feishu"},
+            }))
+            resolution = committed_work_item_resolution(ROOT, product, task_id)
+            self.assertEqual(resolution["status"], "ambiguous")
+            self.assertEqual([item["provider"] for item in resolution["candidates"]], [
+                "feishu", "jira", "",
+            ])
 
     def test_frontend_change_requires_browser_but_backend_change_does_not(self) -> None:
         self.assertTrue(browser_required(["frontend/components/Login.tsx"]))

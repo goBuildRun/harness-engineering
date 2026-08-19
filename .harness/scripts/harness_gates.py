@@ -161,7 +161,8 @@ def prepare_ci_task(harness: Path, product: Path, task_id: str) -> bool:
     return True
 
 
-def _task_work_item(task_dir: Path) -> dict[str, str] | None:
+def _task_work_item_resolution(task_dir: Path) -> dict[str, Any]:
+    candidates = []
     for name in ("task.json", "planning_gate_pass.json", "phase0_pass.json"):
         try:
             data = json.loads((task_dir / name).read_text(encoding="utf-8"))
@@ -169,24 +170,47 @@ def _task_work_item(task_dir: Path) -> dict[str, str] | None:
             continue
         value = data.get("work_item")
         if isinstance(value, dict) and value.get("id"):
-            return {"id": str(value["id"]), "provider": str(value.get("provider") or "")}
-        if isinstance(value, str) and value:
-            return {"id": value, "provider": ""}
-    return None
+            candidates.append({"source": f"{task_dir.name}/{name}", "id": str(value["id"]),
+                               "provider": str(value.get("provider") or "")})
+        elif isinstance(value, str) and value:
+            candidates.append({"source": f"{task_dir.name}/{name}", "id": value, "provider": ""})
+    candidates.sort(key=lambda item: item["source"])
+    ids = {item["id"] for item in candidates}
+    providers = {item["provider"] for item in candidates if item["provider"]}
+    if len(ids) == 1 and len(providers) <= 1:
+        return {"status": "unique", "work_item": {"id": next(iter(ids)),
+                "provider": next(iter(providers), "")}, "candidates": candidates}
+    status = "ambiguous" if candidates else "missing"
+    return {"status": status, "work_item": None, "candidates": candidates}
+
+
+def _task_work_item(task_dir: Path) -> dict[str, str] | None:
+    return _task_work_item_resolution(task_dir)["work_item"]
+
+
+def committed_work_item_resolution(harness: Path, product: Path, task_id: str) -> dict[str, Any]:
+    if not valid_task_id(task_id):
+        return {"status": "missing", "work_item": None, "candidates": []}
+    tasks = load_layout(harness, product).tasks
+    if not tasks.is_dir():
+        return {"status": "missing", "work_item": None, "candidates": []}
+    records = [(task_dir, resolution) for task_dir in sorted(tasks.iterdir()) if task_dir.is_dir()
+               and (resolution := _task_work_item_resolution(task_dir))["candidates"]]
+    direct = next((value for task_dir, value in records if task_dir.name == task_id), None)
+    target_ids = {task_id, *(item["id"] for item in (direct or {}).get("candidates", []))}
+    matches = [(task_dir, value) for task_dir, value in records if task_dir.name == task_id
+               or any(item["id"] in target_ids for item in value["candidates"])]
+    candidates = sorted((item for _task_dir, value in matches for item in value["candidates"]),
+                        key=lambda item: item["source"])
+    if len(matches) == 1 and matches[0][1]["status"] == "unique":
+        return {"status": "unique", "work_item": matches[0][1]["work_item"],
+                "candidates": candidates}
+    status = "ambiguous" if matches else "missing"
+    return {"status": status, "work_item": None, "candidates": candidates}
 
 
 def committed_work_item(harness: Path, product: Path, task_id: str) -> dict[str, str] | None:
-    if not valid_task_id(task_id):
-        return None
-    tasks = load_layout(harness, product).tasks
-    direct = _task_work_item(tasks / task_id)
-    if direct:
-        return direct
-    if not tasks.is_dir():
-        return None
-    matches = [value for task_dir in tasks.iterdir() if task_dir.is_dir()
-               and (value := _task_work_item(task_dir)) and value["id"] == task_id]
-    return matches[0] if len(matches) == 1 else None
+    return committed_work_item_resolution(harness, product, task_id)["work_item"]
 
 
 def run_gate_plan(harness: Path, product: Path, *, tier: str,

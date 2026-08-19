@@ -15,29 +15,27 @@ from harness_output import dump_json
 from harness_assurance import finalize, refresh_result
 from harness_attestation import verify_attestation
 from harness_cache import executed_check, reuse_check, tool_digest
-from harness_gates import checks_for_tier, run_gate_plan
+from harness_gates import checks_for_tier, committed_work_item_resolution, run_gate_plan
 from harness_telemetry import apply_automatic_usage, enforce_budget
 from codex_usage_receipt import automatic_receipt
 from harness_usage_ledger import aggregate_epic_usage, apply_story_usage, capture_usage_baseline
 from harness_runtime import (
-    active_task_path, apply_code_health, atomic_write_result,
-    canonical_digest, classify_tier, default_result, task_kind_tier,
-    fingerprint, finish_decision, git_changed, invoke_gc_once, load_result,
-    mechanical_code_health, now, policy_for, resolve_task_id, result_path,
+    active_task_path, apply_code_health, atomic_write_result, canonical_digest, classify_tier,
+    default_result, task_kind_tier, fingerprint, finish_decision, git_changed, invoke_gc_once,
+    load_result, mechanical_code_health, now, policy_for, resolve_task_id, result_path,
     subject_for, workspace_root,
 )
 from harness_scope import execution_paths, paths_within_scope
 from harness_state import invalidate_if_stale
 from worktree_baseline import capture_baseline, changed_since_baseline
 from harness_ci import cmd_ci_check
-from harness_task_binding import strengthen_resumed_task
+from harness_task_binding import resolve_start_work_item, strengthen_resumed_task
 from harness_task_resolution import bind_active_task, valid_task_id
 
 
 def refresh_assurance(result: dict, product: Path, policy_digest: str, *, phase: str) -> None:
-    attestation = verify_attestation(product, commit="HEAD", policy_digest=policy_digest)
     refresh_result(result, product, policy_digest, phase=phase, verified_at=now(),
-                   attestation=attestation)
+                   attestation=verify_attestation(product, commit="HEAD", policy_digest=policy_digest))
 
 
 def cmd_start(args: argparse.Namespace) -> int:
@@ -47,8 +45,14 @@ def cmd_start(args: argparse.Namespace) -> int:
         dump_json({"decision": "block", "reason": "TASK_ID_INVALID"})
         return 0
     path = result_path(product, task_id)
+    selection = resolve_start_work_item(
+        committed_work_item_resolution(harness, product, task_id), args.work_item)
+    if selection["decision"] == "block":
+        dump_json(selection)
+        return 0
     if path.exists():
-        outcome = strengthen_resumed_task(load_result(path), args, task_id, harness, product)
+        outcome = strengthen_resumed_task(load_result(path), args, task_id, harness, product,
+                                          resolved_work_item=selection["work_item"])
         if outcome.pop("changed", False):
             atomic_write_result(path, outcome["result"])
         dump_json(outcome)
@@ -57,25 +61,23 @@ def cmd_start(args: argparse.Namespace) -> int:
     if args.kind in {"scope-change", "hotfix"} and not change_reason:
         dump_json({"decision": "block", "reason": "TASK_KIND_REASON_REQUIRED", "kind": args.kind})
         return 0
+    work_item = selection["work_item"]
     initial = task_kind_tier(args.kind, args.tier or "standard")
-    result = default_result(task_id, initial_tier=initial,
-                            work_item={"id": args.work_item} if args.work_item else None)
+    result = default_result(task_id, initial_tier=initial, work_item=work_item)
     baseline = path.parent / "worktree_baseline.json"
     capture_baseline(product, baseline, work_item_id=task_id)
     result["baseline"] = {"digest": canonical_digest(json.loads(baseline.read_text())), "source": "start"}
     result["policy_digest"] = policy_for(harness, product)
     binding = {
         "task_id": task_id, "scope": args.scope, "tier_floor": initial,
-        "work_item": args.work_item or None, "kind": args.kind,
-        "change_reason": change_reason or None,
+        "work_item": (work_item or {}).get("id"), "kind": args.kind, "change_reason": change_reason or None,
         "primary_role": "gc-sweeper" if args.kind == "debt-maintenance" else "lead-agent",
     }
     result["binding_digest"] = canonical_digest(binding)
     result["invariants"]["task_identity"] = "pass"
     result["task"] = binding
-    capture_usage_baseline(
-        result, automatic_receipt(task_id, result["subject"]["digest"], result["policy_digest"]),
-    )
+    capture_usage_baseline(result, automatic_receipt(
+        task_id, result["subject"]["digest"], result["policy_digest"]))
     if initial == "lite":
         binding_path = workspace_root(product) / "planning" / "tasks" / task_id / "task.json"
         binding_path.parent.mkdir(parents=True, exist_ok=True)

@@ -96,6 +96,160 @@ class HarnessRuntimeTest(unittest.TestCase):
             self.assertEqual(captured[-1]["decision"], "block")
             self.assertEqual(captured[-1]["reason"], "TASK_RESUME_WORK_ITEM_MISMATCH")
 
+    def test_start_resume_repairs_null_work_item_from_unique_planning(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            subprocess.run(["git", "init", "-q"], cwd=product, check=True)
+            task_id = "resume-planning-binding"
+            common = {
+                "product_root": str(product), "harness_root": str(ROOT), "task_id": task_id,
+                "work_item": "", "kind": "implementation", "reason": "",
+                "tier": "strict", "scope": ["src"],
+            }
+            with mock.patch.object(harness_commands, "dump_json"):
+                harness_commands.cmd_start(SimpleNamespace(**common))
+            path = product / "harness-workspace/runs/tasks" / task_id / "result.json"
+            result = json.loads(path.read_text())
+            result["checks"]["planning"] = {
+                "decision": "pass", "stale": False, "fingerprint": "old",
+                "subject_digest": "old", "source": "executed",
+            }
+            atomic_write_result(path, result)
+            baseline = path.parent / "worktree_baseline.json"
+            baseline_before = baseline.read_bytes()
+            task_dir = product / "harness-workspace/planning/tasks/2026-resume-planning-binding"
+            task_dir.mkdir(parents=True)
+            (task_dir / "planning_gate_pass.json").write_text(json.dumps({
+                "decision": "pass",
+                "work_item": {"id": task_id, "provider": "feishu"},
+            }))
+
+            captured = []
+            with mock.patch.object(harness_commands, "dump_json", side_effect=captured.append):
+                harness_commands.cmd_start(SimpleNamespace(**common))
+
+            repaired = captured[-1]["result"]
+            self.assertEqual(captured[-1]["reason"], "TASK_RESUMED_WITH_STRONGER_BINDING")
+            self.assertEqual(repaired["work_item"], {"id": task_id, "provider": "feishu"})
+            self.assertEqual(repaired["tier"], {"initial": "strict", "effective": "strict"})
+            self.assertEqual(repaired["task"]["scope"], ["src"])
+            self.assertEqual(repaired["task"]["work_item"], task_id)
+            self.assertEqual(repaired["binding_revisions"][-1]["reason"],
+                             "monotonic resume strengthening")
+            self.assertTrue(repaired["checks"]["planning"]["stale"])
+            self.assertIn("TASK_BINDING_CHANGED", repaired["blockers"])
+            self.assertEqual(baseline.read_bytes(), baseline_before)
+
+    def test_start_infers_unique_committed_work_item_and_preserves_provider(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            subprocess.run(["git", "init", "-q"], cwd=product, check=True)
+            task_id = "WI-43.3"
+            task_dir = product / "harness-workspace/planning/tasks/2026-08-19-story-43-3"
+            task_dir.mkdir(parents=True)
+            (task_dir / "planning_gate_pass.json").write_text(json.dumps({
+                "decision": "pass",
+                "work_item": {"id": task_id, "provider": "feishu"},
+            }))
+            captured = []
+            with mock.patch.object(harness_commands, "dump_json", side_effect=captured.append):
+                harness_commands.cmd_start(SimpleNamespace(
+                    product_root=str(product), harness_root=str(ROOT), task_id=task_id,
+                    work_item="", kind="implementation", reason="", tier="strict",
+                    scope=["src"],
+                ))
+
+            result = captured[-1]["result"]
+            self.assertEqual(result["work_item"], {"id": task_id, "provider": "feishu"})
+            self.assertEqual(result["task"]["work_item"], task_id)
+
+    def test_start_rejects_explicit_work_item_conflicting_with_committed_planning(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            subprocess.run(["git", "init", "-q"], cwd=product, check=True)
+            task_id = "execution-43-3"
+            task_dir = product / "harness-workspace/planning/tasks" / task_id
+            task_dir.mkdir(parents=True)
+            (task_dir / "task.json").write_text(json.dumps({
+                "task_id": task_id,
+                "work_item": {"id": "WI-43.3", "provider": "feishu"},
+            }))
+            captured = []
+            with mock.patch.object(harness_commands, "dump_json", side_effect=captured.append):
+                harness_commands.cmd_start(SimpleNamespace(
+                    product_root=str(product), harness_root=str(ROOT), task_id=task_id,
+                    work_item="WI-other", kind="implementation", reason="", tier="strict",
+                    scope=["src"],
+                ))
+
+            self.assertEqual(captured[-1]["decision"], "block")
+            self.assertEqual(captured[-1]["reason"], "TASK_START_WORK_ITEM_MISMATCH")
+            self.assertFalse((
+                product / "harness-workspace/runs/tasks" / task_id / "result.json"
+            ).exists())
+
+    def test_start_blocks_ambiguous_cross_task_work_item_before_writing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            subprocess.run(["git", "init", "-q"], cwd=product, check=True)
+            task_id = "WI-duplicate"
+            tasks = product / "harness-workspace/planning/tasks"
+            for name in ("story-a", "story-b"):
+                task_dir = tasks / name
+                task_dir.mkdir(parents=True)
+                (task_dir / "phase0_pass.json").write_text(json.dumps({
+                    "decision": "pass",
+                    "work_item": {"id": task_id, "provider": "feishu"},
+                }))
+            captured = []
+            with mock.patch.object(harness_commands, "dump_json", side_effect=captured.append):
+                harness_commands.cmd_start(SimpleNamespace(
+                    product_root=str(product), harness_root=str(ROOT), task_id=task_id,
+                    work_item="", kind="implementation", reason="", tier="standard",
+                    scope=["src"],
+                ))
+
+            self.assertEqual(captured[-1], {
+                "decision": "block",
+                "reason": "TASK_START_WORK_ITEM_AMBIGUOUS",
+                "candidates": [
+                    {"source": "story-a/phase0_pass.json", "id": task_id,
+                     "provider": "feishu"},
+                    {"source": "story-b/phase0_pass.json", "id": task_id,
+                     "provider": "feishu"},
+                ],
+            })
+            self.assertFalse((product / "harness-workspace/runs").exists())
+
+    def test_start_blocks_conflicting_work_items_within_one_task_before_writing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            subprocess.run(["git", "init", "-q"], cwd=product, check=True)
+            task_id = "intra-dir-conflict"
+            task_dir = product / "harness-workspace/planning/tasks" / task_id
+            task_dir.mkdir(parents=True)
+            (task_dir / "task.json").write_text(json.dumps({
+                "work_item": {"id": "WI-task", "provider": "feishu"},
+            }))
+            (task_dir / "planning_gate_pass.json").write_text(json.dumps({
+                "decision": "pass", "work_item": {"id": "WI-gate", "provider": "feishu"},
+            }))
+            captured = []
+            with mock.patch.object(harness_commands, "dump_json", side_effect=captured.append):
+                harness_commands.cmd_start(SimpleNamespace(
+                    product_root=str(product), harness_root=str(ROOT), task_id=task_id,
+                    work_item="", kind="implementation", reason="", tier="strict",
+                    scope=["src"],
+                ))
+
+            self.assertEqual(captured[-1]["reason"], "TASK_START_WORK_ITEM_AMBIGUOUS")
+            self.assertEqual(captured[-1]["candidates"], [
+                {"source": f"{task_id}/planning_gate_pass.json", "id": "WI-gate",
+                 "provider": "feishu"},
+                {"source": f"{task_id}/task.json", "id": "WI-task", "provider": "feishu"},
+            ])
+            self.assertFalse((product / "harness-workspace/runs").exists())
+
     def test_git_changed_preserves_unicode_commit_paths(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
