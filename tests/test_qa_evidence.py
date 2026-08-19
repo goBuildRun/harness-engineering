@@ -13,12 +13,29 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / ".harness" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
-from qa_evidence_check import qa_candidates, validate_qa_json  # noqa: E402
+from qa_evidence_check import qa_candidates, report_passes, validate_qa_json  # noqa: E402
 from task_workspace import activate_task, qa_evidence_path, task_workspace_dir  # noqa: E402
 from workspace_paths import load_layout  # noqa: E402
 
 
 class QaEvidenceTest(unittest.TestCase):
+    def test_reports_accept_canonical_pass_decision(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            test_report = Path(tmp) / "TEST.md"
+            review_report = Path(tmp) / "REVIEW.md"
+            test_report.write_text("# TEST\n\n- 结论：`pass`\n", encoding="utf-8")
+            review_report.write_text("# REVIEW\n\n结论: PASS\n", encoding="utf-8")
+
+            self.assertTrue(report_passes(test_report, "TEST"))
+            self.assertTrue(report_passes(review_report, "REVIEW"))
+
+    def test_reports_reject_noncanonical_pass_prose(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            report = Path(tmp) / "TEST.md"
+            report.write_text("结论：pass after follow-up\n", encoding="utf-8")
+
+            self.assertFalse(report_passes(report, "TEST"))
+
     def test_activation_rejects_invalid_gate_identity_without_external_write(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product = Path(tmp) / "product"

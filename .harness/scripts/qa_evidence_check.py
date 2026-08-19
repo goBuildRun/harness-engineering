@@ -89,9 +89,16 @@ def report_candidates(root: Path, wid: str, task_dir: Path, task_id: str, suffix
 
 def report_passes(path: Path, kind: str) -> bool:
     text = path.read_text(encoding="utf-8", errors="ignore")
+    canonical_pass = bool(
+        re.search(r"^\s*(?:-\s*)?结论[:：]\s*`?pass`?\s*$", text, re.MULTILINE | re.IGNORECASE)
+    )
     if kind == "TEST":
-        return bool(re.search(r"-\s+\[[xX]\]\s+通过|结论[:：]\s*通过|TEST[_ ]?PASS|测试通过", text))
-    return bool(re.search(r"-\s+\[[xX]\]\s+可进入|结论[:：]\s*可进入|REVIEW[_ ]?PASS|审查通过", text))
+        return canonical_pass or bool(
+            re.search(r"-\s+\[[xX]\]\s+通过|结论[:：]\s*通过|TEST[_ ]?PASS|测试通过", text)
+        )
+    return canonical_pass or bool(
+        re.search(r"-\s+\[[xX]\]\s+可进入|结论[:：]\s*可进入|REVIEW[_ ]?PASS|审查通过", text)
+    )
 
 
 def validate_report(path: Path | None, kind: str, candidates: list[Path]) -> list[str]:
