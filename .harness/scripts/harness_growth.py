@@ -369,7 +369,8 @@ def main() -> int:
         layout.growth_reports_dir / f"{datetime.now(timezone.utc).strftime('%Y-%m-%d')}{'-' + work_item_id if work_item_id else ''}-GROWTH.md"
     )
     out.parent.mkdir(parents=True, exist_ok=True)
-    previous_reviews = reviewed_items(out) if out.is_file() else {}
+    previous_report = out if out.is_file() else latest_report(layout, work_item_id)
+    previous_reviews = reviewed_items(previous_report) if previous_report else {}
     out.write_text(
         render(layout, candidates, work_item_id, previous_reviews),
         encoding="utf-8",

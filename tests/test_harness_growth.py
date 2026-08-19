@@ -107,6 +107,37 @@ class HarnessGrowthTest(unittest.TestCase):
         self.assertEqual(refreshed.count("- **人工决定**：待定"), 1)
         self.assertEqual(refreshed.count("- **处理结果**：待处理"), 1)
 
+    def test_cross_day_scan_preserves_unchanged_reviewed_candidates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            write_project_config(product)
+            layout = load_layout(ROOT, product)
+            ensure(layout)
+            evidence = layout.summaries_dir / "WI-42-T1-SUMMARY.md"
+            evidence.write_text("- 经验沉淀：跨日扫描必须保留已审核决定。\n", encoding="utf-8")
+            old_report = layout.growth_reports_dir / "2026-06-21-WI-42-GROWTH.md"
+            old_report.write_text(
+                render(layout, collect(layout, work_item_id="WI-42"), work_item_id="WI-42")
+                .replace("- **人工决定**：待定", "- **人工决定**：lesson")
+                .replace("- **处理结果**：待处理", "- **处理结果**：已验证并沉淀"),
+                encoding="utf-8",
+            )
+            new_report = layout.growth_reports_dir / "2026-06-22-WI-42-GROWTH.md"
+            env = {**os.environ, "HARNESS_PRODUCT_ROOT": str(product)}
+            completed = subprocess.run(
+                [
+                    "bash", str(SCRIPT_DIR / "harness_growth.sh"), "scan",
+                    "--work-item", "WI-42", "--output", str(new_report),
+                ],
+                cwd=ROOT, env=env, text=True, capture_output=True, check=True,
+            )
+            refreshed = new_report.read_text(encoding="utf-8")
+
+        self.assertEqual(json.loads(completed.stdout)["decision"], "pass")
+        self.assertIn("- **人工决定**：lesson", refreshed)
+        self.assertIn("- **处理结果**：已验证并沉淀", refreshed)
+        self.assertNotIn("- **人工决定**：待定", refreshed)
+
     def test_read_only_status_does_not_create_workspace(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product = Path(tmp)
