@@ -111,7 +111,13 @@ def create_attestation(repo: Path, result: dict[str, Any], *, commit: str = "HEA
             "object": blob, "attestation": payload}
 
 
-def verify_attestation(repo: Path, *, commit: str = "HEAD", policy_digest: str = "") -> dict[str, Any]:
+def verify_attestation(
+    repo: Path,
+    *,
+    commit: str = "HEAD",
+    policy_digest: str = "",
+    task_id: str = "",
+) -> dict[str, Any]:
     sha = resolve_commit(repo, commit)
     if not sha:
         return {"decision": "block", "reason": "ATTESTATION_COMMIT_INVALID"}
@@ -131,6 +137,8 @@ def verify_attestation(repo: Path, *, commit: str = "HEAD", policy_digest: str =
         return {"decision": "block", "reason": "ATTESTATION_TREE_MISMATCH", "ref": ref}
     if payload.get("decision") != "pass":
         return {"decision": "block", "reason": "ATTESTATION_DECISION_BLOCK", "ref": ref}
+    if task_id and payload.get("task_id") != task_id:
+        return {"decision": "block", "reason": "ATTESTATION_TASK_MISMATCH", "ref": ref}
     if policy_digest and payload.get("policy_digest") != policy_digest:
         return {"decision": "block", "reason": "ATTESTATION_POLICY_MISMATCH", "ref": ref}
     try:
@@ -158,10 +166,16 @@ def main() -> int:
     parser.add_argument("--commit", default="HEAD")
     parser.add_argument("--result", default="")
     parser.add_argument("--policy-digest", default="")
+    parser.add_argument("--task-id", default="")
     args = parser.parse_args()
     repo = Path(args.repo).resolve()
     if args.action == "verify":
-        outcome = verify_attestation(repo, commit=args.commit, policy_digest=args.policy_digest)
+        outcome = verify_attestation(
+            repo,
+            commit=args.commit,
+            policy_digest=args.policy_digest,
+            task_id=args.task_id,
+        )
     else:
         try:
             result = json.loads(Path(args.result).read_text(encoding="utf-8"))

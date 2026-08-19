@@ -73,6 +73,10 @@ class HarnessAttestationTest(unittest.TestCase):
                 verify_attestation(repo, commit=first, policy_digest="policy-2")["reason"],
                 "ATTESTATION_POLICY_MISMATCH",
             )
+            self.assertEqual(
+                verify_attestation(repo, commit=first, task_id="task-2")["reason"],
+                "ATTESTATION_TASK_MISMATCH",
+            )
 
     def test_verifier_is_read_only(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -35,7 +35,10 @@ from harness_task_resolution import bind_active_task, valid_task_id
 
 def refresh_assurance(result: dict, product: Path, policy_digest: str, *, phase: str) -> None:
     refresh_result(result, product, policy_digest, phase=phase, verified_at=now(),
-                   attestation=verify_attestation(product, commit="HEAD", policy_digest=policy_digest))
+                   attestation=verify_attestation(
+                       product, commit="HEAD", policy_digest=policy_digest,
+                       task_id=str(result.get("task_id") or ""),
+                   ))
 
 
 def cmd_start(args: argparse.Namespace) -> int:
@@ -198,7 +201,9 @@ def cmd_status(args: argparse.Namespace) -> int:
     changed = changed_since_baseline(product, baseline) if baseline.is_file() else git_changed(product)
     current_subject = subject_for(product, changed)
     current_policy = policy_for(Path(args.harness_root).resolve(), product)
-    attestation = verify_attestation(product, commit="HEAD", policy_digest=current_policy)
+    attestation = verify_attestation(
+        product, commit="HEAD", policy_digest=current_policy, task_id=task_id,
+    )
     committed_result = attestation.get("result") or {}
     committed_current = (
         attestation.get("decision") == "pass"

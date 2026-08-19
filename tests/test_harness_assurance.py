@@ -291,7 +291,15 @@ class HarnessAssuranceTest(unittest.TestCase):
             subprocess.run(["git", "add", ".githooks"], cwd=product, check=True)
             result = default_result("task")
             result.update(state="validated", decision="pass")
-            refresh_assurance(result, product, "policy", phase="pre-commit-head")
+            with patch("harness_commands.verify_attestation") as verify:
+                verify.return_value = {"decision": "block", "reason": "ATTESTATION_MISSING"}
+                refresh_assurance(result, product, "policy", phase="pre-commit-head")
+                verify.assert_called_once_with(
+                    product,
+                    commit="HEAD",
+                    policy_digest="policy",
+                    task_id="task",
+                )
             self.assertEqual(result["assurance"]["level"], "guarded")
             self.assertEqual(result["assurance"]["acceptance_authority"], "git-hooks")
             self.assertEqual(result["assurance"]["head_attestation"]["phase"], "pre-commit-head")
