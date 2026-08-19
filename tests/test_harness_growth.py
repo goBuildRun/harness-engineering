@@ -283,6 +283,182 @@ class HarnessGrowthTest(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertIn("GROWTH_REVIEW_PENDING", result["reason"])
 
+    def test_apply_review_ignore_does_not_write_empty_knowledge_blocks(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            write_project_config(product)
+            layout = load_layout(ROOT, product)
+            ensure(layout)
+            original_context = layout.context_file.read_text(encoding="utf-8")
+            original_lessons = layout.lessons_file.read_text(encoding="utf-8")
+            report = layout.growth_reports_dir / "2026-06-22-GROWTH.md"
+            report.write_text(
+                """
+# GROWTH — Harness 自我成长报告
+
+### G-001
+
+- **来源**：`harness-workspace/evidence/summaries/demo-T1-SUMMARY.md`
+- **原文摘要**：仅描述本 Story 的阶段状态。
+- **建议分类**：lesson / context / architecture / tech-debt / ignore
+- **人工决定**：ignore
+- **处理结果**：仅对本次任务有效
+""".lstrip(),
+                encoding="utf-8",
+            )
+
+            result = apply_review(layout, report, allow_pending=False)
+            context = layout.context_file.read_text(encoding="utf-8")
+            lessons = layout.lessons_file.read_text(encoding="utf-8")
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["applied_items"], 0)
+        self.assertEqual(result["updated_files"], [])
+        self.assertEqual(context, original_context)
+        self.assertEqual(lessons, original_lessons)
+
+    def test_apply_review_cli_ignore_does_not_create_missing_knowledge_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            write_project_config(product)
+            report = product / "harness-workspace/evidence/growth-reports/2026-06-22-GROWTH.md"
+            report.parent.mkdir(parents=True)
+            report.write_text(
+                """
+# GROWTH — Harness 自我成长报告
+
+### G-001
+
+- **来源**：`harness-workspace/evidence/summaries/demo-T1-SUMMARY.md`
+- **原文摘要**：仅描述本 Story 的阶段状态。
+- **建议分类**：lesson / context / architecture / tech-debt / ignore
+- **人工决定**：ignore
+- **处理结果**：仅对本次任务有效
+""".lstrip(),
+                encoding="utf-8",
+            )
+            env = {**os.environ, "HARNESS_PRODUCT_ROOT": str(product)}
+
+            completed = subprocess.run(
+                [
+                    "bash",
+                    str(SCRIPT_DIR / "harness_growth.sh"),
+                    "apply-review",
+                    "--report",
+                    str(report),
+                ],
+                cwd=ROOT,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+            result = json.loads(completed.stdout)
+            context_exists = (product / "harness-workspace/knowledge/CONTEXT.md").exists()
+            lessons_exists = (product / "harness-workspace/knowledge/LESSONS.md").exists()
+
+        self.assertEqual(result["decision"], "pass")
+        self.assertEqual(result["applied_items"], 0)
+        self.assertEqual(result["updated_files"], [])
+        self.assertFalse(context_exists)
+        self.assertFalse(lessons_exists)
+
+    def test_apply_review_ignore_removes_only_existing_report_blocks(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            write_project_config(product)
+            layout = load_layout(ROOT, product)
+            ensure(layout)
+            report = layout.growth_reports_dir / "2026-06-22-GROWTH.md"
+            report.write_text(
+                """
+# GROWTH — Harness 自我成长报告
+
+### G-001
+
+- **来源**：`harness-workspace/evidence/summaries/demo-T1-SUMMARY.md`
+- **原文摘要**：后续任务默认复用 ProductClient。
+- **建议分类**：lesson / context / architecture / tech-debt / ignore
+- **人工决定**：context / lesson
+- **处理结果**：已确认
+""".lstrip(),
+                encoding="utf-8",
+            )
+            apply_review(layout, report, allow_pending=False)
+            layout.context_file.write_text(
+                layout.context_file.read_text(encoding="utf-8") + "\nUSER CONTEXT\n",
+                encoding="utf-8",
+            )
+            layout.lessons_file.write_text(
+                layout.lessons_file.read_text(encoding="utf-8") + "\nUSER LESSON\n",
+                encoding="utf-8",
+            )
+            report.write_text(
+                report.read_text(encoding="utf-8").replace(
+                    "- **人工决定**：context / lesson",
+                    "- **人工决定**：ignore",
+                ),
+                encoding="utf-8",
+            )
+
+            result = apply_review(layout, report, allow_pending=False)
+            context = layout.context_file.read_text(encoding="utf-8")
+            lessons = layout.lessons_file.read_text(encoding="utf-8")
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["applied_items"], 0)
+        self.assertEqual(
+            result["updated_files"],
+            [
+                "harness-workspace/knowledge/CONTEXT.md",
+                "harness-workspace/knowledge/LESSONS.md",
+            ],
+        )
+        self.assertNotIn("BEGIN harness-engineering:growth", context)
+        self.assertNotIn("BEGIN harness-engineering:growth", lessons)
+        self.assertIn("USER CONTEXT", context)
+        self.assertIn("USER LESSON", lessons)
+
+    def test_growth_markers_do_not_collide_for_distinct_report_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            write_project_config(product)
+            layout = load_layout(ROOT, product)
+            ensure(layout)
+            report_colon = layout.growth_reports_dir / "2026-06-22-WI:42-GROWTH.md"
+            report_dash = layout.growth_reports_dir / "2026-06-22-WI-42-GROWTH.md"
+
+            def reviewed_report(summary: str, decision: str = "context") -> str:
+                return f"""
+# GROWTH — Harness 自我成长报告
+
+### G-001
+
+- **来源**：`harness-workspace/evidence/summaries/demo-T1-SUMMARY.md`
+- **原文摘要**：{summary}
+- **建议分类**：lesson / context / architecture / tech-debt / ignore
+- **人工决定**：{decision}
+- **处理结果**：已确认
+""".lstrip()
+
+            report_colon.write_text(reviewed_report("COLON REPORT"), encoding="utf-8")
+            report_dash.write_text(reviewed_report("DASH REPORT"), encoding="utf-8")
+            apply_review(layout, report_colon, allow_pending=False)
+            apply_review(layout, report_dash, allow_pending=False)
+            before = layout.context_file.read_text(encoding="utf-8")
+
+            report_colon.write_text(
+                reviewed_report("COLON REPORT", decision="ignore"), encoding="utf-8"
+            )
+            apply_review(layout, report_colon, allow_pending=False)
+            after = layout.context_file.read_text(encoding="utf-8")
+
+        self.assertIn("COLON REPORT", before)
+        self.assertIn("DASH REPORT", before)
+        self.assertNotIn("COLON REPORT", after)
+        self.assertIn("DASH REPORT", after)
+        self.assertEqual(after.count("BEGIN harness-engineering:growth:context"), 1)
+
     def test_review_status_preserves_historical_pending_without_blocking_current_report(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product = Path(tmp)

@@ -319,7 +319,7 @@ def main() -> int:
     if work_item_id and not valid_task_id(work_item_id):
         emit("block", "TASK_ID_INVALID")
         return 0
-    if args.cmd in {"scan", "apply-review", "capture"}:
+    if args.cmd in {"scan", "capture"}:
         ensure(layout)
 
     candidates = collect(layout, work_item_id)

@@ -32,14 +32,12 @@ from harness_ci import cmd_ci_check
 from harness_task_binding import resolve_start_work_item, strengthen_resumed_task
 from harness_task_resolution import bind_active_task, valid_task_id
 
-
 def refresh_assurance(result: dict, product: Path, policy_digest: str, *, phase: str) -> None:
     refresh_result(result, product, policy_digest, phase=phase, verified_at=now(),
                    attestation=verify_attestation(
                        product, commit="HEAD", policy_digest=policy_digest,
                        task_id=str(result.get("task_id") or ""),
                    ))
-
 
 def cmd_start(args: argparse.Namespace) -> int:
     product, harness = Path(args.product_root).resolve(), Path(args.harness_root).resolve()
@@ -147,7 +145,6 @@ def cmd_amend(args: argparse.Namespace) -> int:
     dump_json({"decision": "pass", "reason": "TASK_BINDING_AMENDED", "result": result})
     return 0
 
-
 def cmd_usage_baseline(args: argparse.Namespace) -> int:
     product, harness = Path(args.product_root).resolve(), Path(args.harness_root).resolve()
     if not valid_task_id(args.task_id):
@@ -184,7 +181,6 @@ def cmd_usage_baseline(args: argparse.Namespace) -> int:
                "baseline_preserved": bool(previous)})
     return 0
 
-
 def cmd_status(args: argparse.Namespace) -> int:
     product = Path(args.product_root).resolve()
     task_id, candidates = resolve_task_id(product, args.task_id)
@@ -216,7 +212,6 @@ def cmd_status(args: argparse.Namespace) -> int:
     refresh_assurance(result, product, current_policy, phase="status-head")
     dump_json({"decision": "pass", "reason": "TASK_STATUS", "result": result})
     return 0
-
 
 def cmd_finish(args: argparse.Namespace) -> int:
     started = time.monotonic()

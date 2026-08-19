@@ -2,10 +2,11 @@
 """Review and apply Harness growth candidates to product knowledge."""
 from __future__ import annotations
 
+import hashlib
 import re
 from pathlib import Path
 
-from harness_knowledge import ensure
+from harness_knowledge import template_path
 from workspace_paths import Phase0Layout
 
 PENDING_RE = re.compile(r"人工决定\*\*[：:]\s*待定|处理结果\*\*[：:]\s*待处理")
@@ -20,10 +21,25 @@ def latest_report(layout: Phase0Layout) -> Path | None:
     return reports[-1] if reports else None
 
 
-def managed_block(kind: str, report_rel: str, body: str) -> str:
-    key = re.sub(r"[^A-Za-z0-9_.-]+", "-", report_rel)
+def legacy_marker_key(report_rel: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_.-]+", "-", report_rel)
+
+
+def marker_key(report_rel: str) -> str:
+    readable = legacy_marker_key(report_rel).strip("-")[:80]
+    digest = hashlib.sha256(report_rel.encode("utf-8")).hexdigest()
+    return f"{readable}-{digest}" if readable else digest
+
+
+def marker_lines(kind: str, report_rel: str, *, legacy: bool = False) -> tuple[str, str]:
+    key = legacy_marker_key(report_rel) if legacy else marker_key(report_rel)
     begin = f"<!-- BEGIN harness-engineering:growth:{kind}:{key} -->"
     end = f"<!-- END harness-engineering:growth:{kind}:{key} -->"
+    return begin, end
+
+
+def managed_block(kind: str, report_rel: str, body: str) -> str:
+    begin, end = marker_lines(kind, report_rel)
     return f"{begin}\n{body.rstrip()}\n{end}\n"
 
 
@@ -35,6 +51,45 @@ def upsert_block(text: str, block: str) -> str:
         _old, after = rest.split(last, 1)
         return before.rstrip() + "\n\n" + block.rstrip() + "\n" + after.lstrip("\n")
     return text.rstrip() + "\n\n" + block
+
+
+def remove_marked_block(
+    text: str,
+    first: str,
+    last: str,
+    *,
+    expected_report_rel: str = "",
+) -> str:
+    if first not in text or last not in text:
+        return text
+    before, rest = text.split(first, 1)
+    old, after = rest.split(last, 1)
+    if expected_report_rel and f"`{expected_report_rel}`" not in old:
+        return text
+    if after.strip():
+        return before.rstrip() + "\n\n" + after.lstrip("\n")
+    return before.rstrip() + "\n"
+
+
+def remove_block(text: str, kind: str, report_rel: str) -> str:
+    first, last = marker_lines(kind, report_rel)
+    updated = remove_marked_block(text, first, last)
+    legacy_first, legacy_last = marker_lines(kind, report_rel, legacy=True)
+    if (legacy_first, legacy_last) != (first, last):
+        updated = remove_marked_block(
+            updated,
+            legacy_first,
+            legacy_last,
+            expected_report_rel=report_rel,
+        )
+    return updated
+
+
+def knowledge_base(layout: Phase0Layout, path: Path, template: str) -> tuple[str, bool]:
+    if path.is_file():
+        return path.read_text(encoding="utf-8"), True
+    source = template_path(layout, template)
+    return (source.read_text(encoding="utf-8") if source.is_file() else ""), False
 
 
 def resolve_report(layout: Phase0Layout, raw: str) -> Path | None:
@@ -168,22 +223,55 @@ def apply_review(layout: Phase0Layout, report: Path | None, allow_pending: bool)
             "reason": f"GROWTH_REVIEW_PENDING: {pending_count} pending fields; rerun with --allow-pending for draft apply",
         }
 
-    ensure(layout)
     report_rel = layout.rel(target)
     items = reviewed_items(text, allow_pending)
-    context_body = build_context_body(layout, target, items)
-    lessons_body = build_lessons_body(layout, target, items)
+    context_items = [
+        item
+        for item in items
+        if any(cat in item["categories"].split(",") for cat in ("context", "architecture"))
+    ]
+    lesson_items = [
+        item
+        for item in items
+        if any(cat in item["categories"].split(",") for cat in ("lesson", "tech-debt"))
+    ]
 
-    context_text = layout.context_file.read_text(encoding="utf-8") if layout.context_file.is_file() else ""
-    lessons_text = layout.lessons_file.read_text(encoding="utf-8") if layout.lessons_file.is_file() else ""
-    layout.context_file.write_text(upsert_block(context_text, managed_block("context", report_rel, context_body)), encoding="utf-8")
-    layout.lessons_file.write_text(upsert_block(lessons_text, managed_block("lessons", report_rel, lessons_body)), encoding="utf-8")
+    context_text, context_exists = knowledge_base(layout, layout.context_file, "context.md")
+    lessons_text, lessons_exists = knowledge_base(layout, layout.lessons_file, "lessons.md")
+    context_without_legacy = remove_block(context_text, "context", report_rel)
+    lessons_without_legacy = remove_block(lessons_text, "lessons", report_rel)
+    next_context = (
+        upsert_block(
+            context_without_legacy,
+            managed_block("context", report_rel, build_context_body(layout, target, items)),
+        )
+        if context_items
+        else context_without_legacy
+    )
+    next_lessons = (
+        upsert_block(
+            lessons_without_legacy,
+            managed_block("lessons", report_rel, build_lessons_body(layout, target, items)),
+        )
+        if lesson_items
+        else lessons_without_legacy
+    )
+    updated_files: list[str] = []
+    if (context_items and not context_exists) or next_context != context_text:
+        layout.context_file.parent.mkdir(parents=True, exist_ok=True)
+        layout.context_file.write_text(next_context, encoding="utf-8")
+        updated_files.append(layout.rel(layout.context_file))
+    if (lesson_items and not lessons_exists) or next_lessons != lessons_text:
+        layout.lessons_file.parent.mkdir(parents=True, exist_ok=True)
+        layout.lessons_file.write_text(next_lessons, encoding="utf-8")
+        updated_files.append(layout.rel(layout.lessons_file))
     return {
         "ok": True,
         "reason": "GROWTH_REVIEW_APPLIED",
         "report": report_rel,
         "pending": pending_count,
         "applied_items": len(items),
+        "updated_files": updated_files,
         "context_file": layout.rel(layout.context_file),
         "lessons_file": layout.rel(layout.lessons_file),
     }
