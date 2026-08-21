@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from production_evidence_policy import from_spec_metadata
 from work_item_providers import (
     ACCEPTANCE_ITEM_RE,
     WorkItemProvider,
@@ -175,6 +176,7 @@ def work_item_contract_from_spec(
             f"WORK_ITEM_METADATA_INVALID: expected mapping, got {type(raw_nested).__name__}"
         )
     nested = raw_nested or {}
+    production_evidence = from_spec_metadata(meta, string_value=_metadata_string)
     parent_values = {
         value
         for value in (
@@ -223,6 +225,7 @@ def work_item_contract_from_spec(
         "parent_id": parent_id,
         "effective_parent_id": effective_parent,
         "expected_parent_id": expected_parent,
+        "production_evidence": production_evidence,
     }
 
 
@@ -392,5 +395,6 @@ def gate_check(harness_root: Path, level: str, task_dir: str | None) -> dict[str
                 "verify_reason": reason,
                 "expected_parent_id": expected_parent,
             }
-
+            if contract["production_evidence"]:
+                work_item["production_evidence"] = contract["production_evidence"]
     return {"ok": not failures, "failures": failures, "work_item": work_item, "provider": provider.name}

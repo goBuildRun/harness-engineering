@@ -291,6 +291,55 @@ class HarnessGatesTest(unittest.TestCase):
             self.assertEqual(stale["checks"]["strict_evidence"]["decision"], "block")
             self.assertEqual(stale["decision"], "block")
 
+    def test_synthetic_canary_cannot_satisfy_declared_real_provider_requirement(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            receipt = Path(tmp) / "strict.json"
+            base_receipt = {
+                "subject_digest": "subject-a",
+                "browser_qa": {"decision": "pass"},
+                "deployment": {"decision": "pass"},
+                "rollback": {"decision": "pass"},
+            }
+            receipt.write_text(json.dumps({
+                **base_receipt,
+                "provider_acceptance": {
+                    "decision": "pass", "provider_mode": "synthetic",
+                    "synthetic_only": True, "evidence_ref": "canary.json",
+                },
+            }))
+            completed = mock.Mock(returncode=0, stdout='{"decision":"pass","reason":"OK"}')
+            credential = mock.Mock()
+            credential.read_text.return_value = json.dumps({
+                "decision": "pass",
+                "work_item": {
+                    "production_evidence": {"provider_mode": "real_required"},
+                },
+            })
+            with mock.patch("harness_gates.run_process_group", return_value=completed), \
+                    mock.patch("harness_gates.active_planning_gate_path", return_value=credential), \
+                    mock.patch.dict(os.environ, {"HARNESS_STRICT_EVIDENCE": str(receipt)}):
+                synthetic = run_gate_plan(
+                    ROOT, ROOT, tier="strict", subject_digest="subject-a", policy_digest="policy",
+                )
+                receipt.write_text(json.dumps({
+                    **base_receipt,
+                    "provider_acceptance": {
+                        "decision": "pass", "provider_mode": "real",
+                        "synthetic_only": False,
+                        "evidence_ref": "evidence/production/provider-receipt.json",
+                    },
+                }))
+                real = run_gate_plan(
+                    ROOT, ROOT, tier="strict", subject_digest="subject-a", policy_digest="policy",
+                )
+
+            self.assertEqual(
+                synthetic["checks"]["strict_evidence"]["reason"],
+                "STRICT_REAL_PROVIDER_EVIDENCE_REQUIRED",
+            )
+            self.assertEqual(synthetic["decision"], "block")
+            self.assertEqual(real["checks"]["strict_evidence"]["decision"], "pass")
+
 
 if __name__ == "__main__":
     unittest.main()

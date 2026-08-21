@@ -749,7 +749,7 @@ HARNESS_USAGE_RECEIPT=/absolute/path/to/usage-receipt.json bash .harness/scripts
 
 GC telemetry 同样要求非空 `provider` / `model`，以及真实 `agent_calls`、`context_chars`、`duration_ms`；缺身份或使用布尔值/负数时返回 `GC_TELEMETRY_INVALID`。内部 `harness_metrics.py` 可从任务 `result.json` 目录只读汇总 rollout 指标；baseline 含 `unknown` 或 lite 样本少于 5 时只报告 `insufficient_data`。
 
-结构化 gate runner 按 tier 将 planning、structure、QA、knowledge、growth 和 quality 分别写入 `checks`。standard 命中 `.tsx/.jsx/.vue/.svelte/.html/.css/.scss` 或 frontend/web/ui/pages/components 路径时自动要求 `HARNESS_BROWSER_QA_URL` 并执行浏览器审计；strict 还要求 `HARNESS_STRICT_EVIDENCE` 指向绑定当前 subject、包含 browser/deployment/rollback pass 的 JSON receipt。产品可在 `quality.commands.lint` 使用 `python-import-boundaries` builtin 声明 `paths` 和 `boundaries: [{from, forbid}]`，通用默认值不内置产品目录。
+结构化 gate runner 按 tier 将 planning、structure、QA、knowledge、growth 和 quality 分别写入 `checks`。standard 命中 `.tsx/.jsx/.vue/.svelte/.html/.css/.scss` 或 frontend/web/ui/pages/components 路径时自动要求 `HARNESS_BROWSER_QA_URL` 并执行浏览器审计；strict 还要求 `HARNESS_STRICT_EVIDENCE` 指向绑定当前 subject、包含 browser/deployment/rollback pass 的 JSON receipt。Product Spec 声明 `production_evidence.provider_mode: real_required` 时，Planning Gate 会固化该要求，strict receipt 还必须包含 `provider_acceptance` 的 `decision: pass`、`provider_mode: real`、`synthetic_only: false` 和非空 `evidence_ref`；合成 canary 只能作为补充证据。产品可在 `quality.commands.lint` 使用 `python-import-boundaries` builtin 声明 `paths` 和 `boundaries: [{from, forbid}]`，通用默认值不内置产品目录。
 
 每个外部 gate 另有 orchestration watchdog，默认 `HARNESS_GATE_TIMEOUT_SECONDS=3600`。该值是每个 gate（包括 quality gate 内全部命令）的累计上限；命令较多或单命令 timeout 更长时，产品必须显式提高它。超时会终止 gate 的整个进程组，并返回绑定 gate 名称和实际 timeout 的 `GATE_TIMEOUT` block；该结果不可被 knowledge/Growth 自动同步或重试覆盖。
 

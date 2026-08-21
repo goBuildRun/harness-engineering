@@ -8,6 +8,9 @@ bmad_skills:
   - bmad-validate-prd
 bmad_completed_at: "YYYY-MM-DD"
 spec_level: L2
+# Uncomment when production acceptance requires a real Provider call:
+# production_evidence:
+#   provider_mode: real_required
 ---
 
 # 功能名

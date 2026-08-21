@@ -106,20 +106,40 @@ def _run_gate_command(command: list[str], *, gate: str, cwd: Path,
     return _payload(completed.stdout, completed.returncode), completed.returncode
 
 
-def _strict_evidence(subject_digest: str) -> dict[str, Any]:
+def _strict_evidence(subject_digest: str, production_policy: Any = None) -> dict[str, Any]:
     path = Path(os.environ.get("HARNESS_STRICT_EVIDENCE", ""))
     try:
         receipt = json.loads(path.read_text(encoding="utf-8")) if str(path) != "." else {}
     except (OSError, json.JSONDecodeError):
         receipt = {}
     required = ("browser_qa", "deployment", "rollback")
-    valid = (
+    base_valid = (
         receipt.get("subject_digest") == subject_digest
         and all((receipt.get(name) or {}).get("decision") == "pass" for name in required)
     )
+    if production_policy is not None and not isinstance(production_policy, dict):
+        return {"decision": "block", "reason": "STRICT_PRODUCTION_POLICY_INVALID"}
+    provider_mode = str((production_policy or {}).get("provider_mode") or "").strip()
+    if provider_mode not in {"", "synthetic_allowed", "real_required"}:
+        return {"decision": "block", "reason": "STRICT_PRODUCTION_POLICY_INVALID"}
+    if base_valid and provider_mode == "real_required":
+        provider_acceptance = receipt.get("provider_acceptance") or {}
+        provider_valid = (
+            isinstance(provider_acceptance, dict)
+            and provider_acceptance.get("decision") == "pass"
+            and provider_acceptance.get("provider_mode") == "real"
+            and provider_acceptance.get("synthetic_only") is False
+            and isinstance(provider_acceptance.get("evidence_ref"), str)
+            and bool(provider_acceptance["evidence_ref"].strip())
+        )
+        if not provider_valid:
+            return {
+                "decision": "block",
+                "reason": "STRICT_REAL_PROVIDER_EVIDENCE_REQUIRED",
+            }
     return {
-        "decision": "pass" if valid else "block",
-        "reason": "STRICT_EVIDENCE_OK" if valid else "STRICT_EVIDENCE_REQUIRED",
+        "decision": "pass" if base_valid else "block",
+        "reason": "STRICT_EVIDENCE_OK" if base_valid else "STRICT_EVIDENCE_REQUIRED",
     }
 
 
@@ -219,6 +239,12 @@ def run_gate_plan(harness: Path, product: Path, *, tier: str,
                   read_only: bool = False) -> dict[str, Any]:
     if ci_task_id and tier != "lite":
         prepare_ci_task(harness, product, ci_task_id)
+    layout = load_layout(harness, product)
+    planning_gate = active_planning_gate_path(layout)
+    try:
+        planning_credential = json.loads(planning_gate.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        planning_credential = {}
     commands = _commands(harness)
     required_gates = list(TIER_GATES[tier])
     if tier == "standard" and browser_required(changed_files or []):
@@ -234,20 +260,19 @@ def run_gate_plan(harness: Path, product: Path, *, tier: str,
     for name in required_gates:
         started = time.monotonic()
         if name == "planning":
-            gate = active_planning_gate_path(load_layout(harness, product))
-            try:
-                credential = json.loads(gate.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                credential = {}
             payload = {
-                "decision": "pass" if credential.get("decision") == "pass" else "block",
-                "reason": "PLANNING_CREDENTIAL_OK" if credential.get("decision") == "pass"
+                "decision": "pass" if planning_credential.get("decision") == "pass" else "block",
+                "reason": "PLANNING_CREDENTIAL_OK" if planning_credential.get("decision") == "pass"
                 else "NO_PLANNING_GATE",
             }
             returncode = 0
-            command = ["read", str(gate)]
+            command = ["read", str(planning_gate)]
         elif name == "strict_evidence":
-            payload = _strict_evidence(subject_digest)
+            work_item = planning_credential.get("work_item") or {}
+            production_policy = (
+                work_item.get("production_evidence") if isinstance(work_item, dict) else None
+            )
+            payload = _strict_evidence(subject_digest, production_policy)
             returncode = 0
             command = ["read", "HARNESS_STRICT_EVIDENCE"]
         elif name == "browser_qa":

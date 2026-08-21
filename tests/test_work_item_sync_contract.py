@@ -510,6 +510,52 @@ work_item_parent_id: epic_parent_123
             with self.assertRaisesRegex(ValueError, "WORK_ITEM_PARENT_INVALID"):
                 work_item_contract_from_spec(spec)
 
+    def test_real_provider_requirement_is_carried_into_verified_work_item(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            product = root / "product"
+            workspace = product / "harness-workspace"
+            task_dir = workspace / "planning" / "tasks" / "task"
+            spec = workspace / "planning" / "product-specs" / "story.md"
+            task_dir.mkdir(parents=True)
+            spec.parent.mkdir(parents=True)
+            spec.write_text(
+                "---\nspec_level: L3\nwork_item_type: story\n"
+                "work_item_parent_id: epic_parent_123\n"
+                "production_evidence:\n  provider_mode: real_required\n"
+                "---\n\n# Story\n",
+                encoding="utf-8",
+            )
+            (task_dir / "00-任务卡.md").write_text(
+                "Work Item ID: task_123456\n"
+                "产品规格链接: `harness-workspace/planning/product-specs/story.md`\n",
+                encoding="utf-8",
+            )
+            provider = PlacementAwareCaptureProvider()
+            with (
+                patch("work_item_contract.load_config", return_value={"requirements": {"L3": True}}),
+                patch("work_item_contract.get_provider", return_value=provider),
+                patch("work_item_contract.active_product_root", return_value=product),
+            ):
+                result = gate_check(root, "L3", str(task_dir))
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(
+            result["work_item"]["production_evidence"],
+            {"provider_mode": "real_required"},
+        )
+
+    def test_unknown_production_provider_mode_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            spec = Path(tmp) / "invalid-production-evidence.md"
+            spec.write_text(
+                "---\nproduction_evidence:\n  provider_mode: inferred\n---\n\n# Invalid\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "PRODUCTION_EVIDENCE_PROVIDER_MODE_INVALID"):
+                work_item_contract_from_spec(spec)
+
     def test_partial_multi_item_sync_persists_each_created_id(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             spec = Path(tmp) / "partial.md"
