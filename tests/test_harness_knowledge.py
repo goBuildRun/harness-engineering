@@ -209,6 +209,25 @@ linked_spec: product-specs/demo.md
         self.assertFalse(stale_after_change["ok"])
         self.assertEqual(1, stale_after_change["product_specs"])
 
+    def test_sync_planning_indexes_collected_artifacts_beyond_twenty(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            write_project_config(product)
+            artifacts = product / "harness-workspace" / "bmad-output" / "planning-artifacts"
+            artifacts.mkdir(parents=True)
+            for index in range(21):
+                (artifacts / f"artifact-{index:02d}.md").write_text(
+                    f"# Planning Artifact {index:02d}\n",
+                    encoding="utf-8",
+                )
+
+            layout = load_layout(ROOT, product)
+            result = sync_planning(layout)
+            context = layout.context_file.read_text(encoding="utf-8")
+
+        self.assertEqual(21, result["bmad_artifacts"])
+        self.assertIn("Planning Artifact 20", context)
+
 
 if __name__ == "__main__":
     unittest.main()

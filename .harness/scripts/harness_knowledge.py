@@ -156,7 +156,7 @@ def build_planning_context_body(layout: Phase0Layout) -> tuple[str, dict[str, in
     lines.extend(["", "### BMAD 原生规划 / 设计产物摘要", ""])
     if raw_artifacts:
         lines.extend(["| 原生产物 | 类型 | 摘要 |", "|----------|------|------|"])
-        for path in raw_artifacts[:20]:
+        for path in raw_artifacts:
             text = read_text(path, 80_000)
             meta, body = parse_front_matter(text)
             title = first_heading(body, path.stem)
