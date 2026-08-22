@@ -47,12 +47,22 @@ class ProviderLifecycleTest(unittest.TestCase):
             self.assertNotIn("run_id", receipt)
             self.assertEqual(receipt["commit_sha"], commit)
             self.assertEqual(validate_receipt(
-                receipt, work_item_id="WI-42", repo=repo, allowed_signers=allowed)[0], True)
+                receipt, work_item_id="WI-42", expected_ref="refs/heads/main",
+                repo=repo, allowed_signers=allowed)[0], True)
             receipt["accepted_ref"] = "refs/heads/other"
             self.assertEqual(validate_receipt(
-                receipt, work_item_id="WI-42", repo=repo, allowed_signers=allowed)[1],
-                "ACCEPTANCE_SIGNATURE_INVALID",
+                receipt, work_item_id="WI-42", expected_ref="refs/heads/main",
+                repo=repo, allowed_signers=allowed)[1],
+                "ACCEPTANCE_REF_MISMATCH",
             )
+
+            wrong_ref_receipt = build_receipt(
+                repo, commit=commit, work_item_id="WI-42", provider="jira",
+                authority="git-receive", accepted_ref="refs/heads/other", signing_key=key,
+            )
+            self.assertEqual(validate_receipt(
+                wrong_ref_receipt, work_item_id="WI-42", expected_ref="refs/heads/main",
+                repo=repo, allowed_signers=allowed)[1], "ACCEPTANCE_REF_MISMATCH")
 
             valid_receipt = build_receipt(
                 repo, commit=commit, work_item_id="WI-42", provider="jira",
@@ -60,7 +70,8 @@ class ProviderLifecycleTest(unittest.TestCase):
             )
             subprocess.run(["git", "update-ref", "-d", "refs/heads/main"], cwd=repo, check=True)
             self.assertEqual(validate_receipt(
-                valid_receipt, work_item_id="WI-42", repo=repo, allowed_signers=allowed)[1],
+                valid_receipt, work_item_id="WI-42", expected_ref="refs/heads/main",
+                repo=repo, allowed_signers=allowed)[1],
                 "ACCEPTANCE_REF_MISMATCH",
             )
 
@@ -88,7 +99,8 @@ class ProviderLifecycleTest(unittest.TestCase):
                 "%Y-%m-%dT%H:%M:%SZ"
             )
             self.assertEqual(validate_receipt(
-                receipt, work_item_id="WI-42", repo=repo, allowed_signers=allowed
+                receipt, work_item_id="WI-42", expected_ref="refs/heads/main",
+                repo=repo, allowed_signers=allowed
             )[1], "ACCEPTANCE_RECEIPT_EXPIRED")
 
     def test_terminal_receipt_rejects_wrong_item_or_local_authority(self) -> None:
@@ -103,13 +115,15 @@ class ProviderLifecycleTest(unittest.TestCase):
             repo = Path(tmp)
             allowed = repo / "missing"
             self.assertEqual(validate_receipt(
-                receipt, work_item_id="WI-42", repo=repo, allowed_signers=allowed)[1],
+                receipt, work_item_id="WI-42", expected_ref="refs/heads/main",
+                repo=repo, allowed_signers=allowed)[1],
                 "ACCEPTANCE_AUTHORITY_INVALID",
             )
             receipt["authority"] = "git-receive"
             receipt["signature"] = "fake"
             self.assertEqual(validate_receipt(
-                receipt, work_item_id="WI-43", repo=repo, allowed_signers=allowed)[1],
+                receipt, work_item_id="WI-43", expected_ref="refs/heads/main",
+                repo=repo, allowed_signers=allowed)[1],
                 "ACCEPTANCE_WORK_ITEM_MISMATCH",
             )
 

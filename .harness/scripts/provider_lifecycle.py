@@ -72,7 +72,7 @@ def build_receipt(repo: Path, *, commit: str, work_item_id: str, provider: str,
     return sign_receipt(receipt, signing_key)
 
 
-def validate_receipt(receipt: Any, *, work_item_id: str, repo: Path,
+def validate_receipt(receipt: Any, *, work_item_id: str, expected_ref: str, repo: Path,
                      allowed_signers: Path) -> tuple[bool, str]:
     if not isinstance(receipt, dict) or receipt.get("schema") != "harness-acceptance-receipt-v1":
         return False, "ACCEPTANCE_RECEIPT_REQUIRED"
@@ -84,6 +84,10 @@ def validate_receipt(receipt: Any, *, work_item_id: str, repo: Path,
         return False, "ACCEPTANCE_RECEIPT_INVALID"
     if receipt.get("work_item_id") != work_item_id:
         return False, "ACCEPTANCE_WORK_ITEM_MISMATCH"
+    if not expected_ref.startswith("refs/"):
+        return False, "ACCEPTANCE_EXPECTED_REF_REQUIRED"
+    if receipt.get("accepted_ref") != expected_ref:
+        return False, "ACCEPTANCE_REF_MISMATCH"
     try:
         expires_at = datetime.strptime(str(receipt["expires_at"]), "%Y-%m-%dT%H:%M:%SZ").replace(
             tzinfo=timezone.utc

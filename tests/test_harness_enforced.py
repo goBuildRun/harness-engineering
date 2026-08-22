@@ -95,7 +95,8 @@ class HarnessEnforcedTest(unittest.TestCase):
             self.assertEqual(accepted.returncode, 0, accepted.stderr)
             receipt = json.loads((receipts / f"{commit}.json").read_text(encoding="utf-8"))
             self.assertEqual(validate_receipt(
-                receipt, work_item_id="WI-42", repo=remote, allowed_signers=allowed,
+                receipt, work_item_id="WI-42", expected_ref="refs/heads/main",
+                repo=remote, allowed_signers=allowed,
             ), (True, "ACCEPTANCE_RECEIPT_VALID"))
 
     def test_audit_fails_after_hook_tampering(self) -> None:

@@ -320,7 +320,8 @@ class HarnessReceiveTest(unittest.TestCase):
             self.assertEqual(receipt["work_item_id"], "WI-42")
             self.assertEqual(receipt["provider"], "jira")
             self.assertEqual(validate_receipt(
-                receipt, work_item_id="WI-42", repo=repo, allowed_signers=allowed
+                receipt, work_item_id="WI-42", expected_ref="refs/heads/main",
+                repo=repo, allowed_signers=allowed
             ), (True, "ACCEPTANCE_RECEIPT_VALID"))
 
     def test_acceptance_does_not_sign_unbound_or_unverified_commit(self) -> None:

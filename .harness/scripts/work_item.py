@@ -136,7 +136,8 @@ def cmd_close(args: argparse.Namespace) -> int:
             emit("block", f"ACCEPTANCE_PRODUCT_ROOT_INVALID: {exc}", work_item_id=args.id)
             return 0
         ok, reason = validate_receipt(
-            receipt, work_item_id=args.id, repo=product_root,
+            receipt, work_item_id=args.id, expected_ref=(args.accepted_ref or "").strip(),
+            repo=product_root,
             allowed_signers=Path(allowed) if allowed else Path("/nonexistent"),
         )
         if not ok:
@@ -324,6 +325,7 @@ def main() -> int:
     p_close.add_argument("--status", default="ready_to_release")
     p_close.add_argument("--note", default="")
     p_close.add_argument("--lifecycle-receipt", default="")
+    p_close.add_argument("--accepted-ref", default="")
     p_close.set_defaults(func=cmd_close)
 
     p_update_description = sub.add_parser("update-description")
