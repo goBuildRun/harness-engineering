@@ -17,6 +17,14 @@ IMPORT_RE = re.compile(
 )
 
 
+def _clean_git_env() -> dict[str, str]:
+    environment = dict(os.environ)
+    for name in ("GIT_DIR", "GIT_WORK_TREE", "GIT_OBJECT_DIRECTORY",
+                 "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_QUARANTINE_PATH"):
+        environment.pop(name, None)
+    return environment
+
+
 def direct_dependencies(repo: Path, changed: list[str]) -> list[str]:
     dependencies: set[str] = set()
     for rel in changed:
@@ -38,16 +46,17 @@ def direct_dependencies(repo: Path, changed: list[str]) -> list[str]:
 def actual_diff(repo: Path, changed: list[str], base_ref: str = "HEAD") -> str:
     if not changed:
         return ""
+    environment = _clean_git_env()
     completed = subprocess.run(
         ["git", "diff", "--no-ext-diff", "--binary", base_ref, "--", *changed],
         cwd=repo, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-        text=True, errors="replace", check=False,
+        text=True, errors="replace", check=False, env=environment,
     )
     patch = completed.stdout if completed.returncode == 0 else ""
     try:
         untracked = set(subprocess.check_output(
             ["git", "ls-files", "--others", "--exclude-standard"],
-            cwd=repo, text=True, stderr=subprocess.DEVNULL,
+            cwd=repo, text=True, stderr=subprocess.DEVNULL, env=environment,
         ).splitlines())
     except (FileNotFoundError, subprocess.CalledProcessError):
         untracked = set()
