@@ -13,18 +13,12 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / ".harness" / "scripts"))
 
-from harness_gc_context import _clean_git_env, build_gc_context  # noqa: E402
+from harness_gc_context import GIT_LOCAL_ENV_VARS, _clean_git_env, build_gc_context  # noqa: E402
 
 
 class HarnessGcContextTest(unittest.TestCase):
     def test_clean_git_env_removes_each_receive_variable_and_preserves_others(self) -> None:
-        receive_variables = {
-            "GIT_DIR": ".",
-            "GIT_WORK_TREE": "/tmp/wrong-worktree",
-            "GIT_OBJECT_DIRECTORY": "/tmp/quarantine",
-            "GIT_ALTERNATE_OBJECT_DIRECTORIES": "/tmp/alternates",
-            "GIT_QUARANTINE_PATH": "/tmp/quarantine",
-        }
+        receive_variables = {name: f"/tmp/{name.lower()}" for name in GIT_LOCAL_ENV_VARS}
         with patch.dict(
             os.environ,
             {**receive_variables, "HARNESS_GC_CONTEXT_MAX_CHARS": "12345"},
@@ -81,6 +75,32 @@ class HarnessGcContextTest(unittest.TestCase):
                 )
             self.assertIn("+print('changed')", context["actual_diff"])
             self.assertIn("print('new')", context["actual_diff"])
+
+    def test_context_preserves_unicode_untracked_path_and_executable_patch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.email", "harness@example.invalid"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.name", "Harness Test"], cwd=repo, check=True)
+            (repo / "base.txt").write_text("base\n")
+            subprocess.run(["git", "add", "base.txt"], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-qm", "base"], cwd=repo, check=True)
+            script = repo / "任务脚本.sh"
+            script.write_text("#!/bin/sh\necho ok\n")
+            script.chmod(0o755)
+
+            context, _ = build_gc_context(
+                {"task_id": "task-1", "policy_digest": "policy-a"},
+                {"triggers": []},
+                ["任务脚本.sh"],
+                repo,
+            )
+
+            patch_text = context["actual_diff"]
+            self.assertIn("new file mode 100755", patch_text)
+            self.assertIn("+#!/bin/sh", patch_text)
+            self.assertIn("+echo ok", patch_text)
+            self.assertTrue("任务脚本.sh" in patch_text or "\\344" in patch_text)
 
     def test_context_over_budget_fails_without_truncating_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as tmp, patch.dict(

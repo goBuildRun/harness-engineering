@@ -15,12 +15,29 @@ IMPORT_RE = re.compile(
     r"^(?:from\s+([\w.]+)\s+import|import\s+([\w.]+)|.*from\s+['\"]([^'\"]+)['\"])",
     re.MULTILINE,
 )
+GIT_LOCAL_ENV_VARS = (
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_COMMON_DIR",
+    "GIT_CONFIG",
+    "GIT_CONFIG_COUNT",
+    "GIT_CONFIG_PARAMETERS",
+    "GIT_DIR",
+    "GIT_GRAFT_FILE",
+    "GIT_IMPLICIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_NO_REPLACE_OBJECTS",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_PREFIX",
+    "GIT_QUARANTINE_PATH",
+    "GIT_REPLACE_REF_BASE",
+    "GIT_SHALLOW_FILE",
+    "GIT_WORK_TREE",
+)
 
 
 def _clean_git_env() -> dict[str, str]:
     environment = dict(os.environ)
-    for name in ("GIT_DIR", "GIT_WORK_TREE", "GIT_OBJECT_DIRECTORY",
-                 "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_QUARANTINE_PATH"):
+    for name in GIT_LOCAL_ENV_VARS:
         environment.pop(name, None)
     return environment
 
@@ -54,20 +71,28 @@ def actual_diff(repo: Path, changed: list[str], base_ref: str = "HEAD") -> str:
     )
     patch = completed.stdout if completed.returncode == 0 else ""
     try:
-        untracked = set(subprocess.check_output(
-            ["git", "ls-files", "--others", "--exclude-standard"],
-            cwd=repo, text=True, stderr=subprocess.DEVNULL, env=environment,
-        ).splitlines())
+        raw_untracked = subprocess.check_output(
+            ["git", "ls-files", "-z", "--others", "--exclude-standard"],
+            cwd=repo, stderr=subprocess.DEVNULL, env=environment,
+        )
+        untracked = {
+            os.fsdecode(value) for value in raw_untracked.split(b"\0") if value
+        }
     except (FileNotFoundError, subprocess.CalledProcessError):
         untracked = set()
     additions: list[str] = []
     for rel in changed:
-        path = repo / rel
-        if rel not in untracked or not path.is_file():
+        if rel not in untracked or not (repo / rel).is_file():
             continue
-        raw = path.read_bytes()
-        body = raw.decode("utf-8", errors="replace") if b"\0" not in raw else f"<binary {len(raw)} bytes>"
-        additions.append(f"diff --git a/{rel} b/{rel}\nnew file\n--- /dev/null\n+++ b/{rel}\n{body}")
+        completed = subprocess.run(
+            ["git", "diff", "--no-index", "--no-ext-diff", "--binary", "--",
+             "/dev/null", rel],
+            cwd=repo, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            text=True, errors="replace", check=False, env=environment,
+        )
+        if completed.returncode not in {0, 1}:
+            continue
+        additions.append(completed.stdout)
     return patch + ("\n" if patch and additions else "") + "\n".join(additions)
 
 
