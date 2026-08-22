@@ -15,7 +15,7 @@ sys.path.insert(0, str(SCRIPTS))
 from harness_attestation import create_attestation  # noqa: E402
 from harness_enforced import audit, install  # noqa: E402
 from harness_runtime import default_result, policy_for  # noqa: E402
-from provider_lifecycle import validate_receipt  # noqa: E402
+from provider_lifecycle import sign_policy, validate_receipt  # noqa: E402
 
 
 class HarnessEnforcedTest(unittest.TestCase):
@@ -41,8 +41,29 @@ class HarnessEnforcedTest(unittest.TestCase):
         key = root / "authority"
         subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(key)], check=True)
         allowed = root / "allowed_signers"
-        allowed.write_text(f"harness {key.with_suffix('.pub').read_text()}", encoding="utf-8")
+        public = key.with_suffix(".pub").read_text()
+        allowed.write_text(f"harness {public}harness-policy {public}", encoding="utf-8")
         return key, allowed
+
+    def policy(self, root: Path, key: Path) -> Path:
+        target = root / "acceptance-policy.json"
+        policy = {
+            "schema": "harness-acceptance-policy-v1",
+            "policy_id": "enforced-policy",
+            "repo_id": "test-repo",
+            "attested_task_id": "enforced-task",
+            "accepted_ref": "refs/heads/main",
+            "accepted_commit_mode": "exact-ref-tip",
+            "allowed_authorities": ["git-receive"],
+            "terminal_work_items": [{
+                "id": "WI-42", "provider": "jira", "attested_work_item_id": "WI-42",
+            }],
+            "closure_order": ["WI-42"],
+            "expires_at": "2099-01-01T00:00:00Z",
+        }
+        sign_policy(policy, key)
+        target.write_text(json.dumps(policy, indent=2) + "\n", encoding="utf-8")
+        return target
 
     def attest(self, repo: Path, commit: str) -> None:
         result = default_result(
@@ -60,10 +81,12 @@ class HarnessEnforcedTest(unittest.TestCase):
             root = Path(tmp)
             source, remote, base = self.setup_repositories(root)
             key, allowed = self.keys(root)
+            policy = self.policy(root, key)
             receipts = root / "receipts"
             installed = install(
                 remote, ROOT, protected_refs=("refs/heads/main",), signing_key=key,
                 allowed_signers=allowed, receipt_dir=receipts,
+                acceptance_policy=policy, policy_allowed_signers=allowed, repo_id="test-repo",
                 submodule_repositories={"vendor/component": source},
             )
             self.assertEqual(installed["decision"], "pass", installed)
@@ -96,7 +119,9 @@ class HarnessEnforcedTest(unittest.TestCase):
             receipt = json.loads((receipts / f"{commit}.json").read_text(encoding="utf-8"))
             self.assertEqual(validate_receipt(
                 receipt, work_item_id="WI-42", expected_ref="refs/heads/main",
-                repo=remote, allowed_signers=allowed,
+                expected_commit=commit, configured_provider="jira", repo=remote,
+                allowed_signers=allowed, acceptance_policy=policy,
+                policy_allowed_signers=allowed, repo_id="test-repo",
             ), (True, "ACCEPTANCE_RECEIPT_VALID"))
 
     def test_audit_fails_after_hook_tampering(self) -> None:
@@ -104,8 +129,11 @@ class HarnessEnforcedTest(unittest.TestCase):
             root = Path(tmp)
             _, remote, _ = self.setup_repositories(root)
             key, allowed = self.keys(root)
+            policy = self.policy(root, key)
             install(remote, ROOT, protected_refs=("refs/heads/main",), signing_key=key,
-                    allowed_signers=allowed, receipt_dir=root / "receipts")
+                    allowed_signers=allowed, receipt_dir=root / "receipts",
+                    acceptance_policy=policy, policy_allowed_signers=allowed,
+                    repo_id="test-repo")
             (remote / "hooks/pre-receive").write_text("#!/bin/sh\nexit 0\n")
             self.assertEqual(audit(remote)["decision"], "block")
             self.assertNotEqual(audit(remote)["assurance"]["level"], "enforced")
@@ -115,8 +143,11 @@ class HarnessEnforcedTest(unittest.TestCase):
             root = Path(tmp)
             _, remote, _ = self.setup_repositories(root)
             key, allowed = self.keys(root)
+            policy = self.policy(root, key)
             install(remote, ROOT, protected_refs=("refs/heads/main",), signing_key=key,
-                    allowed_signers=allowed, receipt_dir=root / "receipts")
+                    allowed_signers=allowed, receipt_dir=root / "receipts",
+                    acceptance_policy=policy, policy_allowed_signers=allowed,
+                    repo_id="test-repo")
             key.chmod(0o644)
             outcome = audit(remote)
             self.assertEqual(outcome["decision"], "block")
@@ -127,11 +158,18 @@ class HarnessEnforcedTest(unittest.TestCase):
             root = Path(tmp)
             _, remote, _ = self.setup_repositories(root)
             key, allowed = self.keys(root)
+            policy = self.policy(root, key)
             other = root / "other-authority"
             subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(other)], check=True)
-            allowed.write_text(f"harness {other.with_suffix('.pub').read_text()}", encoding="utf-8")
+            allowed.write_text(
+                f"harness {other.with_suffix('.pub').read_text()}"
+                f"harness-policy {key.with_suffix('.pub').read_text()}",
+                encoding="utf-8",
+            )
             install(remote, ROOT, protected_refs=("refs/heads/main",), signing_key=key,
-                    allowed_signers=allowed, receipt_dir=root / "receipts")
+                    allowed_signers=allowed, receipt_dir=root / "receipts",
+                    acceptance_policy=policy, policy_allowed_signers=allowed,
+                    repo_id="test-repo")
             outcome = audit(remote)
             self.assertEqual(outcome["decision"], "block")
             self.assertFalse(outcome["assurance"]["signing_key_trusted"])

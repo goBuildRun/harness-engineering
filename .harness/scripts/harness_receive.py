@@ -256,6 +256,7 @@ def accept_updates(repo: Path, harness: Path, updates: list[tuple[str, str, str]
                    signing_key: Path, protected_refs: tuple[str, ...] = ("refs/heads/main",),
                    gc_allowed_signers: Path | None = None,
                    submodule_repositories: dict[str, Path] | None = None,
+                   acceptance_policy: Path, policy_allowed_signers: Path, repo_id: str,
                    ) -> dict[str, Any]:
     outcome = verify_updates(repo, harness, updates, protected_refs=protected_refs,
                              gc_allowed_signers=gc_allowed_signers,
@@ -277,7 +278,8 @@ def accept_updates(repo: Path, harness: Path, updates: list[tuple[str, str, str]
             receipts.append(build_receipt(
                 repo, commit=verified["commit"], work_item_id=work_item_id,
                 provider=provider, authority="git-receive", accepted_ref=verified["ref"],
-                signing_key=signing_key,
+                signing_key=signing_key, acceptance_policy=acceptance_policy,
+                policy_allowed_signers=policy_allowed_signers, repo_id=repo_id,
             ))
     except ValueError as exc:
         return {"decision": "block", "reason": str(exc),
@@ -324,6 +326,9 @@ def main() -> int:
     parser.add_argument("--signing-key", default="")
     parser.add_argument("--receipt-dir", default="")
     parser.add_argument("--gc-allowed-signers", default="")
+    parser.add_argument("--acceptance-policy", default="")
+    parser.add_argument("--policy-allowed-signers", default="")
+    parser.add_argument("--repo-id", default="")
     parser.add_argument("--submodule-repositories-json", default="{}")
     args = parser.parse_args()
     try:
@@ -337,7 +342,8 @@ def main() -> int:
     repo = Path(args.repo).resolve()
     harness = Path(args.harness_root).resolve()
     if args.signing_key or args.receipt_dir:
-        if not args.signing_key or not args.receipt_dir:
+        if (not args.signing_key or not args.receipt_dir or not args.acceptance_policy
+                or not args.policy_allowed_signers or not args.repo_id):
             outcome = {"decision": "block", "reason": "ACCEPTANCE_OUTPUT_CONFIG_INVALID"}
         else:
             outcome = accept_updates(
@@ -345,6 +351,8 @@ def main() -> int:
                 protected_refs=configured,
                 gc_allowed_signers=Path(args.gc_allowed_signers) if args.gc_allowed_signers else None,
                 submodule_repositories=submodules,
+                acceptance_policy=Path(args.acceptance_policy),
+                policy_allowed_signers=Path(args.policy_allowed_signers), repo_id=args.repo_id,
             )
             if outcome["decision"] == "pass":
                 receipt_dir = Path(args.receipt_dir)

@@ -753,7 +753,7 @@ GC telemetry 同样要求非空 `provider` / `model`，以及真实 `agent_calls
 
 每个外部 gate 另有 orchestration watchdog，默认 `HARNESS_GATE_TIMEOUT_SECONDS=3600`。该值是每个 gate（包括 quality gate 内全部命令）的累计上限；命令较多或单命令 timeout 更长时，产品必须显式提高它。超时会终止 gate 的整个进程组，并返回绑定 gate 名称和实际 timeout 的 `GATE_TIMEOUT` block；该结果不可被 knowledge/Growth 自动同步或重试覆盖。
 
-本地 `work_item.sh close` 默认只写 `ready_to_release`。`done`、`implemented`、`released` 等终态必须传入受控 `git-receive` 或 `release-gate` 使用独立 SSH 私钥签发的 `--lifecycle-receipt`，并设置 `HARNESS_ACCEPTANCE_ALLOWED_SIGNERS` 指向产品信任的 OpenSSH `allowed_signers` 清单；轮换时可让旧、新公钥短期并存。receive authority 只为刚通过 verifier 的 commit/ref 签发 receipt，Work Item 和 provider 取自 canonical result，默认有效期 24 小时。消费端会回查 Git attestation/result object，并校验 work item、task、policy/result digest、commit、accepted ref、有效期和签名；手写 JSON 一律阻断。
+本地 `work_item.sh close` 默认只写 `ready_to_release`。`done`、`implemented`、`released` 等终态必须传入受控 `git-receive` 或 `release-gate` 使用独立 SSH 私钥签发的 `--lifecycle-receipt`，以及冗余断言 `--accepted-ref`、`--accepted-commit`。`HARNESS_ACCEPTANCE_ALLOWED_SIGNERS` 信任 receipt 签名；`HARNESS_ACCEPTANCE_POLICY` 与 `HARNESS_ACCEPTANCE_POLICY_ALLOWED_SIGNERS` 指向仓库外、独立 namespace 签名的 acceptance policy 和信任根。该 policy 固定 repo identity、唯一保护 ref、允许的 authority、候选 task 及可关闭的 Work Item/provider；产品提交内 contract 只能记录其摘要，不能自授权。消费端从 policy 取得期望 ref，回查 Git attestation/result object，并要求 receipt commit 与保护 ref 当前 commit tip 精确相等，同时校验 provider、work item、task、policy/result digest、有效期和两层签名；祖先可达、调用者改选 ref、旧 receipt 重放或手写 JSON 一律阻断。
 
 | 公开动作 | 使用者看到的结果 | 过渡期内部能力参考 |
 |----------|------------------|--------------------|

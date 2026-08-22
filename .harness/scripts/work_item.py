@@ -10,7 +10,7 @@ from pathlib import Path
 
 from harness_knowledge import sync_planning
 from product_context import ProductContextError, resolve_product_root
-from provider_lifecycle import TERMINAL_STATUSES, validate_receipt
+from provider_lifecycle import TERMINAL_STATUSES, validate_terminal_receipt
 from harness_output import dump_json
 from work_item_diagnostics import cmd_capabilities, cmd_diagnose
 from workspace_paths import load_layout
@@ -121,6 +121,7 @@ def cmd_pull(args: argparse.Namespace) -> int:
 
 def cmd_close(args: argparse.Namespace) -> int:
     root = Path(args.harness_root or harness_root_from_script())
+    provider = get_provider(root)
     normalized_status = str(args.status or "").strip().lower()
     if normalized_status in TERMINAL_STATUSES:
         receipt = None
@@ -129,21 +130,19 @@ def cmd_close(args: argparse.Namespace) -> int:
                 receipt = json.loads(Path(args.lifecycle_receipt).read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
                 pass
-        allowed = os.environ.get("HARNESS_ACCEPTANCE_ALLOWED_SIGNERS", "")
         try:
             product_root = resolve_product_root(root)
         except ProductContextError as exc:
             emit("block", f"ACCEPTANCE_PRODUCT_ROOT_INVALID: {exc}", work_item_id=args.id)
             return 0
-        ok, reason = validate_receipt(
+        ok, reason = validate_terminal_receipt(
             receipt, work_item_id=args.id, expected_ref=(args.accepted_ref or "").strip(),
-            repo=product_root,
-            allowed_signers=Path(allowed) if allowed else Path("/nonexistent"),
+            expected_commit=(args.accepted_commit or "").strip(),
+            configured_provider=provider.name, repo=product_root,
         )
         if not ok:
             emit("block", reason, work_item_id=args.id)
             return 0
-    provider = get_provider(root)
     ok, reason = provider.update_status(args.id, args.status, args.note or "")
     extra: dict[str, object] = {}
     if ok:
@@ -326,6 +325,7 @@ def main() -> int:
     p_close.add_argument("--note", default="")
     p_close.add_argument("--lifecycle-receipt", default="")
     p_close.add_argument("--accepted-ref", default="")
+    p_close.add_argument("--accepted-commit", default="")
     p_close.set_defaults(func=cmd_close)
 
     p_update_description = sub.add_parser("update-description")

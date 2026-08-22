@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from harness_output import dump_json
+from provider_lifecycle import load_acceptance_policy
 
 
 def _config(repo: Path, key: str) -> str:
@@ -57,27 +58,43 @@ REPO="$(pwd -P)"
 HARNESS_ROOT="$(git config --local --get harness.enforcedRoot)"
 PROTECTED_REFS="$(git config --local --get harness.protectedRefs)"
 ALLOWED_SIGNERS="$(git config --local --get harness.acceptanceAllowedSigners || true)"
+ACCEPTANCE_POLICY="$(git config --local --get harness.acceptancePolicy || true)"
+POLICY_ALLOWED_SIGNERS="$(git config --local --get harness.acceptancePolicyAllowedSigners || true)"
+REPO_ID="$(git config --local --get harness.repoId || true)"
 SIGNING_KEY="$(git config --local --get harness.acceptanceSigningKey || true)"
 RECEIPT_DIR="$(git config --local --get harness.acceptanceReceiptDir || true)"
 SUBMODULE_REPOSITORIES="$(git config --local --get harness.submoduleRepositories || echo '{{}}')"
 [[ -n "$HARNESS_ROOT" && -n "$PROTECTED_REFS" ]] || {{ echo 'HARNESS_ENFORCED_CONFIG_MISSING' >&2; exit 1; }}
-{f'[[ -f "$SIGNING_KEY" && -d "$RECEIPT_DIR" ]] || {{ echo \'HARNESS_ACCEPTANCE_CONFIG_MISSING\' >&2; exit 1; }}' if post else ''}
+{'[[ -f "$SIGNING_KEY" && -d "$RECEIPT_DIR" && -f "$ACCEPTANCE_POLICY" && -f "$POLICY_ALLOWED_SIGNERS" && -n "$REPO_ID" ]] || { echo \'HARNESS_ACCEPTANCE_CONFIG_MISSING\' >&2; exit 1; }' if post else ''}
 HARNESS_PROTECTED_REFS="$PROTECTED_REFS" python3 "$HARNESS_ROOT/.harness/scripts/harness_receive.py" \\
   --repo "$REPO" --harness-root "$HARNESS_ROOT" --gc-allowed-signers "$ALLOWED_SIGNERS" \\
-  --submodule-repositories-json "$SUBMODULE_REPOSITORIES"{extra}
+  --submodule-repositories-json "$SUBMODULE_REPOSITORIES" \
+  --acceptance-policy "$ACCEPTANCE_POLICY" --policy-allowed-signers "$POLICY_ALLOWED_SIGNERS" \
+  --repo-id "$REPO_ID"{extra}
 echo 'HARNESS_{action.upper().replace('-', '_')}_PASS' >&2
 '''
 
 
 def install(repo: Path, harness: Path, *, protected_refs: tuple[str, ...], signing_key: Path,
-            allowed_signers: Path, receipt_dir: Path,
+            allowed_signers: Path, receipt_dir: Path, acceptance_policy: Path,
+            policy_allowed_signers: Path, repo_id: str,
             submodule_repositories: dict[str, Path] | None = None) -> dict[str, Any]:
     if _config(repo, "core.bare") != "true":
         return {"decision": "block", "reason": "ENFORCED_BARE_REPOSITORY_REQUIRED"}
     if not protected_refs or any(not ref.startswith("refs/") for ref in protected_refs):
         return {"decision": "block", "reason": "ENFORCED_PROTECTED_REFS_INVALID"}
-    if not signing_key.is_file() or not allowed_signers.is_file():
+    if (not signing_key.is_file() or not allowed_signers.is_file()
+            or not acceptance_policy.is_file() or not policy_allowed_signers.is_file()
+            or not repo_id):
         return {"decision": "block", "reason": "ENFORCED_TRUST_ROOT_MISSING"}
+    try:
+        policy, _ = load_acceptance_policy(
+            acceptance_policy, allowed_signers=policy_allowed_signers, repo_id=repo_id,
+        )
+    except ValueError as exc:
+        return {"decision": "block", "reason": str(exc)}
+    if policy["accepted_ref"] not in protected_refs:
+        return {"decision": "block", "reason": "ENFORCED_POLICY_REF_MISMATCH"}
     receipt_dir.mkdir(parents=True, exist_ok=True)
     hooks = repo / "hooks"
     values = {
@@ -86,6 +103,9 @@ def install(repo: Path, harness: Path, *, protected_refs: tuple[str, ...], signi
         "harness.acceptanceSigningKey": str(signing_key.resolve()),
         "harness.acceptanceAllowedSigners": str(allowed_signers.resolve()),
         "harness.acceptanceReceiptDir": str(receipt_dir.resolve()),
+        "harness.acceptancePolicy": str(acceptance_policy.resolve()),
+        "harness.acceptancePolicyAllowedSigners": str(policy_allowed_signers.resolve()),
+        "harness.repoId": repo_id,
         "harness.submoduleRepositories": json.dumps(
             {path: str(source) for path, source in (submodule_repositories or {}).items()},
             sort_keys=True, separators=(",", ":"),
@@ -108,6 +128,9 @@ def audit(repo: Path) -> dict[str, Any]:
     signing_key = Path(_config(repo, "harness.acceptanceSigningKey"))
     allowed = Path(_config(repo, "harness.acceptanceAllowedSigners"))
     receipts = Path(_config(repo, "harness.acceptanceReceiptDir"))
+    acceptance_policy = Path(_config(repo, "harness.acceptancePolicy"))
+    policy_allowed = Path(_config(repo, "harness.acceptancePolicyAllowedSigners"))
+    repo_id = _config(repo, "harness.repoId")
     protected = tuple(filter(None, _config(repo, "harness.protectedRefs").split(",")))
     try:
         submodules = {
@@ -132,7 +155,7 @@ def audit(repo: Path) -> dict[str, Any]:
         key_permissions_valid = signing_key.is_file() and signing_key.stat().st_mode & 0o077 == 0
         trusted_signers = [
             line for line in allowed.read_text(encoding="utf-8").splitlines()
-            if line.strip() and not line.lstrip().startswith("#")
+            if line.startswith("harness ")
         ]
         public_key = subprocess.check_output(
             ["ssh-keygen", "-y", "-f", str(signing_key)], text=True,
@@ -143,11 +166,18 @@ def audit(repo: Path) -> dict[str, Any]:
         key_permissions_valid = False
         trusted_signers = []
         signing_key_trusted = False
+    try:
+        policy, _ = load_acceptance_policy(
+            acceptance_policy, allowed_signers=policy_allowed, repo_id=repo_id,
+        )
+        policy_valid = policy["accepted_ref"] in protected
+    except ValueError:
+        policy_valid = False
     valid = bool(
         _config(repo, "core.bare") == "true" and protected
         and harness.joinpath(".harness/scripts/harness_receive.py").is_file()
         and key_permissions_valid and trusted_signers and signing_key_trusted
-        and receipts.is_dir() and hooks_valid and submodules_valid
+        and receipts.is_dir() and hooks_valid and submodules_valid and policy_valid
     )
     return {
         "decision": "pass" if valid else "block",
@@ -160,6 +190,7 @@ def audit(repo: Path) -> dict[str, Any]:
             "signing_key_permissions_valid": key_permissions_valid,
             "trusted_signers": len(trusted_signers),
             "signing_key_trusted": signing_key_trusted,
+            "acceptance_policy_valid": policy_valid,
             "submodule_repositories": len(submodules),
             "submodule_repositories_valid": submodules_valid,
         },
@@ -175,6 +206,9 @@ def main() -> int:
     parser.add_argument("--signing-key", default="")
     parser.add_argument("--allowed-signers", default="")
     parser.add_argument("--receipt-dir", default="")
+    parser.add_argument("--acceptance-policy", default="")
+    parser.add_argument("--policy-allowed-signers", default="")
+    parser.add_argument("--repo-id", default="")
     parser.add_argument("--submodule-repository", action="append", default=[])
     args = parser.parse_args()
     repo = Path(args.repo).resolve()
@@ -190,7 +224,8 @@ def main() -> int:
             repo, Path(args.harness_root),
             protected_refs=tuple(args.protected_ref or ["refs/heads/main"]),
             signing_key=Path(args.signing_key), allowed_signers=Path(args.allowed_signers),
-            receipt_dir=Path(args.receipt_dir),
+            receipt_dir=Path(args.receipt_dir), acceptance_policy=Path(args.acceptance_policy),
+            policy_allowed_signers=Path(args.policy_allowed_signers), repo_id=args.repo_id,
             submodule_repositories=submodules,
         )
     dump_json(outcome)

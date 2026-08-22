@@ -19,7 +19,7 @@ from harness_gc_context import build_gc_context  # noqa: E402
 from harness_gc_receipt import build_receipt, store_receipt  # noqa: E402
 from harness_receive import _export_submodules, accept_updates, commits_for_update, verify_updates  # noqa: E402
 from harness_runtime import default_result, mechanical_code_health, policy_for  # noqa: E402
-from provider_lifecycle import validate_receipt  # noqa: E402
+from provider_lifecycle import sign_policy, validate_receipt  # noqa: E402
 
 
 class HarnessReceiveTest(unittest.TestCase):
@@ -49,8 +49,29 @@ class HarnessReceiveTest(unittest.TestCase):
         key = root / "authority"
         subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(key)], check=True)
         allowed = root / "allowed_signers"
-        allowed.write_text(f"harness {key.with_suffix('.pub').read_text()}", encoding="utf-8")
+        public = key.with_suffix(".pub").read_text()
+        allowed.write_text(f"harness {public}harness-policy {public}", encoding="utf-8")
         return key, allowed
+
+    def policy(self, root: Path, key: Path) -> Path:
+        target = root / "acceptance-policy.json"
+        policy = {
+            "schema": "harness-acceptance-policy-v1",
+            "policy_id": "receive-policy",
+            "repo_id": "test-repo",
+            "attested_task_id": "receive-task",
+            "accepted_ref": "refs/heads/main",
+            "accepted_commit_mode": "exact-ref-tip",
+            "allowed_authorities": ["git-receive"],
+            "terminal_work_items": [{
+                "id": "WI-42", "provider": "jira", "attested_work_item_id": "WI-42",
+            }],
+            "closure_order": ["WI-42"],
+            "expires_at": "2099-01-01T00:00:00Z",
+        }
+        sign_policy(policy, key)
+        target.write_text(json.dumps(policy, indent=2) + "\n", encoding="utf-8")
+        return target
 
     def test_commit_range_excludes_old_and_handles_delete(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -311,8 +332,10 @@ class HarnessReceiveTest(unittest.TestCase):
             old, new = self.repository(repo)
             self.attest(repo, new, work_item={"id": "WI-42", "provider": "jira"})
             key, allowed = self.keys(repo)
+            policy = self.policy(repo, key)
             outcome = accept_updates(
-                repo, ROOT, [(old, new, "refs/heads/main")], signing_key=key
+                repo, ROOT, [(old, new, "refs/heads/main")], signing_key=key,
+                acceptance_policy=policy, policy_allowed_signers=allowed, repo_id="test-repo",
             )
             self.assertEqual(outcome["decision"], "pass", outcome)
             receipt = outcome["receipts"][0]
@@ -321,17 +344,21 @@ class HarnessReceiveTest(unittest.TestCase):
             self.assertEqual(receipt["provider"], "jira")
             self.assertEqual(validate_receipt(
                 receipt, work_item_id="WI-42", expected_ref="refs/heads/main",
-                repo=repo, allowed_signers=allowed
+                expected_commit=new, configured_provider="jira", repo=repo,
+                allowed_signers=allowed, acceptance_policy=policy,
+                policy_allowed_signers=allowed, repo_id="test-repo",
             ), (True, "ACCEPTANCE_RECEIPT_VALID"))
 
     def test_acceptance_does_not_sign_unbound_or_unverified_commit(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
             old, new = self.repository(repo)
-            key, _ = self.keys(repo)
+            key, allowed = self.keys(repo)
+            policy = self.policy(repo, key)
             self.attest(repo, new)
             outcome = accept_updates(
-                repo, ROOT, [(old, new, "refs/heads/main")], signing_key=key
+                repo, ROOT, [(old, new, "refs/heads/main")], signing_key=key,
+                acceptance_policy=policy, policy_allowed_signers=allowed, repo_id="test-repo",
             )
             self.assertEqual(outcome["reason"], "ACCEPTANCE_WORK_ITEM_BINDING_MISSING")
             self.assertNotIn("receipts", outcome)
