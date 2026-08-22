@@ -89,6 +89,10 @@ else
   EVIDENCE="$AGENT_WS/qa_approved_${TASK_ID}.json"
 fi
 LEGACY_EVIDENCE="$AGENT_WS/qa_approved_${TASK_ID}.json"
+EVIDENCE_REF="$EVIDENCE"
+if [[ "$EVIDENCE" == "$PRODUCT_ROOT/"* ]]; then
+  EVIDENCE_REF="${EVIDENCE#"$PRODUCT_ROOT"/}"
+fi
 
 BASELINE_FILE=""
 if [[ -n "$ACTIVE_WI" ]]; then
@@ -114,7 +118,7 @@ if [[ -f "$PLANNING_GATE" ]]; then
       echo "- 任务: ${TASK_ID}"
       echo "- 结论: ${DECISION}"
       echo "- 说明: ${SUMMARY}"
-      echo "- 凭证: ${EVIDENCE}"
+      echo "- 凭证: ${EVIDENCE_REF}"
     } >> "$TASK_DIR/05-QA验收.md"
   fi
 fi

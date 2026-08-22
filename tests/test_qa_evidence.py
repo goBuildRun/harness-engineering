@@ -139,6 +139,43 @@ class QaEvidenceTest(unittest.TestCase):
             self.assertFalse((runs / "qa_approved_T1.json").exists())
             self.assertEqual(json.loads(scoped.read_text())["work_item_id"], "WI-42")
 
+    def test_qa_sign_off_writes_portable_receipt_reference_to_task_document(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            workspace = product / "harness-workspace"
+            runs = workspace / "runs"
+            task = workspace / "planning/tasks/task-WI-42"
+            runs.mkdir(parents=True)
+            task.mkdir(parents=True)
+            (workspace / "project.yaml").write_text(
+                "product:\n  id: demo\nworkspace:\n  root: harness-workspace\n"
+                "  planning: planning\n  runs: runs\n  evidence: evidence\n",
+                encoding="utf-8",
+            )
+            (runs / "active_task.json").write_text(
+                json.dumps({"task_id": "WI-42"}), encoding="utf-8"
+            )
+            (runs / "planning_gate_pass.json").write_text(
+                json.dumps({"task_dir": str(task)}), encoding="utf-8"
+            )
+            qa_document = task / "05-QA验收.md"
+            qa_document.write_text("# QA\n", encoding="utf-8")
+
+            subprocess.run(
+                ["bash", str(SCRIPTS / "qa_sign_off.sh"), "T1", "fail", "portable"],
+                cwd=product,
+                env={**os.environ, "HARNESS_PRODUCT_ROOT": str(product)},
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+
+            text = qa_document.read_text(encoding="utf-8")
+            self.assertNotIn(str(product), text)
+            self.assertIn(
+                "harness-workspace/runs/tasks/WI-42/qa_approved_T1.json", text
+            )
+
     def test_work_item_never_falls_back_to_global_qa_receipt(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product = Path(tmp)
