@@ -8,12 +8,10 @@ import os
 import sys
 from pathlib import Path
 
-from harness_knowledge import sync_planning
 from product_context import ProductContextError, resolve_product_root
 from provider_lifecycle import TERMINAL_STATUSES, validate_terminal_receipt
 from harness_output import dump_json
 from work_item_diagnostics import cmd_capabilities, cmd_diagnose
-from workspace_paths import load_layout
 from work_item_providers import (
     DEFAULT_HARNESS_NAME,
     FeishuProvider,
@@ -144,15 +142,7 @@ def cmd_close(args: argparse.Namespace) -> int:
             emit("block", reason, work_item_id=args.id)
             return 0
     ok, reason = provider.update_status(args.id, args.status, args.note or "")
-    extra: dict[str, object] = {}
-    if ok:
-        try:
-            layout = load_layout(root)
-            extra["knowledge_sync"] = sync_planning(layout)
-        except Exception as e:
-            emit("block", f"{reason}; KNOWLEDGE_SYNC_FAILED: {e}", provider=provider.name)
-            return 0
-    emit("pass" if ok else "block", reason, provider=provider.name, **extra)
+    emit("pass" if ok else "block", reason, provider=provider.name)
     return 0
 
 

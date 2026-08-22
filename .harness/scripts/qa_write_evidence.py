@@ -9,7 +9,7 @@ from pathlib import Path
 
 def main() -> int:
     if len(sys.argv) < 8:
-        print("USAGE: qa_write_evidence.py <path> <task_id> <work_item_id> <decision> <ts> <summary> <paths_json>", file=sys.stderr)
+        print("USAGE: qa_write_evidence.py <path> <task_id> <work_item_id> <decision> <ts> <summary> <paths_json> [binding_json]", file=sys.stderr)
         return 1
 
     path, task_id, work_item_id, decision, ts, summary, paths_json = sys.argv[1:8]
@@ -18,6 +18,13 @@ def main() -> int:
     except json.JSONDecodeError:
         paths = []
 
+    binding = {}
+    if len(sys.argv) >= 9:
+        try:
+            value = json.loads(sys.argv[8])
+            binding = value if isinstance(value, dict) else {}
+        except json.JSONDecodeError:
+            binding = {}
     payload = {
         "task_id": task_id,
         "work_item_id": work_item_id,
@@ -28,6 +35,7 @@ def main() -> int:
         "paths_reviewed": paths,
         "structure_gate": "pass" if decision == "pass" else "n/a",
         "findings": [],
+        **binding,
     }
     out = Path(path)
     out.parent.mkdir(parents=True, exist_ok=True)

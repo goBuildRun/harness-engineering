@@ -12,7 +12,7 @@ import uuid
 from pathlib import Path
 
 from harness_output import dump_json
-from harness_assurance import finalize, refresh_result
+from harness_assurance import finalize
 from harness_attestation import verify_attestation
 from harness_cache import executed_check, reuse_check, tool_digest
 from harness_gates import checks_for_tier, committed_work_item_resolution, run_gate_plan
@@ -31,14 +31,12 @@ from worktree_baseline import capture_baseline, changed_since_baseline
 from harness_ci import cmd_ci_check
 from harness_task_binding import resolve_start_work_item, strengthen_resumed_task
 from harness_task_resolution import bind_active_task, valid_task_id
-
-def refresh_assurance(result: dict, product: Path, policy_digest: str, *, phase: str) -> None:
-    refresh_result(result, product, policy_digest, phase=phase, verified_at=now(),
-                   attestation=verify_attestation(
-                       product, commit="HEAD", policy_digest=policy_digest,
-                       task_id=str(result.get("task_id") or ""),
-                   ))
-
+from harness_timing import ledger_path
+from harness_cycle_commands import (
+    allow_finish_attempt, begin_finish_span, cmd_stage, cmd_usage_baseline,
+    complete_finish_span, refresh_assurance, start_story_cycle,
+)
+from harness_lifecycle_preflight import discover as discover_lifecycle, preflight_resumed
 def cmd_start(args: argparse.Namespace) -> int:
     product, harness = Path(args.product_root).resolve(), Path(args.harness_root).resolve()
     task_id = args.task_id or f"task-{uuid.uuid4().hex[:12]}"
@@ -54,6 +52,7 @@ def cmd_start(args: argparse.Namespace) -> int:
     if path.exists():
         outcome = strengthen_resumed_task(load_result(path), args, task_id, harness, product,
                                           resolved_work_item=selection["work_item"])
+        outcome = preflight_resumed(outcome, product, selection["work_item"])
         if outcome.pop("changed", False):
             atomic_write_result(path, outcome["result"])
         dump_json(outcome)
@@ -64,7 +63,14 @@ def cmd_start(args: argparse.Namespace) -> int:
         return 0
     work_item = selection["work_item"]
     initial = task_kind_tier(args.kind, args.tier or "standard")
+    lifecycle = discover_lifecycle(
+        product, str((work_item or {}).get("provider") or ""),
+    )
+    if initial == "strict" and lifecycle["decision"] == "block":
+        dump_json({"decision": "block", "reason": lifecycle["reason"], "lifecycle": lifecycle})
+        return 0
     result = default_result(task_id, initial_tier=initial, work_item=work_item)
+    result["lifecycle"] = lifecycle
     baseline = path.parent / "worktree_baseline.json"
     capture_baseline(product, baseline, work_item_id=task_id)
     result["baseline"] = {"digest": canonical_digest(json.loads(baseline.read_text())), "source": "start"}
@@ -83,13 +89,13 @@ def cmd_start(args: argparse.Namespace) -> int:
         binding_path = workspace_root(product) / "planning" / "tasks" / task_id / "task.json"
         binding_path.parent.mkdir(parents=True, exist_ok=True)
         binding_path.write_text(json.dumps(binding, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    start_story_cycle(result, path, task_id, work_item)
     atomic_write_result(path, result)
     active = active_task_path(product)
     active.parent.mkdir(parents=True, exist_ok=True)
     active.write_text(json.dumps({"task_id": task_id, "activated_at": now()}, indent=2) + "\n")
     dump_json({"decision": "pass", "reason": "TASK_STARTED", "result": result})
     return 0
-
 def cmd_amend(args: argparse.Namespace) -> int:
     product, harness = Path(args.product_root).resolve(), Path(args.harness_root).resolve()
     if not valid_task_id(args.task_id):
@@ -143,42 +149,6 @@ def cmd_amend(args: argparse.Namespace) -> int:
         check["stale"] = True
     atomic_write_result(path, result)
     dump_json({"decision": "pass", "reason": "TASK_BINDING_AMENDED", "result": result})
-    return 0
-
-def cmd_usage_baseline(args: argparse.Namespace) -> int:
-    product, harness = Path(args.product_root).resolve(), Path(args.harness_root).resolve()
-    if not valid_task_id(args.task_id):
-        dump_json({"decision": "block", "reason": "TASK_ID_INVALID"})
-        return 0
-    path = result_path(product, args.task_id)
-    reason = str(args.reason or "").strip()
-    if not path.is_file():
-        dump_json({"decision": "block", "reason": "TASK_NOT_FOUND"})
-        return 0
-    if not reason:
-        dump_json({"decision": "block", "reason": "USAGE_BASELINE_REASON_REQUIRED"})
-        return 0
-    result = load_result(path)
-    changed = changed_since_baseline(product, path.parent / "worktree_baseline.json")
-    subject = subject_for(product, changed)
-    policy = policy_for(harness, product)
-    receipt = automatic_receipt(args.task_id, subject, policy)
-    if receipt is None:
-        dump_json({"decision": "block", "reason": "USAGE_BASELINE_ENDPOINT_MISSING"})
-        return 0
-    previous = result.get("cost", {}).get("story_usage_baseline")
-    if not previous:
-        capture_usage_baseline(result, receipt)
-        result["cost"]["story_usage_baseline_reason"] = reason
-    epic_id = str(getattr(args, "epic_id", "") or "").strip()
-    if epic_id:
-        result.setdefault("task", {})["epic_id"] = epic_id
-    if not previous:
-        result["cost"].pop("story", None)
-    atomic_write_result(path, result)
-    dump_json({"decision": "pass", "reason": "USAGE_BASELINE_CAPTURED",
-               "baseline": result["cost"]["story_usage_baseline"],
-               "baseline_preserved": bool(previous)})
     return 0
 
 def cmd_status(args: argparse.Namespace) -> int:
@@ -244,6 +214,17 @@ def cmd_finish(args: argparse.Namespace) -> int:
     tier_floor = result["tier"]["effective"]
     subject = subject_for(product, changed)
     current_policy = policy_for(harness, product)
+    attempt = allow_finish_attempt(
+        result, subject=subject, policy=current_policy, tier_floor=tier_floor,
+    )
+    if attempt["decision"] == "block":
+        atomic_write_result(path, result)
+        dump_json({"decision": "block", "reason": attempt["reason"], "result": result})
+        return 0
+    finish_span, finish_started_ms = begin_finish_span(
+        result, path, task_id, work_item_id, attempt,
+    )
+    atomic_write_result(path, result)
     invalidate_if_stale(result, subject, current_policy)
     result["subject"] = {"kind": "worktree", "digest": subject, "paths": changed}
     result["policy_digest"] = current_policy
@@ -345,7 +326,16 @@ def cmd_finish(args: argparse.Namespace) -> int:
         gates = run_gate_plan(
             harness, product, tier=effective, subject_digest=subject,
             policy_digest=result["policy_digest"], changed_files=changed,
+            previous_checks=previous_checks,
+            remaining_budget_ms=max(0, min(
+                int(attempt["remaining_ms"]),
+                int(result["cycle"]["stage_budgets_ms"]["finalize"]),
+            ) - int((time.monotonic() - started) * 1000)),
+            ledger=ledger_path(path), task_id=task_id, work_item_id=work_item_id,
         )
+        result["cost"]["harness"]["cache_hits"] = int(
+            result["cost"]["harness"].get("cache_hits") or 0
+        ) + int(gates.get("cache_hits") or 0)
         result["checks"].update(gates["checks"])
         if gates["missing"]:
             result["blockers"].append("REQUIRED_GATE_MISSING")
@@ -391,10 +381,20 @@ def cmd_finish(args: argparse.Namespace) -> int:
     enforce_budget(result)
     finalize(result, finish_decision)
     refresh_assurance(result, product, result["policy_digest"], phase="pre-commit-head")
-    atomic_write_result(path, result)
     reason = (
         "INPUT_CHANGED" if post_gate_inputs_changed
         else result["blockers"][0] if result["blockers"] else "FINISH_OK"
     )
+    try:
+        complete_finish_span(
+            result, path, task_id=task_id, work_item_id=work_item_id, span_id=finish_span,
+            started_epoch_ms=finish_started_ms, decision=result["decision"], reason=reason,
+            attempt=attempt, tool_wait_ms="unknown",
+        )
+    except OSError:
+        result["decision"], result["state"] = "block", "blocked"
+        result["blockers"] = sorted(set(result["blockers"]) | {"STORY_LEDGER_WRITE_FAILED"})
+        reason = "STORY_LEDGER_WRITE_FAILED"
+    atomic_write_result(path, result)
     dump_json({"decision": result["decision"], "reason": reason, "result": result})
     return 0

@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import argparse
 import os
+import json
 from pathlib import Path
 
-from harness_commands import cmd_amend, cmd_ci_check, cmd_finish, cmd_start, cmd_status, cmd_usage_baseline
+from harness_commands import cmd_amend, cmd_ci_check, cmd_finish, cmd_stage, cmd_start, cmd_status, cmd_usage_baseline
 from harness_assurance import create_bootstrap, create_release_candidate
 from harness_runtime import load_result, resolve_task_id, result_path
 from harness_migration_commands import cmd_audit, cmd_migrate
 from harness_runtime import TIERS
+from harness_output import decision_exit_code, dump_json, reset_decision
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -50,6 +52,16 @@ def build_parser() -> argparse.ArgumentParser:
     usage.add_argument("task_id")
     usage.add_argument("--reason", required=True)
     usage.add_argument("--epic-id", default="")
+    stage = sub.add_parser("stage")
+    stage.add_argument("task_id")
+    stage.add_argument("action", choices=("start", "end", "status"))
+    stage.add_argument("stage", nargs="?", choices=(
+        "takeover", "planning", "implementation_test", "independent_qa",
+        "deploy_provider", "finalize",
+    ))
+    stage.add_argument("--decision", choices=("pass", "block"), default="pass")
+    stage.add_argument("--reason", default="STAGE_COMPLETED")
+    stage.add_argument("--tool-wait-ms", default="unknown")
     bootstrap = sub.add_parser("bootstrap-guarded")
     bootstrap.add_argument("--task-id", required=True)
     bootstrap.add_argument("--reason", required=True)
@@ -65,20 +77,20 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    reset_decision()
     args = build_parser().parse_args()
     handlers = {
         "start": cmd_start, "status": cmd_status, "finish": cmd_finish,
         "workspace": cmd_audit, "migrate-task": cmd_migrate, "amend-task": cmd_amend,
         "usage-baseline": cmd_usage_baseline,
+        "stage": cmd_stage,
         "ci-check": cmd_ci_check,
     }
     if args.command == "bootstrap-guarded":
-        import json
         outcome = create_bootstrap(Path(args.product_root).resolve(), args.task_id, args.reason)
-        print(json.dumps(outcome, ensure_ascii=False))
-        return 0
+        dump_json(outcome)
+        return decision_exit_code()
     if args.command == "release-candidate":
-        import json
         try:
             product_root = Path(args.product_root).resolve()
             task_id, blockers = resolve_task_id(product_root, None)
@@ -89,6 +101,7 @@ def main() -> int:
             outcome = {"decision": "block", "reason": "RELEASE_CANDIDATE_ACTIVE_RESULT_MISSING"}
         else:
             outcome = create_release_candidate(Path(args.product_root).resolve(), result)
-        print(json.dumps(outcome, ensure_ascii=False))
-        return 0
-    return handlers[args.command](args)
+        dump_json(outcome)
+        return decision_exit_code()
+    fallback = handlers[args.command](args)
+    return decision_exit_code(fallback)

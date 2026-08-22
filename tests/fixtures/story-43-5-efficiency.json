@@ -1,0 +1,48 @@
+{
+  "schema": "harness-story-efficiency-fixture-v1",
+  "audit_source": {
+    "story_id": "e68364af-2434-4cbf-ac2d-202faa1b1879",
+    "turn_started_at": "2026-08-22T01:18:12.476Z",
+    "turn_completed_at": "2026-08-22T10:52:48.596Z",
+    "wall_ms": 34476120,
+    "usage_started_at": "2026-08-22T01:31:48.452Z",
+    "usage_completed_at": "2026-08-22T10:41:18.093Z",
+    "usage_wall_ms": 32969641,
+    "input_tokens": 252710255,
+    "output_tokens": 618181,
+    "gate_duration_ms": 370897,
+    "reruns": 6,
+    "cache_hits": 0,
+    "provider_elapsed_ms": 54815,
+    "judge_usage": "unknown"
+  },
+  "offline_gate_fixture_ms": {
+    "harness": 40,
+    "structure": 40,
+    "diff_integrity": 40,
+    "plan_sync": 40,
+    "dag_sync": 40,
+    "qa_evidence": 40,
+    "knowledge": 40,
+    "growth_release": 40,
+    "quality_lint": 40,
+    "quality_test": 40
+  },
+  "parallel_read_only": [
+    "harness",
+    "structure",
+    "diff_integrity",
+    "plan_sync",
+    "dag_sync",
+    "qa_evidence",
+    "knowledge",
+    "growth_release"
+  ],
+  "serial": ["quality_lint", "quality_test"],
+  "cacheable_on_unrelated_evidence_change": [
+    "harness",
+    "plan_sync",
+    "dag_sync",
+    "knowledge"
+  ]
+}

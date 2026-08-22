@@ -89,10 +89,12 @@ class AgentStartTest(unittest.TestCase):
             }), encoding="utf-8")
             env = {**os.environ, "HARNESS_PRODUCT_ROOT": str(product), "WORK_ITEM_PROVIDER": "noop"}
 
-            out = subprocess.check_output(
+            completed = subprocess.run(
                 ["bash", str(SCRIPT_DIR / "agent_start.sh"), "local1234"],
-                cwd=ROOT, env=env, text=True, stderr=subprocess.DEVNULL,
+                cwd=ROOT, env=env, text=True, capture_output=True, check=False,
             )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            out = completed.stdout
             result = json.loads(
                 (workspace / "runs/tasks/local1234/result.json").read_text(encoding="utf-8")
             )

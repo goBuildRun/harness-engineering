@@ -36,9 +36,14 @@ if [[ ! -f "$QA_EVIDENCE_FILE" ]]; then
   exit 0
 fi
 
-VALID=$(python3 - "$QA_EVIDENCE_FILE" "$TASK_ID" <<'PY'
+VALID=$(python3 - "$SCRIPT_DIR" "$ROOT_DIR" "$PRODUCT_ROOT" "$QA_EVIDENCE_FILE" "$TASK_ID" <<'PY'
 import json, sys
-path, task_id = sys.argv[1:3]
+from pathlib import Path
+
+script_dir, harness_root, product_root, path, task_id = sys.argv[1:6]
+sys.path.insert(0, script_dir)
+from qa_evidence_check import validate_qa_json
+from workspace_paths import load_layout
 try:
     with open(path, encoding="utf-8") as f:
         data = json.load(f)
@@ -54,7 +59,12 @@ elif data.get("structure_gate") != "pass":
 elif "paths_reviewed" not in data:
     print("NO_PATHS_REVIEWED")
 else:
-    print("OK")
+    work_item_id = str(data.get("work_item_id") or "")
+    issues = validate_qa_json(
+        Path(path), task_id, work_item_id,
+        load_layout(Path(harness_root), Path(product_root)),
+    )
+    print(issues[0] if issues else "OK")
 PY
 )
 

@@ -120,10 +120,7 @@ resolve_active_task_id() {
 
 def pre_commit_script() -> str:
     return guard_prelude() + """\
-OUTPUT="$("$HARNESS_BIN" --product-root "$PRODUCT_ROOT" status 2>&1)" || {
-  echo "$OUTPUT" >&2
-  exit 1
-}
+OUTPUT="$("$HARNESS_BIN" --product-root "$PRODUCT_ROOT" status 2>&1)" || true
 python3 -c 'import json,sys; d=json.loads(sys.argv[1]); r=d.get("result",{}); ok=d.get("decision")=="pass" and r.get("decision")=="pass" and r.get("state")=="validated"; raise SystemExit(0 if ok else 1)' "$OUTPUT" || {
   if python3 "$CONFIGURED_ROOT/.harness/scripts/harness_assurance.py" release-candidate-check --repo "$PRODUCT_ROOT" >/dev/null; then
     echo 'HARNESS_RELEASE_CANDIDATE_PASS' >&2

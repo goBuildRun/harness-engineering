@@ -686,10 +686,13 @@ Guarded 接入会把 `pre-commit` / `post-commit` / `pre-push` 写入产品 `.gi
 
 首次安装 hooks 时，在暂存接入文件后执行 `harness bootstrap-guarded --task-id <id> --reason '<原因>'`。一次性 receipt 保存在 `.git/harness/`，绑定当前 HEAD、index tree、精确 staged paths 和任务身份；pre-commit 只验证，post-commit 仅在新 commit parent/tree 匹配后消费。已有版本化 hooks 的仓库不能创建 bootstrap receipt，且该机制仍属于可绕过的 `guarded`，不是 `enforced`。
 
-目标公开路径只有三步；当前 `local` 接入入口如下（旧结果字段仍显示 `shadow`）：
+目标公开路径仍以 start/status/finish 为主；30 分钟 Story 另外用 `stage` 记录六个关键阶段（旧结果字段仍显示 `shadow`）：
 
 ```bash
 bash .harness/scripts/harness start demo-login-task --scope src/auth --work-item <provider-id>
+bash .harness/scripts/harness stage demo-login-task end takeover --decision pass
+bash .harness/scripts/harness stage demo-login-task start planning
+# planning → implementation_test → independent_qa → deploy_provider → finalize 依次 start/end
 bash .harness/scripts/harness status demo-login-task
 bash .harness/scripts/harness finish demo-login-task
 ```
@@ -749,15 +752,16 @@ HARNESS_USAGE_RECEIPT=/absolute/path/to/usage-receipt.json bash .harness/scripts
 
 GC telemetry 同样要求非空 `provider` / `model`，以及真实 `agent_calls`、`context_chars`、`duration_ms`；缺身份或使用布尔值/负数时返回 `GC_TELEMETRY_INVALID`。内部 `harness_metrics.py` 可从任务 `result.json` 目录只读汇总 rollout 指标；baseline 含 `unknown` 或 lite 样本少于 5 时只报告 `insufficient_data`。
 
-结构化 gate runner 按 tier 将 planning、structure、QA、knowledge、growth 和 quality 分别写入 `checks`。standard 命中 `.tsx/.jsx/.vue/.svelte/.html/.css/.scss` 或 frontend/web/ui/pages/components 路径时自动要求 `HARNESS_BROWSER_QA_URL` 并执行浏览器审计；strict 还要求 `HARNESS_STRICT_EVIDENCE` 指向绑定当前 subject、包含 browser/deployment/rollback pass 的 JSON receipt。Product Spec 声明 `production_evidence.provider_mode: real_required` 时，Planning Gate 会固化该要求，strict receipt 还必须包含 `provider_acceptance` 的 `decision: pass`、`provider_mode: real`、`synthetic_only: false` 和非空 `evidence_ref`；合成 canary 只能作为补充证据。产品可在 `quality.commands.lint` 使用 `python-import-boundaries` builtin 声明 `paths` 和 `boundaries: [{from, forbid}]`，通用默认值不内置产品目录。
+结构化 gate runner 按 tier 将 planning、structure、QA、knowledge、growth 和 quality 分别写入 `checks`。standard 命中 `.tsx/.jsx/.vue/.svelte/.html/.css/.scss` 或 frontend/web/ui/pages/components 路径时自动要求 `HARNESS_BROWSER_QA_URL` 并执行浏览器审计；strict 还要求 `HARNESS_STRICT_EVIDENCE` 指向绑定当前 subject、包含 browser/deployment/rollback pass 的 JSON receipt。Product Spec 声明 `production_evidence.provider_mode: real_required` 时，Planning Gate 会固化该要求；生产适配器必须通过 `provider_verifier_preflight.py` 生成同 subject 的离线 receipt，再由 `provider_attempt.py` 在 `deploy_provider` 预算内原子占用唯一调用机会。strict receipt 的 `provider_acceptance` 必须包含该 attempt receipt、`provider_mode: real`、`synthetic_only: false` 和相同 `evidence_ref`；合成 canary 或手写 digest 不能满足要求。产品可在 `quality.commands.lint` 使用 `python-import-boundaries` builtin 声明 `paths` 和 `boundaries: [{from, forbid}]`，通用默认值不内置产品目录。
 
-每个外部 gate 另有 orchestration watchdog，默认 `HARNESS_GATE_TIMEOUT_SECONDS=3600`。该值是每个 gate（包括 quality gate 内全部命令）的累计上限；命令较多或单命令 timeout 更长时，产品必须显式提高它。超时会终止 gate 的整个进程组，并返回绑定 gate 名称和实际 timeout 的 `GATE_TIMEOUT` block；该结果不可被 knowledge/Growth 自动同步或重试覆盖。
+每个外部 gate 另有 orchestration watchdog，默认 `HARNESS_GATE_TIMEOUT_SECONDS=120`。该值仍受 Story/阶段剩余预算的更小值约束；并行批次和后续串行 gate 共享同一阶段 deadline，不会为每个 gate 重置额度。超时会终止 gate 的整个进程组，并返回绑定 gate 名称和实际 timeout 的 `GATE_TIMEOUT` 或 `STAGE_BUDGET_EXCEEDED` block；该结果不可被 knowledge/Growth 自动同步或重试覆盖。
 
 本地 `work_item.sh close` 默认只写 `ready_to_release`。`done`、`implemented`、`released` 等终态必须传入受控 `git-receive` 或 `release-gate` 使用独立 SSH 私钥签发的 `--lifecycle-receipt`，以及冗余断言 `--accepted-ref`、`--accepted-commit`。`HARNESS_ACCEPTANCE_ALLOWED_SIGNERS` 信任 receipt 签名；`HARNESS_ACCEPTANCE_POLICY` 与 `HARNESS_ACCEPTANCE_POLICY_ALLOWED_SIGNERS` 指向仓库外、独立 namespace 签名的 acceptance policy 和信任根。该 policy 固定 repo identity、唯一保护 ref、允许的 authority、候选 task 及可关闭的 Work Item/provider；产品提交内 contract 只能记录其摘要，不能自授权。消费端从 policy 取得期望 ref，回查 Git attestation/result object，并要求 receipt commit 与保护 ref 当前 commit tip 精确相等，同时校验 provider、work item、task、policy/result digest、有效期和两层签名；祖先可达、调用者改选 ref、旧 receipt 重放或手写 JSON 一律阻断。
 
 | 公开动作 | 使用者看到的结果 | 过渡期内部能力参考 |
 |----------|------------------|--------------------|
 | `start` | 任务身份、初始 execution tier、范围、预算与待办 | 第 2 节的规划/绑定 + `agent_start.sh` |
+| `stage` | 六阶段开始/结束、累计 wall、预算、重试和 root ledger | `harness_timing.py` + `harness_cycle_commands.py` |
 | `status` | 当前有效 tier、通过项、阻塞项、实现成本和 Harness 开销 | `task_workspace.sh`、各 gate 的 JSON 结果 |
 | `finish` | 重新按实际 diff 分级，执行或复用必要检查，写入 `result.json` | 第 4–8 节按角色和风险选择的 gate + `check.sh` / `mr_ready.sh` |
 

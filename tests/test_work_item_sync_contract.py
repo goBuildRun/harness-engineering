@@ -780,7 +780,7 @@ work_item_parent_id: epic_parent_123
         self.assertFalse(result["ok"])
         self.assertIn("CAPTURE_BINDING_VERIFY_UNSUPPORTED", result["failures"])
 
-    def test_close_syncs_planning_context_after_status_update(self) -> None:
+    def test_close_does_not_sync_planning_context_after_status_update(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product = Path(tmp)
             workspace = product / "harness-workspace"
@@ -824,12 +824,11 @@ work_item:
                 text=True,
             )
             data = json.loads(out)
-            context = (workspace / "knowledge" / "CONTEXT.md").read_text(encoding="utf-8")
+            context = workspace / "knowledge" / "CONTEXT.md"
 
         self.assertEqual("pass", data["decision"])
-        self.assertIn("knowledge_sync", data)
-        self.assertEqual(1, data["knowledge_sync"]["product_specs"])
-        self.assertIn("Demo 产品蓝图", context)
+        self.assertNotIn("knowledge_sync", data)
+        self.assertFalse(context.exists())
 
 
 if __name__ == "__main__":

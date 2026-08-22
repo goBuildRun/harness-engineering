@@ -8,7 +8,10 @@ from pathlib import Path
 from typing import Any
 
 
-CACHEABLE_GATES = {"tier", "scope", "structure", "plan_sync", "task_contract", "dag_sync"}
+CACHEABLE_GATES = {
+    "tier", "scope", "harness", "structure", "diff_integrity",
+    "plan_sync", "task_contract", "dag_sync", "knowledge",
+}
 
 
 def tool_digest(paths: list[Path]) -> str:
@@ -21,20 +24,25 @@ def tool_digest(paths: list[Path]) -> str:
 
 def reuse_check(cached: dict[str, Any] | None, *, gate: str,
                 fingerprint: str, subject_digest: str,
-                policy_digest: str) -> dict[str, Any] | None:
+                policy_digest: str, input_digest: str = "") -> dict[str, Any] | None:
     if gate not in CACHEABLE_GATES or not isinstance(cached, dict):
         return None
-    if (
-        cached.get("fingerprint") != fingerprint
-        or cached.get("subject_digest") != subject_digest
-        or cached.get("policy_digest") != policy_digest
-        or cached.get("decision") not in {"pass", "block"}
-        or cached.get("stale")
-    ):
+    precise = bool(input_digest)
+    if (cached.get("fingerprint") != fingerprint
+            or cached.get("decision") not in {"pass", "block"}
+            or (precise and cached.get("input_digest") != input_digest)
+            or (not precise and cached.get("subject_digest") != subject_digest)
+            or cached.get("policy_digest") != policy_digest
+            or cached.get("stale")):
         return None
     reused = deepcopy(cached)
     reused["source"] = "cache"
     reused["cached_from"] = cached.get("completed_at", "")
+    if precise:
+        reused["original_subject_digest"] = cached.get("subject_digest", "")
+        reused["original_policy_digest"] = cached.get("policy_digest", "")
+        reused["subject_digest"] = subject_digest
+        reused["policy_digest"] = policy_digest
     reused.pop("stale", None)
     return reused
 

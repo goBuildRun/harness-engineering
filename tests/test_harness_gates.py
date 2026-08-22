@@ -20,6 +20,8 @@ from harness_gates import (  # noqa: E402
     TIER_GATES, _run_gate_command, browser_required, committed_work_item,
     committed_work_item_resolution, prepare_ci_task, run_gate_plan,
 )
+from provider_verifier_preflight import verify as verify_provider_preflight  # noqa: E402
+from provider_attempt import run_once as run_provider_once  # noqa: E402
 
 
 class HarnessGatesTest(unittest.TestCase):
@@ -293,6 +295,7 @@ class HarnessGatesTest(unittest.TestCase):
 
     def test_synthetic_canary_cannot_satisfy_declared_real_provider_requirement(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
             receipt = Path(tmp) / "strict.json"
             base_receipt = {
                 "subject_digest": "subject-a",
@@ -319,26 +322,72 @@ class HarnessGatesTest(unittest.TestCase):
                     mock.patch("harness_gates.active_planning_gate_path", return_value=credential), \
                     mock.patch.dict(os.environ, {"HARNESS_STRICT_EVIDENCE": str(receipt)}):
                 synthetic = run_gate_plan(
-                    ROOT, ROOT, tier="strict", subject_digest="subject-a", policy_digest="policy",
+                    ROOT, product, tier="strict", subject_digest="subject-a", policy_digest="policy",
                 )
-                receipt.write_text(json.dumps({
+                forged = {
                     **base_receipt,
+                    "provider_preflight": {
+                        "schema": "harness-provider-preflight-receipt-v1",
+                        "decision": "pass", "subject_digest": "subject-a",
+                        "offline": True, "network_calls": 0,
+                        "contract_digest": "a" * 64,
+                        "trace_digest": "b" * 64,
+                        "verifier_digest": "c" * 64,
+                    },
                     "provider_acceptance": {
                         "decision": "pass", "provider_mode": "real",
                         "synthetic_only": False,
                         "evidence_ref": "evidence/production/provider-receipt.json",
                     },
-                }))
+                }
+                receipt.write_text(json.dumps(forged))
+                forged_result = run_gate_plan(
+                    ROOT, product, tier="strict", subject_digest="subject-a", policy_digest="policy",
+                )
+                forged["provider_preflight"] = verify_provider_preflight({
+                    "schema": "harness-provider-call-contract-v1",
+                    "subject_digest": "subject-a",
+                    "required_calls": ["provider.accept"],
+                    "allowed_calls": ["provider.accept"],
+                }, {
+                    "schema": "harness-provider-offline-trace-v1",
+                    "subject_digest": "subject-a", "offline": True,
+                    "calls": ["provider.accept"],
+                }, "subject-a")
+                provider_evidence = Path(tmp) / "provider-evidence.json"
+
+                def write_provider_evidence(_command, **_kwargs):
+                    provider_evidence.write_text('{"decision":"pass"}')
+                    return mock.Mock(returncode=0)
+
+                attempt_receipt = run_provider_once(
+                    Path(tmp) / "provider-attempt.json", forged["provider_preflight"],
+                    "subject-a", "mock", provider_evidence,
+                    "provider-evidence.json", ["mock-provider"], 1,
+                    write_provider_evidence,
+                )
+                forged["provider_acceptance"]["attempt_receipt"] = attempt_receipt
+                forged["provider_acceptance"]["evidence_ref"] = "provider-evidence.json"
+                receipt.write_text(json.dumps(forged))
                 real = run_gate_plan(
-                    ROOT, ROOT, tier="strict", subject_digest="subject-a", policy_digest="policy",
+                    ROOT, product, tier="strict", subject_digest="subject-a", policy_digest="policy",
+                )
+                provider_evidence.write_text('{"decision":"pass","tampered":true}')
+                tampered = run_gate_plan(
+                    ROOT, product, tier="strict", subject_digest="subject-a", policy_digest="policy",
                 )
 
             self.assertEqual(
                 synthetic["checks"]["strict_evidence"]["reason"],
-                "STRICT_REAL_PROVIDER_EVIDENCE_REQUIRED",
+                "STRICT_PROVIDER_PREFLIGHT_REQUIRED",
             )
             self.assertEqual(synthetic["decision"], "block")
+            self.assertEqual(
+                forged_result["checks"]["strict_evidence"]["reason"],
+                "STRICT_PROVIDER_PREFLIGHT_REQUIRED",
+            )
             self.assertEqual(real["checks"]["strict_evidence"]["decision"], "pass")
+            self.assertEqual(tampered["checks"]["strict_evidence"]["decision"], "block")
 
 
 if __name__ == "__main__":

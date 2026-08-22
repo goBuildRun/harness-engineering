@@ -28,6 +28,17 @@ from harness_cli import main as harness_main  # noqa: E402
 from worktree_baseline import capture_baseline  # noqa: E402
 
 
+def complete_story_stages(command: list[str], task_id: str) -> None:
+    stages = (
+        "takeover", "planning", "implementation_test", "independent_qa",
+        "deploy_provider", "finalize",
+    )
+    for stage in stages:
+        if stage != "takeover":
+            subprocess.check_output([*command, "stage", task_id, "start", stage])
+        subprocess.check_output([*command, "stage", task_id, "end", stage])
+
+
 class HarnessAssuranceTest(unittest.TestCase):
     def release_candidate_result(self, paths: list[str]) -> dict:
         result = default_result("task-release", initial_tier="standard")
@@ -241,7 +252,7 @@ class HarnessAssuranceTest(unittest.TestCase):
                 "argv",
                 ["harness", "--product-root", str(product), "release-candidate"],
             ), redirect_stdout(output):
-                self.assertEqual(harness_main(), 0)
+                self.assertEqual(harness_main(), 1)
 
             outcome = json.loads(output.getvalue())
             self.assertEqual(outcome["reason"], "RELEASE_CANDIDATE_GUARDED_REQUIRED")
@@ -262,6 +273,7 @@ class HarnessAssuranceTest(unittest.TestCase):
                 [*command, "start", "onboarding", "--tier", "lite", "--scope", "docs"], text=True,
             ))
             (product / "docs/note.md").write_text("implemented\n")
+            complete_story_stages(command, "onboarding")
             finish = json.loads(subprocess.check_output(
                 [*command, "finish", "--skip-legacy-gates"], text=True,
             ))
@@ -291,7 +303,7 @@ class HarnessAssuranceTest(unittest.TestCase):
             subprocess.run(["git", "add", ".githooks"], cwd=product, check=True)
             result = default_result("task")
             result.update(state="validated", decision="pass")
-            with patch("harness_commands.verify_attestation") as verify:
+            with patch("harness_cycle_commands.verify_attestation") as verify:
                 verify.return_value = {"decision": "block", "reason": "ATTESTATION_MISSING"}
                 refresh_assurance(result, product, "policy", phase="pre-commit-head")
                 verify.assert_called_once_with(
@@ -404,6 +416,7 @@ class HarnessAssuranceTest(unittest.TestCase):
             (product / "harness-workspace/runs/active_task.json").write_text(
                 json.dumps({"work_item_id": "guarded-task"}), encoding="utf-8",
             )
+            complete_story_stages(command, "guarded-execution")
             binding_result = json.loads(subprocess.check_output(
                 [*command, "finish", "--skip-legacy-gates"], text=True,
                 env={**dict(os.environ), "HARNESS_PRODUCT_ROOT": str(product)},

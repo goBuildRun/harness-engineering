@@ -50,7 +50,7 @@ def _terminate_process_group(process: subprocess.Popen[str]) -> str:
 
 def run_process_group(command: list[str], *, cwd: Path | None = None,
                       env: dict[str, str] | None = None,
-                      timeout: int) -> subprocess.CompletedProcess[str]:
+                      timeout: float) -> subprocess.CompletedProcess[str]:
     process = subprocess.Popen(
         command, cwd=cwd, env=env, text=True,
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,

@@ -49,12 +49,20 @@ fi
 LEVEL=$(python3 -c "import json; print(json.load(open('$GATE_FILE'))['level'])")
 TASK_DIR=$(python3 -c "import json; d=json.load(open('$GATE_FILE')); print(d.get('task_dir') or 'N/A')")
 BOUND_ID=$(python3 -c "import json; d=json.load(open('$GATE_FILE')); w=d.get('work_item') or {}; print(w.get('id') or '' if isinstance(w, dict) else '')")
+GATE_PROVIDER=$(python3 -c "import json; d=json.load(open('$GATE_FILE')); w=d.get('work_item') or {}; print(w.get('provider') or 'noop' if isinstance(w, dict) else 'noop')")
 if [[ -z "$BOUND_ID" ]]; then
   python3 "$EMIT" block "NO_WORK_ITEM_IN_PLANNING_GATE: 重新 planning_gate"
   exit 0
 fi
 if [[ "$WORK_ITEM_ID" != "$BOUND_ID" ]]; then
   python3 "$EMIT" block "WORK_ITEM_MISMATCH: 参数 ${WORK_ITEM_ID} 与 planning gate ${BOUND_ID} 不一致"
+  exit 0
+fi
+
+LIFECYCLE_PREFLIGHT=$(python3 "$SCRIPT_DIR/harness_lifecycle_preflight.py" \
+  --product-root "$PRODUCT_ROOT" --provider "$GATE_PROVIDER" 2>/dev/null || true)
+if [[ "$LEVEL" == "L3" ]] && ! echo "$LIFECYCLE_PREFLIGHT" | python3 -c "import sys,json; d=json.load(sys.stdin); sys.exit(0 if d.get('decision')=='pass' else 1)" 2>/dev/null; then
+  harness_print_json "$LIFECYCLE_PREFLIGHT"
   exit 0
 fi
 
@@ -108,7 +116,7 @@ PY
 )
 fi
 RUNTIME_START=$("$SCRIPT_DIR/harness" start "$WORK_ITEM_ID" \
-  --work-item "$WORK_ITEM_ID" --tier "$RUNTIME_TIER" "${RUNTIME_SCOPE_ARGS[@]}")
+  --work-item "$WORK_ITEM_ID" --tier "$RUNTIME_TIER" "${RUNTIME_SCOPE_ARGS[@]}" || true)
 if ! echo "$RUNTIME_START" | python3 -c "import sys,json; d=json.load(sys.stdin); sys.exit(0 if d.get('decision')=='pass' else 1)" 2>/dev/null; then
   harness_print_json "$RUNTIME_START"
   exit 0
@@ -156,21 +164,13 @@ def excerpt(path: Path, label: str, rel_path: str, limit: int = 2200) -> str:
 try:
     sys.path.insert(0, str(Path(script_dir)))
     from harness_knowledge import ensure
+    from harness_context_index import render_index, write_index
     from workspace_paths import load_layout
 
     layout = load_layout(Path(harness_root).resolve(), Path(product_root).resolve())
     ensure(layout)
-    knowledge_block = "\n".join(
-        [
-            "## 产品知识注入",
-            "",
-            "> 以下内容来自产品侧 `harness-workspace/knowledge/`。若与本次任务 `product-spec` / `03-实施方案` 冲突，以本次任务为准，并把长期差异写回成长报告。",
-            "",
-            excerpt(layout.context_file, "CONTEXT.md", layout.rel(layout.context_file)),
-            excerpt(layout.lessons_file, "LESSONS.md", layout.rel(layout.lessons_file), 1600),
-            excerpt(layout.reference_systems_file, "REFERENCE_SYSTEMS.md", layout.rel(layout.reference_systems_file), 1600),
-        ]
-    ).rstrip()
+    index = write_index(layout, Path(ctx_path).parent / "context_index.json")
+    knowledge_block = render_index(index)
 except Exception as exc:
     knowledge_block = "\n".join(
         [

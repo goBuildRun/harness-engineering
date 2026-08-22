@@ -54,6 +54,7 @@ def capture_evidence(
     source: str = "",
     command: str = "",
     work_item_id: str = "",
+    release_impact: str = "followup",
 ) -> Path:
     if work_item_id and not valid_task_id(work_item_id):
         raise ValueError("TASK_ID_INVALID")
@@ -73,6 +74,9 @@ def capture_evidence(
     clean_next_action = sanitize_capture_text(next_action)
     clean_source = sanitize_capture_text(source) or "agent-observed"
     clean_command = code_span(command)
+    clean_release_impact = sanitize_capture_text(release_impact).lower()
+    if clean_release_impact not in {"blocker", "followup", "none"}:
+        raise ValueError("GROWTH_RELEASE_IMPACT_INVALID")
     lines = [
         "# GROWTH CAPTURE — 自我成长候选证据",
         "",
@@ -81,6 +85,7 @@ def capture_evidence(
         f"- **标题**：{clean_title}",
         f"- **建议分类**：{clean_category}",
         f"- **来源**：{clean_source}",
+        f"- **Release impact**：{clean_release_impact}",
         *([f"- **Work Item**：`{work_item_id}`"] if work_item_id else []),
         "",
         "## 经验沉淀候选",

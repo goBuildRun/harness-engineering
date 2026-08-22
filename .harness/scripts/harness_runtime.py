@@ -22,6 +22,7 @@ from harness_tier import TIERS, classify_tier, task_kind_tier
 from harness_gc_context import build_gc_context
 from harness_gc_validation import valid_mechanical_adjudication
 from harness_task_resolution import resolve_task_id, valid_task_id
+from harness_timing import STAGE_BUDGETS_MS, initialize_cycle
 
 SCHEMA_VERSION = 1
 UNKNOWN = "unknown"
@@ -51,7 +52,7 @@ def fingerprint(gate: str, subject_digest: str, policy_digest: str, *inputs: Any
 def default_result(task_id: str, *, initial_tier: str = "standard", work_item: Any = None) -> dict[str, Any]:
     if initial_tier not in TIERS:
         initial_tier = "standard"
-    return {
+    result = {
         "schema_version": SCHEMA_VERSION,
         "task_id": task_id,
         "work_item": work_item,
@@ -85,6 +86,8 @@ def default_result(task_id: str, *, initial_tier: str = "standard", work_item: A
         "decision": "block",
         "updated_at": now(),
     }
+    initialize_cycle(result)
+    return result
 
 
 def atomic_write_result(path: Path, result: dict[str, Any]) -> None:
@@ -275,7 +278,18 @@ def telemetry_add_gc(result: dict[str, Any], *, context_chars: int, duration_ms:
 def finish_decision(result: dict[str, Any]) -> str:
     invariant_pass = all(value == "pass" for value in result.get("invariants", {}).values())
     checks_pass = all(check.get("decision") == "pass" for check in result.get("checks", {}).values())
-    decision = "pass" if invariant_pass and checks_pass and not result.get("blockers") else "block"
+    cycle = result.get("cycle") or {}
+    cycle_pass = not cycle.get("stage_enforced") or (
+        not cycle.get("current_stage")
+        and all(
+            (cycle.get("stages", {}).get(stage) or {}).get("status") == "pass"
+            for stage in STAGE_BUDGETS_MS
+        )
+    )
+    decision = (
+        "pass" if invariant_pass and checks_pass and cycle_pass and not result.get("blockers")
+        else "block"
+    )
     result["decision"] = decision
     result["state"] = "validated" if decision == "pass" else "blocked"
     return decision

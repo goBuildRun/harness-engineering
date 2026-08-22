@@ -291,10 +291,6 @@ class ProviderLifecycleTest(unittest.TestCase):
                 "work_item.resolve_product_root", return_value=root,
             ), mock.patch(
                 "work_item.validate_terminal_receipt", return_value=(True, "VALID"),
-            ), mock.patch(
-                "work_item.load_layout", return_value=object(),
-            ), mock.patch(
-                "work_item.sync_planning", return_value={"decision": "pass"},
             ), redirect_stdout(io.StringIO()):
                 self.assertEqual(work_item.cmd_close(args), 0)
             provider.update_status.assert_called_once_with("WI-42", "done", "")

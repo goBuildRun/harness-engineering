@@ -28,9 +28,12 @@ from harness_runtime import (  # noqa: E402
     fingerprint,
     git_changed,
     mechanical_code_health,
+    load_result,
     resolve_task_id,
+    result_path,
     telemetry_add_gc,
 )
+from harness_cycle_commands import begin_stage, finish_stage  # noqa: E402
 from harness_scope import paths_within_scope  # noqa: E402
 from harness_state import invalidate_if_stale  # noqa: E402
 from harness_task_resolution import bind_active_task  # noqa: E402
@@ -38,6 +41,21 @@ import harness_commands  # noqa: E402
 import harness_ci  # noqa: E402
 import harness_cli  # noqa: E402
 import harness_migration_commands  # noqa: E402
+
+
+def complete_story_stages(product: Path, task_id: str) -> None:
+    path = result_path(product, task_id)
+    result = load_result(path)
+    for stage in (
+        "takeover", "planning", "implementation_test", "independent_qa",
+        "deploy_provider", "finalize",
+    ):
+        if stage != "takeover":
+            assert begin_stage(result, path, task_id, stage)["decision"] == "pass"
+        assert finish_stage(
+            result, path, task_id, stage, decision="pass", reason="STAGE_COMPLETED",
+        )["decision"] == "pass"
+    atomic_write_result(path, result)
 
 
 class HarnessRuntimeTest(unittest.TestCase):
@@ -117,6 +135,11 @@ class HarnessRuntimeTest(unittest.TestCase):
             atomic_write_result(path, result)
             baseline = path.parent / "worktree_baseline.json"
             baseline_before = baseline.read_bytes()
+            (product / "harness-workspace/project.yaml").write_text(
+                "work_item:\n  provider: feishu\n  providers:\n"
+                "    feishu:\n      status_update_mode: completed\n",
+                encoding="utf-8",
+            )
             task_dir = product / "harness-workspace/planning/tasks/2026-resume-planning-binding"
             task_dir.mkdir(parents=True)
             (task_dir / "planning_gate_pass.json").write_text(json.dumps({
@@ -147,6 +170,10 @@ class HarnessRuntimeTest(unittest.TestCase):
             task_id = "WI-43.3"
             task_dir = product / "harness-workspace/planning/tasks/2026-08-19-story-43-3"
             task_dir.mkdir(parents=True)
+            (product / "harness-workspace/project.yaml").write_text(
+                "work_item:\n  provider: feishu\n  providers:\n    feishu:\n      status_update_mode: completed\n",
+                encoding="utf-8",
+            )
             (task_dir / "planning_gate_pass.json").write_text(json.dumps({
                 "decision": "pass",
                 "work_item": {"id": task_id, "provider": "feishu"},
@@ -551,6 +578,14 @@ class HarnessRuntimeTest(unittest.TestCase):
             (product / "docs" / "note.md").write_text("changed\n")
             status = json.loads(subprocess.check_output([*command, "status"], text=True))
             self.assertEqual(status["result"]["enforcement_notice"], "LOCAL_ONLY")
+            premature = subprocess.run(
+                [*command, "finish", "--skip-legacy-gates"], text=True,
+                capture_output=True, check=False,
+                env={**os.environ, "HARNESS_PRODUCT_ROOT": str(product)},
+            )
+            self.assertEqual(premature.returncode, 1)
+            self.assertEqual(json.loads(premature.stdout)["reason"], "STAGE_STILL_ACTIVE")
+            complete_story_stages(product, "lite-task")
             finished = json.loads(subprocess.check_output(
                 [*command, "finish", "--skip-legacy-gates"], text=True,
                 env={**os.environ, "HARNESS_PRODUCT_ROOT": str(product)},
@@ -594,6 +629,7 @@ class HarnessRuntimeTest(unittest.TestCase):
                 text=True,
             )
             (product / "docs/note.md").write_text("validated\n")
+            complete_story_stages(product, "read-only-status")
             finished = json.loads(subprocess.check_output(
                 [*command, "finish", "--skip-legacy-gates"], text=True,
                 env={**os.environ, "HARNESS_PRODUCT_ROOT": str(product)},
@@ -629,6 +665,7 @@ class HarnessRuntimeTest(unittest.TestCase):
                     work_item="", kind="implementation", reason="",
                 ))
             source.write_text("before gate\n")
+            complete_story_stages(product, "gate-mutation")
             captured = []
 
             def mutate_subject(*_args, **kwargs):
@@ -666,13 +703,13 @@ class HarnessRuntimeTest(unittest.TestCase):
             self.assertTrue(all(check.get("stale") is True for check in result["checks"].values()))
 
     def test_ci_checks_are_always_executed(self) -> None:
-        output = subprocess.check_output([
+        completed = subprocess.run([
             "python3", str(SCRIPTS / "harness_runtime.py"),
             "--harness-root", str(ROOT), "--product-root", str(ROOT),
             "ci-check", "--task-id", "cache-ci", "--commit", "HEAD",
             "--tier", "lite", "--scope", ".",
-        ], text=True)
-        result = json.loads(output)["result"]
+        ], text=True, capture_output=True, check=False)
+        result = json.loads(completed.stdout)["result"]
         self.assertEqual(result["checks"]["tier"]["source"], "executed")
         self.assertEqual(result["checks"]["scope"]["source"], "executed")
         self.assertEqual(result["checks"]["code_health"]["source"], "executed")
@@ -688,7 +725,9 @@ class HarnessRuntimeTest(unittest.TestCase):
                 "--harness-root", str(ROOT), "--product-root", str(product),
                 "start", "urgent-fix", "--kind", "hotfix", "--tier", "lite", "--scope", ".",
             ]
-            blocked = json.loads(subprocess.check_output(command, text=True))
+            blocked_process = subprocess.run(command, text=True, capture_output=True, check=False)
+            self.assertEqual(blocked_process.returncode, 1)
+            blocked = json.loads(blocked_process.stdout)
             self.assertEqual(blocked["reason"], "TASK_KIND_REASON_REQUIRED")
             started = json.loads(subprocess.check_output(
                 [*command, "--reason", "production regression"], text=True,
@@ -795,6 +834,7 @@ class HarnessRuntimeTest(unittest.TestCase):
                     work_item="", kind="implementation",
                 ))
             source.write_text("def unused_helper():\n    pass\n")
+            complete_story_stages(product, "gc-cache")
             captured = []
 
             def run_gc(*_args, **_kwargs):

@@ -302,6 +302,7 @@ def main() -> int:
     parser.add_argument("--source", default="")
     parser.add_argument("--command", default="")
     parser.add_argument("--work-item", default="")
+    parser.add_argument("--release-impact", choices=("blocker", "followup", "none"), default="followup")
     parser.add_argument("cmd", choices=("scan", "status", "review-status", "freshness", "apply-review", "capture"))
     args = parser.parse_args()
 
@@ -340,6 +341,7 @@ def main() -> int:
             source=args.source.strip(),
             command=args.command.strip(),
             work_item_id=work_item_id,
+            release_impact=args.release_impact,
         )
         emit("pass", f"GROWTH_CAPTURE_READY: {layout.rel(out)}", evidence=layout.rel(out))
         return 0

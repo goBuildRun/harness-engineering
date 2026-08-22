@@ -29,31 +29,6 @@ if [[ "$DECISION" != "pass" && "$DECISION" != "fail" ]]; then
   exit 0
 fi
 
-run_gate() {
-  local script="$1"
-  shift
-  local out
-  out=$(bash "$SCRIPT_DIR/$script" "$@" 2>/dev/null) || {
-    [[ -n "$out" ]] && harness_print_json "$out"
-    return 1
-  }
-  if echo "$out" | python3 -c "import sys,json; d=json.load(sys.stdin); sys.exit(0 if d.get('decision')=='pass' else 1)" 2>/dev/null; then
-    return 0
-  fi
-  harness_print_json "$out"
-  return 1
-}
-
-# pass 前强制 structure（--diff）+ plan_sync（无 --diff）
-if [[ "$DECISION" == "pass" ]]; then
-  if ! run_gate structure_guard.sh --diff; then
-    exit 0
-  fi
-  if ! run_gate plan_sync_check.sh; then
-    exit 0
-  fi
-fi
-
 mkdir -p "$AGENT_WS"
 TS="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
@@ -104,7 +79,31 @@ else
   PATHS_JSON=$(cd "$PRODUCT_ROOT" && { git diff --name-only 2>/dev/null || true; git diff --cached --name-only 2>/dev/null || true; } | sort -u | python3 -c "import sys,json; print(json.dumps([l.strip() for l in sys.stdin if l.strip()], ensure_ascii=False))")
 fi
 
-python3 "$SCRIPT_DIR/qa_write_evidence.py" "$EVIDENCE" "$TASK_ID" "$ACTIVE_WI" "$DECISION" "$TS" "$SUMMARY" "$PATHS_JSON"
+BINDING_JSON="{}"
+if [[ "$DECISION" == "pass" ]]; then
+  BUNDLE_STATUS=$(python3 "$SCRIPT_DIR/qa_evidence_binding.py" status \
+    --harness-root "$HARNESS_ROOT" --product-root "$PRODUCT_ROOT" \
+    --work-item "$ACTIVE_WI" --paths-json "$PATHS_JSON" || true)
+  if ! echo "$BUNDLE_STATUS" | python3 -c "import sys,json; d=json.load(sys.stdin); sys.exit(0 if d.get('decision')=='pass' else 1)" 2>/dev/null; then
+    BUNDLE_STATUS=$(python3 "$SCRIPT_DIR/qa_evidence_binding.py" prepare \
+      --harness-root "$HARNESS_ROOT" --product-root "$PRODUCT_ROOT" \
+      --work-item "$ACTIVE_WI" --paths-json "$PATHS_JSON" || true)
+    if ! echo "$BUNDLE_STATUS" | python3 -c "import sys,json; d=json.load(sys.stdin); sys.exit(0 if d.get('decision')=='pass' else 1)" 2>/dev/null; then
+      harness_print_json "$BUNDLE_STATUS"
+      exit 0
+    fi
+  fi
+  RECEIPT_BINDING=$(python3 "$SCRIPT_DIR/qa_evidence_binding.py" binding \
+    --harness-root "$HARNESS_ROOT" --product-root "$PRODUCT_ROOT" \
+    --work-item "$ACTIVE_WI" --task-id "$TASK_ID" --paths-json "$PATHS_JSON" || true)
+  if ! echo "$RECEIPT_BINDING" | python3 -c "import sys,json; d=json.load(sys.stdin); sys.exit(0 if d.get('decision')=='pass' else 1)" 2>/dev/null; then
+    harness_print_json "$RECEIPT_BINDING"
+    exit 0
+  fi
+  BINDING_JSON=$(echo "$RECEIPT_BINDING" | python3 -c "import sys,json; print(json.dumps(json.load(sys.stdin)['binding'], ensure_ascii=False))")
+fi
+
+python3 "$SCRIPT_DIR/qa_write_evidence.py" "$EVIDENCE" "$TASK_ID" "$ACTIVE_WI" "$DECISION" "$TS" "$SUMMARY" "$PATHS_JSON" "$BINDING_JSON"
 
 # 同步 05-QA验收.md
 PLANNING_GATE="$AGENT_WS/planning_gate_pass.json"

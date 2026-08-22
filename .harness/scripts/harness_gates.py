@@ -15,22 +15,24 @@ from harness_output import dump_json
 from process_control import run_process_group
 from harness_task_resolution import valid_task_id
 from workspace_paths import active_planning_gate_path, load_layout
+from harness_gate_execution import build_spec, execute_specs, gate_input_digest
+from harness_strict_evidence import validate as _strict_evidence
 
 
 TIER_GATES = {
     "lite": ("harness", "structure", "diff_integrity", "quality_lint", "quality_test"),
     "standard": (
         "planning", "harness", "structure", "diff_integrity", "plan_sync", "dag_sync",
-        "qa_evidence", "knowledge", "growth_review", "growth_freshness",
+        "qa_evidence", "knowledge", "growth_release",
         "quality_lint", "quality_test",
     ),
     "strict": (
         "planning", "harness", "structure", "diff_integrity", "plan_sync", "dag_sync",
-        "qa_evidence", "knowledge", "growth_review", "growth_freshness",
+        "qa_evidence", "knowledge", "growth_release",
         "quality_lint", "quality_test", "strict_evidence",
     ),
 }
-DEFAULT_GATE_TIMEOUT_SECONDS = 3600
+DEFAULT_GATE_TIMEOUT_SECONDS = 120
 
 
 def checks_for_tier(checks: dict[str, dict[str, Any]], tier: str) -> dict[str, dict[str, Any]]:
@@ -64,6 +66,10 @@ def _commands(harness: Path) -> dict[str, list[str]]:
         "knowledge": ["bash", str(scripts / "harness_knowledge.sh"), "check-planning"],
         "growth_review": ["bash", str(scripts / "harness_growth.sh"), "review-status"],
         "growth_freshness": ["bash", str(scripts / "harness_growth.sh"), "freshness"],
+        "growth_release": [
+            "python3", str(scripts / "harness_growth_release.py"),
+            "--harness-root", str(harness), "--product-root", "__PRODUCT_ROOT__",
+        ],
         "quality_lint": ["bash", str(scripts / "quality_commands.sh"), "lint"],
         "quality_test": ["bash", str(scripts / "quality_commands.sh"), "test"],
     }
@@ -91,7 +97,7 @@ def _gate_timeout_seconds() -> int:
 
 
 def _run_gate_command(command: list[str], *, gate: str, cwd: Path,
-                      env: dict[str, str], timeout: int) -> tuple[dict[str, Any], int]:
+                      env: dict[str, str], timeout: float) -> tuple[dict[str, Any], int]:
     try:
         completed = run_process_group(command, cwd=cwd, env=env, timeout=timeout)
     except subprocess.TimeoutExpired as exc:
@@ -104,43 +110,6 @@ def _run_gate_command(command: list[str], *, gate: str, cwd: Path,
             reason += f"; log={log}"
         return {"decision": "block", "reason": reason}, 124
     return _payload(completed.stdout, completed.returncode), completed.returncode
-
-
-def _strict_evidence(subject_digest: str, production_policy: Any = None) -> dict[str, Any]:
-    path = Path(os.environ.get("HARNESS_STRICT_EVIDENCE", ""))
-    try:
-        receipt = json.loads(path.read_text(encoding="utf-8")) if str(path) != "." else {}
-    except (OSError, json.JSONDecodeError):
-        receipt = {}
-    required = ("browser_qa", "deployment", "rollback")
-    base_valid = (
-        receipt.get("subject_digest") == subject_digest
-        and all((receipt.get(name) or {}).get("decision") == "pass" for name in required)
-    )
-    if production_policy is not None and not isinstance(production_policy, dict):
-        return {"decision": "block", "reason": "STRICT_PRODUCTION_POLICY_INVALID"}
-    provider_mode = str((production_policy or {}).get("provider_mode") or "").strip()
-    if provider_mode not in {"", "synthetic_allowed", "real_required"}:
-        return {"decision": "block", "reason": "STRICT_PRODUCTION_POLICY_INVALID"}
-    if base_valid and provider_mode == "real_required":
-        provider_acceptance = receipt.get("provider_acceptance") or {}
-        provider_valid = (
-            isinstance(provider_acceptance, dict)
-            and provider_acceptance.get("decision") == "pass"
-            and provider_acceptance.get("provider_mode") == "real"
-            and provider_acceptance.get("synthetic_only") is False
-            and isinstance(provider_acceptance.get("evidence_ref"), str)
-            and bool(provider_acceptance["evidence_ref"].strip())
-        )
-        if not provider_valid:
-            return {
-                "decision": "block",
-                "reason": "STRICT_REAL_PROVIDER_EVIDENCE_REQUIRED",
-            }
-    return {
-        "decision": "pass" if base_valid else "block",
-        "reason": "STRICT_EVIDENCE_OK" if base_valid else "STRICT_EVIDENCE_REQUIRED",
-    }
 
 
 def prepare_ci_task(harness: Path, product: Path, task_id: str) -> bool:
@@ -236,7 +205,12 @@ def committed_work_item(harness: Path, product: Path, task_id: str) -> dict[str,
 def run_gate_plan(harness: Path, product: Path, *, tier: str,
                   subject_digest: str, policy_digest: str,
                   ci_task_id: str = "", changed_files: list[str] | None = None,
-                  read_only: bool = False) -> dict[str, Any]:
+                  read_only: bool = False,
+                  previous_checks: dict[str, dict[str, Any]] | None = None,
+                  remaining_budget_ms: int | None = None,
+                  ledger: Path | None = None,
+                  task_id: str = "", work_item_id: str = "") -> dict[str, Any]:
+    plan_started = time.monotonic()
     if ci_task_id and tier != "lite":
         prepare_ci_task(harness, product, ci_task_id)
     layout = load_layout(harness, product)
@@ -246,98 +220,137 @@ def run_gate_plan(harness: Path, product: Path, *, tier: str,
     except (OSError, json.JSONDecodeError):
         planning_credential = {}
     commands = _commands(harness)
+    if "growth_release" in commands:
+        commands["growth_release"] = [
+            str(product) if item == "__PRODUCT_ROOT__" else item
+            for item in commands["growth_release"]
+        ]
     required_gates = list(TIER_GATES[tier])
     if tier == "standard" and browser_required(changed_files or []):
         required_gates.append("browser_qa")
     env = {**os.environ, "HARNESS_PRODUCT_ROOT": str(product)}
     if read_only:
         env.update({"CI": "true", "HARNESS_GATE_READ_ONLY": "1"})
-    autosync = not read_only and not any(env.get(name, "").lower() == "true" for name in (
-        "CI", "GITHUB_ACTIONS", "GITLAB_CI",
-    ))
     timeout = _gate_timeout_seconds()
-    checks: dict[str, dict[str, Any]] = {}
-    for name in required_gates:
-        started = time.monotonic()
-        if name == "planning":
-            payload = {
-                "decision": "pass" if planning_credential.get("decision") == "pass" else "block",
-                "reason": "PLANNING_CREDENTIAL_OK" if planning_credential.get("decision") == "pass"
-                else "NO_PLANNING_GATE",
+    if remaining_budget_ms is not None and remaining_budget_ms <= 0:
+        checks = {
+            name: {
+                "decision": "block", "source": "not_executed",
+                "subject_digest": subject_digest, "policy_digest": policy_digest,
+                "input_digest": canonical_digest({"gate": name, "budget": "exhausted"}),
+                "fingerprint": canonical_digest({"gate": name, "budget": "exhausted"}),
+                "completed_at": now(), "duration_ms": 0, "tool_wait_ms": 0,
+                "attempt": 0, "retry_limit": 1, "budget_ms": 0,
+                "timeout_kind": "story", "reason": "STORY_BUDGET_EXCEEDED",
             }
-            returncode = 0
-            command = ["read", str(planning_gate)]
-        elif name == "strict_evidence":
-            work_item = planning_credential.get("work_item") or {}
-            production_policy = (
-                work_item.get("production_evidence") if isinstance(work_item, dict) else None
-            )
-            payload = _strict_evidence(subject_digest, production_policy)
-            returncode = 0
-            command = ["read", "HARNESS_STRICT_EVIDENCE"]
-        elif name == "browser_qa":
+            for name in required_gates
+        }
+        return {
+            "decision": "block", "checks": checks, "missing": [], "cache_hits": 0,
+            "wall_duration_ms": 0, "reason": "STORY_BUDGET_EXCEEDED",
+        }
+
+    planning_check = None
+    if "planning" in required_gates:
+        planning_pass = planning_credential.get("decision") == "pass"
+        input_digest = canonical_digest({
+            "planning_gate": str(planning_gate), "content": planning_credential,
+        })
+        planning_check = {
+            "decision": "pass" if planning_pass else "block", "source": "executed",
+            "subject_digest": subject_digest, "policy_digest": policy_digest,
+            "input_digest": input_digest,
+            "fingerprint": canonical_digest({"gate": "planning", "input": input_digest}),
+            "started_at": now(), "completed_at": now(), "duration_ms": 0,
+            "tool_wait_ms": 0, "attempt": 1, "retry_limit": 1, "budget_ms": 0,
+            "timeout_kind": "none",
+            "reason": "PLANNING_CREDENTIAL_OK" if planning_pass else "NO_PLANNING_GATE",
+        }
+        if not planning_pass:
+            return {
+                "decision": "block", "checks": {"planning": planning_check},
+                "missing": sorted(set(required_gates) - {"planning"}), "cache_hits": 0,
+                "wall_duration_ms": int((time.monotonic() - plan_started) * 1000),
+                "reason": "NO_PLANNING_GATE",
+            }
+
+    commands_to_run: dict[str, list[str]] = {}
+    for name in required_gates:
+        if name in {"planning", "strict_evidence"}:
+            continue
+        if name == "browser_qa":
             url = os.environ.get("HARNESS_BROWSER_QA_URL", "")
-            if not url:
-                payload = {"decision": "block", "reason": "BROWSER_QA_CONFIG_REQUIRED"}
-                returncode = 0
-                command = ["browser_qa", "missing-url"]
-            else:
-                command = [
-                    "python3", str(harness / ".harness/scripts/browser_qa.py"), url,
-                    "--action", "audit", "--harness-root", str(harness),
-                    "--product-root", str(product),
-                ]
-                payload, returncode = _run_gate_command(
-                    command, gate=name, cwd=harness, env=env, timeout=timeout,
-                )
-        else:
-            if name == "diff_integrity" and read_only:
-                commands[name] = [*commands[name], "--commit", subject_digest]
-            payload, returncode = _run_gate_command(
-                commands[name], gate=name, cwd=harness, env=env, timeout=timeout,
-            )
-            command = commands[name]
-            if (autosync and payload["decision"] == "block" and name == "knowledge"
-                    and not str(payload.get("reason") or "").startswith("GATE_TIMEOUT:")):
-                sync_payload, _ = _run_gate_command(
-                    ["bash", str(harness / ".harness/scripts/harness_knowledge.sh"), "sync-planning"],
-                    gate="knowledge_autosync", cwd=harness, env=env, timeout=timeout,
-                )
-                if sync_payload["decision"] == "pass":
-                    payload, returncode = _run_gate_command(
-                        command, gate=name, cwd=harness, env=env, timeout=timeout,
-                    )
-                else:
-                    payload = sync_payload
-            if (autosync and payload["decision"] == "block" and name == "growth_freshness"
-                    and payload.get("reason") == "GROWTH_REPORT_MISSING"):
-                sync_payload, _ = _run_gate_command(
-                    ["bash", str(harness / ".harness/scripts/harness_growth.sh"), "scan"],
-                    gate="growth_autosync", cwd=harness, env=env, timeout=timeout,
-                )
-                if sync_payload["decision"] == "pass":
-                    payload, returncode = _run_gate_command(
-                        command, gate=name, cwd=harness, env=env, timeout=timeout,
-                    )
-                else:
-                    payload = sync_payload
-        duration = int((time.monotonic() - started) * 1000)
-        checks[name] = {
+            commands_to_run[name] = ([
+                "python3", str(harness / ".harness/scripts/browser_qa.py"), url,
+                "--action", "audit", "--harness-root", str(harness),
+                "--product-root", str(product),
+            ] if url else ["browser_qa", "missing-url"])
+            continue
+        command = list(commands[name])
+        if name == "diff_integrity" and read_only:
+            command.extend(["--commit", subject_digest])
+        commands_to_run[name] = command
+
+    specs = []
+    for name, command in commands_to_run.items():
+        input_digest = gate_input_digest(
+            name, harness=harness, product=product, changed_files=changed_files or [],
+            planning_gate=planning_gate, planning_credential=planning_credential,
+            command=command,
+        )
+        specs.append(build_spec(
+            name, command, input_digest=input_digest, tier=tier,
+            configured_timeout=timeout, remaining_budget_ms=remaining_budget_ms,
+        ))
+
+    def runner(command: list[str], name: str, gate_timeout: float) -> tuple[dict[str, Any], int]:
+        if name == "browser_qa" and command[:2] == ["browser_qa", "missing-url"]:
+            return {"decision": "block", "reason": "BROWSER_QA_CONFIG_REQUIRED"}, 0
+        return _run_gate_command(
+            command, gate=name, cwd=harness, env=env, timeout=gate_timeout,
+        )
+
+    executed, cache_hits = execute_specs(
+        specs, runner=runner, previous_checks=previous_checks or {},
+        subject_digest=subject_digest, policy_digest=policy_digest,
+        ledger=ledger, task_id=task_id, work_item_id=work_item_id,
+        remaining_budget_ms=remaining_budget_ms,
+    )
+    available = dict(executed)
+    if planning_check is not None:
+        available["planning"] = planning_check
+
+    if "strict_evidence" in required_gates:
+        work_item = planning_credential.get("work_item") or {}
+        production_policy = (
+            work_item.get("production_evidence") if isinstance(work_item, dict) else None
+        )
+        payload = _strict_evidence(subject_digest, production_policy, product)
+        input_digest = canonical_digest({
+            "subject": subject_digest, "production_policy": production_policy,
+            "receipt_path_digest": canonical_digest(os.environ.get("HARNESS_STRICT_EVIDENCE", "")),
+        })
+        available["strict_evidence"] = {
             "decision": payload["decision"], "source": "executed",
             "subject_digest": subject_digest, "policy_digest": policy_digest,
-            "fingerprint": canonical_digest({
-                "gate": name, "subject": subject_digest, "policy": policy_digest,
-                "tier": tier, "command": command,
-            }),
-            "completed_at": now(), "duration_ms": duration,
-            "reason": str(payload.get("reason") or ""),
+            "input_digest": input_digest,
+            "fingerprint": canonical_digest({"gate": "strict_evidence", "input": input_digest}),
+            "started_at": now(), "completed_at": now(), "duration_ms": 0,
+            "tool_wait_ms": 0, "attempt": 1, "retry_limit": 1, "budget_ms": 0,
+            "timeout_kind": "none", "reason": str(payload.get("reason") or ""),
         }
+
+    checks = {name: available[name] for name in required_gates if name in available}
     required = set(required_gates)
     missing = sorted(required - set(checks))
     decision = "pass" if not missing and all(
         check["decision"] == "pass" for check in checks.values()
     ) else "block"
-    return {"decision": decision, "checks": checks, "missing": missing}
+    return {
+        "decision": decision, "checks": checks, "missing": missing,
+        "cache_hits": cache_hits,
+        "wall_duration_ms": int((time.monotonic() - plan_started) * 1000),
+    }
 
 
 def main() -> int:

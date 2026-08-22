@@ -162,10 +162,41 @@ Acceptance criteria:
 
 Implementation note: `harness_metrics.py` 只读汇总 canonical result，输出 lite 中位 context/gate duration/checks、tier downgrade 和 block rate。少于 5 个 lite 样本或 baseline 为 `unknown` 时返回 `ROLLOUT_METRICS_INSUFFICIENT_DATA`，不会伪造阈值通过。
 
+## Epic 4: Story Cycle Efficiency
+
+目标：在不降低 L0/L1、独立 QA、生产真实性和 Git-native acceptance 约束的前提下，把 strict/L3 同等级 Story 从用户确认到 `ready_to_release` 的默认墙钟预算压缩到 30 分钟以内，并对超时、等待、重试和未知量做可审计归因。
+
+### E4-S1 30-minute strict story cycle
+
+Status: implementation-complete; independent-qa-pass; live-strict-trial-pending (2026-08-22)
+
+Local execution package: [story-cycle-efficiency-30m.md](./story-cycle-efficiency-30m.md)
+
+Ownership:
+
+- `owner: harness-engineering`
+- `provider: noop`
+- external tasklist / Epic / Work Item: `unknown`
+- external sync: `prohibited_pending_verified_binding`
+- 小张罗 Story 43.5、Epic 43 和产品任务清单仅为审计来源，不是本 Epic 的父级或同步目标。
+
+Acceptance criteria:
+
+- 以无消息正文、密钥或生产参数的结构化事件重建 Story wall-clock，并区分墙钟、可证明工具等待和 `unknown` Agent active。
+- 默认总预算不超过 30 分钟；每阶段有预算、重试上限、超时归因和停止无界循环的结构化结果。
+- `finish` 验证期间不自动写 planning、Growth 或其他 subject 输入；聚合动作退出关键路径。
+- 确定性 gate 以真实依赖 fingerprint 精确失效；QA、GC Agent、浏览器、部署、Provider、回滚不得跨 subject 缓存。
+- 无共享写状态的 gate 可并行；有真实依赖、写副作用或未声明并行安全的产品质量命令保持串行。
+- QA 共享机械证据可去重，但每个任务继续保留独立 reviewer 签章和 subject/policy/report digest 绑定。
+- 真实 Provider 只能在版本化离线 verifier preflight 通过后调用一次；本 Story 只用 fixture/mock 验证，不触发生产调用。
+- lifecycle capability 在 Story 开始时生成本地 receipt；未知能力保持 pending/block，不在收口阶段猜测映射。
+- assurance 仍为 `guarded`、`bypassable: true`；Judge、P95、L3 和未提供遥测保持 `unknown`/`pending`。
+
 ## Execution Order
 
 1. E1-S1 → E1-S2 → E1-S3 → E1-S4
 2. E2-S1 → E2-S2 → E2-S3
 3. E3-S1 → E3-S2 → E3-S3
+4. E4-S1 独立于外部产品 backlog；先完成离线 fixture、独立 QA 和 guarded commit，再进行真实 Story 试运行。
 
 Epic 1 完成前只能对通过实际 authority audit 且未触发未闭合信任链的 commit 声明 enforced。每完成一个 Story，同步本文件状态、受影响权威文档和技术债；不得一次性把未验收 Story 标记完成。
