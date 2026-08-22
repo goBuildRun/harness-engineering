@@ -13,6 +13,11 @@ from unittest.mock import patch
 SCRIPT_DIR = Path(__file__).resolve().parents[1] / ".harness" / "scripts"
 sys.path.insert(0, str(SCRIPT_DIR))
 
+from acceptance_authority import (  # noqa: E402
+    TerminalAuthorization,
+    authorize_provider_transition,
+)
+from acceptance_trust import TrustPolicy  # noqa: E402
 from work_item_providers import FeishuProvider  # noqa: E402
 
 
@@ -60,6 +65,30 @@ def provider(cfg: dict | None = None) -> FeishuProvider:
         },
         ID_PATTERN,
     )
+
+
+def authorization(status: str) -> TerminalAuthorization:
+    trust = TrustPolicy(
+        acceptance_policy_id="test-policy",
+        acceptance_policy_digest="0" * 64,
+        receipt_signer_fingerprint="SHA256:" + "A" * 43,
+        policy_signer_fingerprint="SHA256:" + "B" * 43,
+    )
+    with patch("acceptance_authority.validate_receipt", return_value=(True, "valid")):
+        return authorize_provider_transition(
+            {"schema": "harness-acceptance-receipt-v1"},
+            work_item_id="task_guid_123",
+            provider="feishu",
+            status=status,
+            expected_ref="refs/heads/main",
+            expected_commit="0" * 40,
+            repo=Path("."),
+            allowed_signers=Path("receipt-signers"),
+            acceptance_policy=Path("policy.json"),
+            policy_allowed_signers=Path("policy-signers"),
+            repo_id="test-repo",
+            trust_policy=trust,
+        )
 
 
 class FeishuProviderTest(unittest.TestCase):
@@ -324,21 +353,15 @@ class FeishuProviderTest(unittest.TestCase):
 
         self.assertEqual(item.status, "done")
 
-    def test_update_status_skip_verifies_but_does_not_patch(self) -> None:
-        fake = UrlopenRecorder(
-            [
-                {"code": 0, "tenant_access_token": "token-1", "expire": 7200},
-                {"code": 0, "data": {"task": {"guid": "task_guid_123", "summary": "任务", "status": "todo"}}},
-            ]
-        )
+    def test_update_status_skip_blocks_terminal_without_network(self) -> None:
         with patch.dict(os.environ, {"FEISHU_APP_ID": "app-id", "FEISHU_APP_SECRET": "app-secret"}, clear=True):
             p = provider({"status_update_mode": "skip"})
-            with patch("urllib.request.urlopen", fake):
+            with patch("urllib.request.urlopen") as urlopen:
                 ok, reason = p.update_status("task_guid_123", "done")
 
-        self.assertTrue(ok)
-        self.assertIn("FEISHU_STATUS_SKIP", reason)
-        self.assertEqual([call.get_method() for call in fake.calls], ["POST", "GET"])
+        self.assertFalse(ok)
+        self.assertEqual(reason, "PROVIDER_TERMINAL_STATUS_FORBIDDEN")
+        urlopen.assert_not_called()
 
     def test_update_status_completed_mode_marks_task_done(self) -> None:
         fake = UrlopenRecorder(
@@ -362,7 +385,12 @@ class FeishuProviderTest(unittest.TestCase):
         with patch.dict(os.environ, {"FEISHU_APP_ID": "app-id", "FEISHU_APP_SECRET": "app-secret"}, clear=True):
             p = provider({"status_update_mode": "completed"})
             with patch("urllib.request.urlopen", fake), patch("time.time", return_value=1782803000):
-                ok, reason = p.update_status("task_guid_123", "done", "Harness complete")
+                ok, reason = p.update_status(
+                    "task_guid_123",
+                    "done",
+                    "Harness complete",
+                    authorization=authorization("done"),
+                )
 
         self.assertTrue(ok)
         self.assertIn("FEISHU_UPDATED", reason)
@@ -446,7 +474,9 @@ class FeishuProviderTest(unittest.TestCase):
         with patch.dict(os.environ, {"FEISHU_APP_ID": "app-id", "FEISHU_APP_SECRET": "app-secret"}, clear=True):
             p = provider({"status_update_mode": "completed"})
             with patch("urllib.request.urlopen", fake), patch("time.time", return_value=1782803000):
-                ok, reason = p.update_status("task_guid_123", "done")
+                ok, reason = p.update_status(
+                    "task_guid_123", "done", authorization=authorization("done")
+                )
 
         self.assertFalse(ok)
         self.assertIn("FEISHU_UPDATE_VERIFY_FAIL", reason)
@@ -499,7 +529,29 @@ class FeishuProviderTest(unittest.TestCase):
 
         self.assertFalse(ok)
         self.assertIn("FEISHU_STATUS_UNSUPPORTED", reason)
-        self.assertEqual([call.get_method() for call in fake.calls], ["POST", "GET"])
+        self.assertEqual(fake.calls, [])
+
+    def test_update_status_completed_mode_blocks_done_without_authority_or_network(self) -> None:
+        env = {"FEISHU_APP_ID": "app-id", "FEISHU_APP_SECRET": "app-secret"}
+        with patch.dict(os.environ, env, clear=True):
+            p = provider({"status_update_mode": "completed"})
+            with patch("urllib.request.urlopen") as urlopen:
+                ok, reason = p.update_status("task_guid_123", "done")
+
+        self.assertFalse(ok)
+        self.assertEqual(reason, "PROVIDER_TERMINAL_STATUS_FORBIDDEN")
+        urlopen.assert_not_called()
+
+    def test_update_status_description_mode_blocks_terminal_without_network(self) -> None:
+        env = {"FEISHU_APP_ID": "app-id", "FEISHU_APP_SECRET": "app-secret"}
+        with patch.dict(os.environ, env, clear=True):
+            p = provider({"status_update_mode": "description"})
+            with patch("urllib.request.urlopen") as urlopen:
+                ok, reason = p.update_status("task_guid_123", "done")
+
+        self.assertFalse(ok)
+        self.assertEqual(reason, "PROVIDER_TERMINAL_STATUS_FORBIDDEN")
+        urlopen.assert_not_called()
 
     def test_update_description_verifies_and_patches_only_description(self) -> None:
         fake = UrlopenRecorder(

@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / ".harness" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
+from acceptance_trust import TrustPolicy  # noqa: E402
 from harness_attestation import create_attestation  # noqa: E402
 from harness_enforced import audit, install  # noqa: E402
 from harness_runtime import default_result, policy_for  # noqa: E402
@@ -64,6 +65,24 @@ class HarnessEnforcedTest(unittest.TestCase):
         sign_policy(policy, key)
         target.write_text(json.dumps(policy, indent=2) + "\n", encoding="utf-8")
         return target
+
+    def trust(self, policy: Path, key: Path) -> TrustPolicy:
+        payload = json.loads(policy.read_text(encoding="utf-8"))
+        canonical = json.dumps(
+            payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        ) + "\n"
+        fingerprint = subprocess.check_output(
+            ["ssh-keygen", "-lf", str(key.with_suffix(".pub")), "-E", "sha256"],
+            text=True,
+        ).split()[1]
+        return TrustPolicy(
+            acceptance_policy_id=payload["policy_id"],
+            acceptance_policy_digest=__import__("hashlib").sha256(
+                canonical.encode("utf-8")
+            ).hexdigest(),
+            receipt_signer_fingerprint=fingerprint,
+            policy_signer_fingerprint=fingerprint,
+        )
 
     def attest(self, repo: Path, commit: str) -> None:
         result = default_result(
@@ -122,6 +141,7 @@ class HarnessEnforcedTest(unittest.TestCase):
                 expected_commit=commit, configured_provider="jira", repo=remote,
                 allowed_signers=allowed, acceptance_policy=policy,
                 policy_allowed_signers=allowed, repo_id="test-repo",
+                trust_policy=self.trust(policy, key),
             ), (True, "ACCEPTANCE_RECEIPT_VALID"))
 
     def test_audit_fails_after_hook_tampering(self) -> None:

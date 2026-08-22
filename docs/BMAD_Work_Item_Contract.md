@@ -173,7 +173,7 @@ growth-review-required
 - L3 Story 声明 `work_item_type: story`，并使用 `work_item_parent_id` 或 `sync-spec --parent-id` 创建子任务；Epic 声明 `work_item_type: epic` 且不得有父级。飞书子任务自身可以没有 `tasklists` 字段，Harness 会精确校验 `parent_task_guid`，并证明父任务直接属于产品清单。即使子任务已直接加入正确清单，也不会跳过父 Epic 的清单验证。
 - 如租户任务列表接口不同，可配置 `providers.feishu.list_tasks_path` 与 `providers.feishu.list_query`，`list-mine` 会拉取后按负责人本地过滤。
 - `providers.feishu.assignee_id` 可配置产品默认负责人；个人本地覆盖用 `FEISHU_ASSIGNEE_ID`。
-- `providers.feishu.status_update_mode: completed` 会把 Harness `done/closed/mr_merged` 映射为飞书任务 `completed_at=<当前毫秒时间戳>`；`in_progress/todo/ready_to_release` 会清为 `"0"`，保持或恢复为未完成态。飞书没有独立“待发布”状态，因此 Harness 会保留 requested status，并把真实 provider status 回读为 `todo/open`，而不会提前标记完成。Provider 必须在 PATCH 后回读并核对 canonical `done/open` 状态。
+- 普通 `work_item close` 不得直接写 `done/closed/mr_merged`；这些终态固定要求受控 authority service。服务必须用部署侧固定的 policy ID/digest 和两层 signer 指纹构造 `TrustPolicy`，验证 exact ref tip、receipt、provider binding 与 `closure_order` 后才调用 Feishu provider；Jira/Teambition 终态写入不在当前受控范围。`providers.feishu.status_update_mode: completed` 的非终态 `in_progress/todo/ready_to_release` 会把 `completed_at` 清为 `"0"`；飞书没有独立“待发布”状态，因此 Harness 保留 requested status 并把真实 provider status 回读为 `todo/open`，不会提前标记完成。
 - 飞书任务描述里只放摘要和链接，不复制完整 PRD。
 - Webhook 需要按租户继续增强；短期用 `diagnose --id [--parent-id]` 校验清单和父级绑定，用 `verify` / `pull` 做存在性与原始数据排障。
 

@@ -9,7 +9,7 @@
 
 `AGENTS.md` 为最小地图，本文件说明公开使用方式，并保留统一入口尚未覆盖的兼容命令和诊断参考。
 
-**实现状态说明**：`harness start/status/finish`、workspace audit/migrate、guarded hooks，以及受控 bare Git 的安装、接收阻断、签名 receipt 和 provider 终态校验均已通过端到端机械验收。框架已具备 `enforced` 能力；未对自身实际 Git authority 完成安装和 audit 的产品仍显示 `shadow`，不得标记 `enforced`。
+**实现状态说明**：`harness start/status/finish`、workspace audit/migrate、guarded hooks，以及受控 bare Git 的安装、接收阻断、签名 receipt 和固定 TrustPolicy 校验均已通过机械验收。本地 provider 终态已封堵；产品只有在独立 authority service 中接入终态 provider 更新、保护配置和关闭状态账本，并完成实际安装/audit 后才具备 `enforced` 能力，否则保持 `shadow`。
 
 **升级兼容说明**：已有产品不做全量 workspace 迁移。planning、knowledge 和历史 evidence 原位保留；新任务写新结果；只有进行中或重开的任务补最小运行状态。详细矩阵见 [精简执行设计 §10](./design-docs/lean-enforcement.md#10-历史数据与兼容升级)。
 
@@ -753,7 +753,9 @@ GC telemetry 同样要求非空 `provider` / `model`，以及真实 `agent_calls
 
 每个外部 gate 另有 orchestration watchdog，默认 `HARNESS_GATE_TIMEOUT_SECONDS=3600`。该值是每个 gate（包括 quality gate 内全部命令）的累计上限；命令较多或单命令 timeout 更长时，产品必须显式提高它。超时会终止 gate 的整个进程组，并返回绑定 gate 名称和实际 timeout 的 `GATE_TIMEOUT` block；该结果不可被 knowledge/Growth 自动同步或重试覆盖。
 
-本地 `work_item.sh close` 默认只写 `ready_to_release`。`done`、`implemented`、`released` 等终态必须传入受控 `git-receive` 或 `release-gate` 使用独立 SSH 私钥签发的 `--lifecycle-receipt`，以及冗余断言 `--accepted-ref`、`--accepted-commit`。`HARNESS_ACCEPTANCE_ALLOWED_SIGNERS` 信任 receipt 签名；`HARNESS_ACCEPTANCE_POLICY` 与 `HARNESS_ACCEPTANCE_POLICY_ALLOWED_SIGNERS` 指向仓库外、独立 namespace 签名的 acceptance policy 和信任根。该 policy 固定 repo identity、唯一保护 ref、允许的 authority、候选 task 及可关闭的 Work Item/provider；产品提交内 contract 只能记录其摘要，不能自授权。消费端从 policy 取得期望 ref，回查 Git attestation/result object，并要求 receipt commit 与保护 ref 当前 commit tip 精确相等，同时校验 provider、work item、task、policy/result digest、有效期和两层签名；祖先可达、调用者改选 ref、旧 receipt 重放或手写 JSON 一律阻断。
+本地 `work_item.sh close` 默认只写 `ready_to_release`；即使传入 receipt、ref 和 commit，`done`、`implemented`、`released` 等终态也固定返回 `ACCEPTANCE_AUTHORITY_SERVICE_REQUIRED`。终态只能由受控 `git-receive` / `release-gate` 服务执行：服务从权限保护的部署配置构造 `TrustPolicy`，固定 acceptance policy ID/digest、receipt signer 指纹和 policy signer 指纹，验证 receipt 后再调用 provider。普通调用者提供的环境变量、allowed-signers 或自签 policy 不能成为 trust anchor。当前受控终态 adapter 仅启用 WaveWeaver 使用的 Feishu；Jira 和 Teambition 不在该 release-gate 的终态写入范围，调用会返回 `ACCEPTANCE_PROVIDER_TERMINAL_UNSUPPORTED`。
+
+外部 acceptance policy 固定 repo identity、唯一保护 ref、允许的 authority、候选 task、可关闭的 Work Item/provider 及 `closure_order`。receipt 签名绑定关闭序号和前置事项；受控服务提供已经回读确认完成的严格前缀，缺项或乱序都返回 `ACCEPTANCE_CLOSURE_ORDER_BLOCKED`。验证器还要求 receipt commit 等于保护 ref 当前 tip，并校验 attestation object、provider、work item、task、policy/result digest、有效期及两层固定 signer。产品提交内 contract 只能记录这些固定值的摘要，不能自授权；祖先可达、调用者改选 ref、自选信任根、旧 receipt 重放或手写 JSON 一律阻断。
 
 | 公开动作 | 使用者看到的结果 | 过渡期内部能力参考 |
 |----------|------------------|--------------------|

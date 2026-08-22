@@ -3,14 +3,12 @@
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import sys
 from pathlib import Path
 
+from acceptance_trust import requires_terminal_authority
 from harness_knowledge import sync_planning
-from product_context import ProductContextError, resolve_product_root
-from provider_lifecycle import TERMINAL_STATUSES, validate_terminal_receipt
 from harness_output import dump_json
 from work_item_diagnostics import cmd_capabilities, cmd_diagnose
 from workspace_paths import load_layout
@@ -123,26 +121,9 @@ def cmd_close(args: argparse.Namespace) -> int:
     root = Path(args.harness_root or harness_root_from_script())
     provider = get_provider(root)
     normalized_status = str(args.status or "").strip().lower()
-    if normalized_status in TERMINAL_STATUSES:
-        receipt = None
-        if args.lifecycle_receipt:
-            try:
-                receipt = json.loads(Path(args.lifecycle_receipt).read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                pass
-        try:
-            product_root = resolve_product_root(root)
-        except ProductContextError as exc:
-            emit("block", f"ACCEPTANCE_PRODUCT_ROOT_INVALID: {exc}", work_item_id=args.id)
-            return 0
-        ok, reason = validate_terminal_receipt(
-            receipt, work_item_id=args.id, expected_ref=(args.accepted_ref or "").strip(),
-            expected_commit=(args.accepted_commit or "").strip(),
-            configured_provider=provider.name, repo=product_root,
-        )
-        if not ok:
-            emit("block", reason, work_item_id=args.id)
-            return 0
+    if requires_terminal_authority(normalized_status):
+        emit("block", "ACCEPTANCE_AUTHORITY_SERVICE_REQUIRED", work_item_id=args.id)
+        return 0
     ok, reason = provider.update_status(args.id, args.status, args.note or "")
     extra: dict[str, object] = {}
     if ok:

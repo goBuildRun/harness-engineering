@@ -2,16 +2,8 @@
 """work_item_providers.py — pluggable Work Item adapters."""
 from __future__ import annotations
 
-import base64
-import hashlib
-import hmac
-import json
 import os
 import re
-import time
-import urllib.error
-import urllib.parse
-import urllib.request
 import uuid
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass, field
@@ -379,16 +371,16 @@ def get_provider(harness_root: Path) -> WorkItemProvider:
 
 
 from work_item_contract import (  # noqa: E402
-    apply_assignee,
-    build_work_item_note,
-    first_heading,
-    gate_check,
-    level_requires_work_item,
-    parse_front_matter,
-    product_root_for,
-    rel_to_product,
-    section_bullets,
-    section_text,
-    sync_spec_markdown,
-    work_item_drafts_from_spec,
+    apply_assignee as apply_assignee,
+    build_work_item_note as build_work_item_note,
+    first_heading as first_heading,
+    gate_check as gate_check,
+    level_requires_work_item as level_requires_work_item,
+    parse_front_matter as parse_front_matter,
+    product_root_for as product_root_for,
+    rel_to_product as rel_to_product,
+    section_bullets as section_bullets,
+    section_text as section_text,
+    sync_spec_markdown as sync_spec_markdown,
+    work_item_drafts_from_spec as work_item_drafts_from_spec,
 )

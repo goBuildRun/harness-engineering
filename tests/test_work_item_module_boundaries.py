@@ -32,6 +32,7 @@ class WorkItemModuleBoundariesTest(unittest.TestCase):
             "work_item_feishu.py",
             "work_item_feishu_payload.py",
             "work_item_jira.py",
+            "work_item_local_binding.py",
             "work_item_providers.py",
             "work_item_teambition.py",
             "work_item_teambition_support.py",
