@@ -41,9 +41,13 @@ class FeishuProvider(FeishuBindingMixin, FeishuPayloadMixin, WorkItemProvider):
         "qa": "open",
         "qa_passed": "open",
         "testing": "open",
+        "ready_to_release": "open",
+        "release_ready": "open",
+        "awaiting_release": "open",
         "待处理": "open",
         "开发中": "open",
         "测试中": "open",
+        "待发布": "open",
     }
     COMPLETED_MODE_ALIASES = {"completed", "complete", "completed_at", "completion"}
     DESCRIPTION_MODE_ALIASES = {"description", "patch", "note"}

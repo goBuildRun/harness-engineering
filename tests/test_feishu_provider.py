@@ -453,6 +453,38 @@ class FeishuProviderTest(unittest.TestCase):
         self.assertIn("expected=done", reason)
         self.assertIn("provider_status=todo", reason)
 
+    def test_update_status_completed_mode_keeps_ready_to_release_open(self) -> None:
+        fake = UrlopenRecorder(
+            [
+                {"code": 0, "tenant_access_token": "token-1", "expire": 7200},
+                {"code": 0, "data": {"task": {"guid": "task_guid_123", "summary": "任务", "status": "todo"}}},
+                {"code": 0, "data": {"task": {"guid": "task_guid_123", "completed_at": "0"}}},
+                {
+                    "code": 0,
+                    "data": {
+                        "task": {
+                            "guid": "task_guid_123",
+                            "summary": "任务",
+                            "status": "todo",
+                            "completed_at": "0",
+                        }
+                    },
+                },
+            ]
+        )
+        with patch.dict(os.environ, {"FEISHU_APP_ID": "app-id", "FEISHU_APP_SECRET": "app-secret"}, clear=True):
+            p = provider({"status_update_mode": "completed"})
+            with patch("urllib.request.urlopen", fake):
+                ok, reason = p.update_status("task_guid_123", "ready_to_release")
+
+        self.assertTrue(ok)
+        self.assertIn("requested_status=ready_to_release", reason)
+        self.assertIn("provider_status=todo", reason)
+        self.assertIn("canonical_status=open", reason)
+        self.assertIn("readback=verified", reason)
+        self.assertEqual([call.get_method() for call in fake.calls], ["POST", "GET", "PATCH", "GET"])
+        self.assertEqual(fake.body(fake.calls[2]), {"task": {"completed_at": "0"}, "update_fields": ["completed_at"]})
+
     def test_update_status_completed_mode_rejects_unknown_status(self) -> None:
         fake = UrlopenRecorder(
             [
@@ -463,7 +495,7 @@ class FeishuProviderTest(unittest.TestCase):
         with patch.dict(os.environ, {"FEISHU_APP_ID": "app-id", "FEISHU_APP_SECRET": "app-secret"}, clear=True):
             p = provider({"status_update_mode": "completed"})
             with patch("urllib.request.urlopen", fake):
-                ok, reason = p.update_status("task_guid_123", "ready_to_release")
+                ok, reason = p.update_status("task_guid_123", "not-a-harness-status")
 
         self.assertFalse(ok)
         self.assertIn("FEISHU_STATUS_UNSUPPORTED", reason)
