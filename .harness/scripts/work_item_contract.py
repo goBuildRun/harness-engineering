@@ -15,6 +15,7 @@ from work_item_providers import (
     get_provider,
     load_config,
     provider_expected_project_id,
+    resolve_product_spec_path,
     yaml,
 )
 
@@ -362,12 +363,9 @@ def gate_check(harness_root: Path, level: str, task_dir: str | None) -> dict[str
         elif not product_root:
             failures.append("NO_PRODUCT_ROOT_FOR_WORK_ITEM_BINDING")
         else:
-            spec_path = product_root / spec
             try:
-                contract = work_item_contract_from_spec(
-                    spec_path,
-                    require_l3_type=True,
-                )
+                spec_path, spec = resolve_product_spec_path(harness_root, product_root, spec)
+                contract = work_item_contract_from_spec(spec_path, require_l3_type=True)
                 gate_level = level.strip().upper()
                 if gate_level in {"L2", "L3"} and contract["level"] != gate_level:
                     failures.append(

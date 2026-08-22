@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from product_context import ProductContextError, resolve_product_context
+from workspace_paths import load_layout
 
 try:
     import yaml
@@ -188,10 +189,41 @@ def extract_from_task_dir(task_dir: Path) -> tuple[str | None, str | None]:
     if card.is_file():
         text = card.read_text(encoding="utf-8", errors="ignore")
         wi_id = extract_id_from_text(text)
-        m = re.search(r"产品规格[链接]*[：:]\s*`?([^`\s]+product-specs/[^`\s]+)`?", text)
+        m = re.search(r"产品规格(?:链接)?[：:]\s*`?([^`\s]+)`?", text)
         if m:
             spec = m.group(1).strip()
     return wi_id, spec
+
+
+def resolve_product_spec_path(harness_root: Path, product_root: Path, spec: str) -> tuple[Path, str]:
+    """Resolve the two supported task-card spec forms within configured product specs."""
+    raw = spec.strip().strip("`")
+    parts = raw.split("/")
+    if not raw or "\\" in raw or Path(raw).is_absolute() or any(part in {"", ".", ".."} for part in parts):
+        raise ValueError(f"WORK_ITEM_SPEC_PATH_INVALID: {raw or '<empty>'}")
+
+    layout = load_layout(harness_root, product_root)
+    spec_root = layout.product_specs.resolve()
+    try:
+        spec_root.relative_to(layout.planning_root.resolve())
+    except ValueError:
+        raise ValueError(f"WORK_ITEM_PRODUCT_SPECS_ROOT_INVALID: {spec_root}") from None
+
+    candidate: Path | None = None
+    for prefix, base in (
+        (layout.rel_phase0(layout.product_specs).rstrip("/"), layout.planning_root),
+        (layout.rel(layout.product_specs).rstrip("/"), layout.product_root),
+    ):
+        if prefix and raw.startswith(f"{prefix}/"):
+            candidate = (base / raw).resolve()
+            break
+    if candidate is None:
+        raise ValueError(f"WORK_ITEM_SPEC_PATH_INVALID: {raw}")
+    try:
+        candidate.relative_to(spec_root)
+    except ValueError:
+        raise ValueError(f"WORK_ITEM_SPEC_OUTSIDE_PRODUCT_SPECS: {raw}") from None
+    return candidate, layout.rel(candidate)
 
 
 class WorkItemProvider(ABC):

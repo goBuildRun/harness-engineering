@@ -545,6 +545,117 @@ work_item_parent_id: epic_parent_123
             {"provider_mode": "real_required"},
         )
 
+    def test_gate_accepts_planning_relative_product_spec_link(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            product = root / "product"
+            workspace = product / "harness-workspace"
+            task_dir = workspace / "planning" / "tasks" / "task"
+            spec = workspace / "planning" / "product-specs" / "story.md"
+            task_dir.mkdir(parents=True)
+            spec.parent.mkdir(parents=True)
+            spec.write_text(
+                "---\nspec_level: L3\nwork_item_type: story\n"
+                "work_item_parent_id: epic_parent_123\n---\n\n# Story\n",
+                encoding="utf-8",
+            )
+            (task_dir / "00-任务卡.md").write_text(
+                "Work Item ID: task_123456\n"
+                "产品规格链接: `product-specs/story.md`\n",
+                encoding="utf-8",
+            )
+            provider = PlacementAwareCaptureProvider()
+            with (
+                patch("work_item_contract.load_config", return_value={"requirements": {"L3": True}}),
+                patch("work_item_contract.get_provider", return_value=provider),
+                patch("work_item_contract.active_product_root", return_value=product),
+            ):
+                result = gate_check(root, "L3", str(task_dir))
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(
+            result["work_item"]["product_spec"],
+            "harness-workspace/planning/product-specs/story.md",
+        )
+
+    def test_gate_rejects_product_spec_links_outside_supported_roots(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            product = root / "product"
+            workspace = product / "harness-workspace"
+            task_dir = workspace / "planning" / "tasks" / "task"
+            spec = workspace / "planning" / "product-specs" / "story.md"
+            task_dir.mkdir(parents=True)
+            spec.parent.mkdir(parents=True)
+            spec.write_text(
+                "---\nspec_level: L3\nwork_item_type: story\n"
+                "work_item_parent_id: epic_parent_123\n---\n\n# Story\n",
+                encoding="utf-8",
+            )
+            provider = PlacementAwareCaptureProvider()
+            invalid_links = (
+                str(spec),
+                "../product-specs/story.md",
+                "docs/product-specs/story.md",
+                "product-specs/../product-specs/story.md",
+                "product-specs-similar/story.md",
+                "harness-workspace/planning/product-specs/../../outside.md",
+            )
+            for link in invalid_links:
+                with self.subTest(link=link):
+                    (task_dir / "00-任务卡.md").write_text(
+                        "Work Item ID: task_123456\n"
+                        f"产品规格链接: `{link}`\n",
+                        encoding="utf-8",
+                    )
+                    with (
+                        patch("work_item_contract.load_config", return_value={"requirements": {"L3": True}}),
+                        patch("work_item_contract.get_provider", return_value=provider),
+                        patch("work_item_contract.active_product_root", return_value=product),
+                    ):
+                        result = gate_check(root, "L3", str(task_dir))
+
+                    self.assertFalse(result["ok"])
+                    self.assertTrue(
+                        any("WORK_ITEM_SPEC_PATH_INVALID" in failure for failure in result["failures"]),
+                        result,
+                    )
+
+    def test_gate_rejects_product_spec_symlink_escape(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            product = root / "product"
+            workspace = product / "harness-workspace"
+            task_dir = workspace / "planning" / "tasks" / "task"
+            specs = workspace / "planning" / "product-specs"
+            outside = product / "outside.md"
+            task_dir.mkdir(parents=True)
+            specs.mkdir(parents=True)
+            outside.write_text(
+                "---\nspec_level: L3\nwork_item_type: story\n"
+                "work_item_parent_id: epic_parent_123\n---\n\n# Outside\n",
+                encoding="utf-8",
+            )
+            (specs / "escape.md").symlink_to(outside)
+            (task_dir / "00-任务卡.md").write_text(
+                "Work Item ID: task_123456\n"
+                "产品规格链接: `product-specs/escape.md`\n",
+                encoding="utf-8",
+            )
+            provider = PlacementAwareCaptureProvider()
+            with (
+                patch("work_item_contract.load_config", return_value={"requirements": {"L3": True}}),
+                patch("work_item_contract.get_provider", return_value=provider),
+                patch("work_item_contract.active_product_root", return_value=product),
+            ):
+                result = gate_check(root, "L3", str(task_dir))
+
+        self.assertFalse(result["ok"])
+        self.assertTrue(
+            any("WORK_ITEM_SPEC_OUTSIDE_PRODUCT_SPECS" in failure for failure in result["failures"]),
+            result,
+        )
+
     def test_unknown_production_provider_mode_fails_closed(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             spec = Path(tmp) / "invalid-production-evidence.md"
