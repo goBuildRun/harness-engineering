@@ -296,7 +296,7 @@ bash .harness/scripts/agent_start.sh <新work-item-id>
 |------|------|
 | [Harness_全景手册.md](./Harness_全景手册.md) | 设计、方案、评估、演进 |
 | **本文** | 多人 PM/Dev 协作场景与命令 |
-| [USAGE.md](./USAGE.md) | 三入口使用模型与过渡期兼容参考 |
+| [USAGE.md](./USAGE.md) | 三项主动作 + 只读 status 的使用模型与过渡期兼容参考 |
 | [BMAD_Prelude.md](./BMAD_Prelude.md) | BMAD Planning 专章 |
 
 ---

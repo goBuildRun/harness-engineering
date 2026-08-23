@@ -31,7 +31,7 @@
 
 > 下列接口是当前实现期稳定能力，不是未来公共命令清单。统一门面落地后，除初始化、诊断和 runtime 开发外，它们由 `start/status/finish` 内部调用；能力和 JSON 判定语义继续保留。
 
-统一入口：`.harness/scripts/harness start|status|finish`。workspace 审计、活动任务迁移和 commit 判定作为内部管理能力存在，不扩展日常公共操作面。受控 Git 接收点或发布入口未验证前只能显示 `local` 或 `guarded`。
+统一入口：`.harness/scripts/harness plan|start|status|finish`。其中 `plan`、`start`、`finish` 是主动作，`status` 只读；`standard/strict` 先使用 `plan`，低风险 `lite` 可由 `start` 生成最小绑定。workspace 审计、活动任务迁移和 commit 判定作为内部管理能力存在，不扩展日常公共操作面。受控 Git 接收点或发布入口未验证前只能显示 `local` 或 `guarded`。
 
 | 接口 | 用途 |
 |------|------|

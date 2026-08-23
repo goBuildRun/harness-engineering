@@ -16,7 +16,7 @@ Team Product R&D Harness = 已有项目接入 + 产品前导 + 协同真相源 +
 
 | 层 | 通用职责 | 通用实现 |
 |----|----------|----------------|
-| 产品前导 | 需求、范围、验收、方案就绪 | BMAD Method → `planning/` |
+| 产品前导 | 需求、范围、验收、方案就绪 | BMAD Method → `plan` → `planning/` |
 | 已有项目接入 | 既有代码、文档、测试、技术栈事实扫描 | `harness_intake.sh` → `evidence/intake-reports/` |
 | 协同真相源 | Work Item、负责人、状态、排期 | 产品级 provider：Teambition / 飞书 / Jira / noop |
 | 执行闭环 | DAG、TDD、QA、GC、MR；按 execution tier 编排 | `.harness/scripts/`，目标由 `plan/start/finish` 封装，`status` 只观察 |

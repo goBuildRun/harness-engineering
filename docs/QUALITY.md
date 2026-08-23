@@ -1,6 +1,6 @@
 # 质量门禁与品味不变式
 
-> **命令级使用方式**：[USAGE.md](./USAGE.md) 第 4–8 节；目标三入口见第 9 节。
+> **命令级使用方式**：[USAGE.md](./USAGE.md) 第 4–8 节；目标流程是三项主动作 `plan/start/finish`，`status` 只读，见第 9 节。
 > **精简执行目标**：[design-docs/lean-enforcement.md](./design-docs/lean-enforcement.md)。质量门禁必须严格，但门禁组合、证据数量和执行成本按实际风险分层。
 
 ## 质量执行原则

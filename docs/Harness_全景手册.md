@@ -164,7 +164,7 @@ Harness 的能力来自多个成熟项目和方法，但这些来源不形成需
 
 Agent 的通用代码放置规则始终先解析产品 `project.yaml` 和 active profile。产品专用目录、上游边界和领域规则只属于对应产品 profile，不能成为 generic 默认值。
 
-新增 profile 不得增加第四个核心入口，也不得创建独立完成态；它只能向统一 `start/status/finish` 提供识别、上下文和附加风险信号。
+新增 profile 不得增加新的核心动作或创建独立完成态；它只能向统一 `plan/start/status/finish` 提供识别、上下文和附加风险信号。
 
 ## 9. 知识和证据
 
@@ -187,7 +187,7 @@ Agent 的通用代码放置规则始终先解析产品 `project.yaml` 和 active
 仅靠文档和提示词无法保证遵循。目标实现有四层控制：
 
 1. **导航层**：Agent 只看到正确入口和最小规则。
-2. **CLI 层**：`start/status/finish` 是唯一正常操作面。
+2. **CLI 层**：`plan/start/status/finish` 是唯一正常操作面；其中 `status` 只读。
 3. **状态层**：输入变化会使旧验证结果失效；确定性 gate 只在 fingerprint 相同时复用。
 4. **接受层**：Git hooks、受控 remote `pre-receive` 或发布入口调用同一 commit verifier。
 

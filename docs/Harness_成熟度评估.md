@@ -64,7 +64,7 @@ Team Product R&D Harness 已经从 embedded 项目脚手架升级为 **harness-e
 | 三级接入保障 | 任务执行严格度不应迫使轻量用户先建设平台基础设施 | `local` 默认可用、`guarded` 作为轻量推广目标、`enforced` 用于不可绕过准入；三者不降低 `lite/standard/strict` 要求 |
 | Enforced 接入验收 | 框架能力存在不代表每个产品的正式 ref 已防绕过 | 受控 bare Git 的拒绝/接受、签名 receipt、provider 消费和篡改降级已端到端验证；产品实例须对实际 authority audit 后才进入 enforced |
 | 能力迁移验收 | 统一入口可能在降本时误删已有优秀机制 | 为参考能力矩阵建立验收测试，证明每项能力被内部承载、按需触发或有明确替代 |
-| 精简执行门面 | 防漏不能依赖 Agent 记忆，复杂命令链本身又增加遗漏和 Token | `harness start/status/finish` 封装现有能力，由 local 验证逐步进入 guarded 并替代手工链 |
+| 精简执行门面 | 防漏不能依赖 Agent 记忆，复杂命令链本身又增加遗漏和 Token | `harness plan/start/status/finish` 封装现有能力，由 local 验证逐步进入 guarded 并替代手工链 |
 | Execution tier 贯穿执行 | `start` 时还没有最终 diff，无法一次判定风险 | 初始 tier + `finish` 按实际 diff 重算；有效 tier 只升不降 |
 | Fingerprint 去重 | QA 和最终 check 会重复执行部分 gate，错误复用又会接受陈旧结果 | 完整 fingerprint；只缓存确定性机械 gate，人工/生产证据绑定 commit |
 | Legacy workspace 兼容 | 已接入产品不能全量迁移，也不能伪造不存在的旧 baseline | 原位兼容；缺 baseline 的活动任务建立 migration baseline 并至少完整跑 `standard` |
@@ -96,7 +96,7 @@ Team Product R&D Harness 已经从 embedded 项目脚手架升级为 **harness-e
 
 1. **先建立基线与不变式验收测试**：量化当前 Token、上下文、耗时和产物数量，并覆盖绕过、陈旧缓存和 execution tier 误降级。
 2. **再落地 assurance schema**：在现有兼容字段旁增加 `local|guarded|enforced`，不改变 execution tier 或伪造平台保障。
-3. **实现轻量 Git-native guarded 接入**：由初始化安装版本化 hooks 与 attestation refs，日常仍只用 `start/status/finish`，显式显示本机可绕过边界。
+3. **实现轻量 Git-native guarded 接入**：由初始化安装版本化 hooks 与 attestation refs，日常使用 `plan/start/status/finish`，显式显示本机可绕过边界。
 4. **用真实业务变更灰度**：在多个试点产品中选择不同风险任务，验证误阻断率、迁移和 provider 状态流转。
 5. **按需接入 enforced**：只有组织需要不可绕过准入时才在任意 Git remote 的 `pre-receive` 或发布入口安装 verifier；托管平台集成保持可选。
 

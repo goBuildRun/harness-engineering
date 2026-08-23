@@ -4,13 +4,13 @@
 |------|------|
 | [core-beliefs.md](./core-beliefs.md) | Harness 核心信念与取舍 |
 | [lean-enforcement.md](./lean-enforcement.md) | 精简强制执行目标：单一入口、execution tier、结果与成本约束、参考能力保留契约 |
-| [lean-plan-flow.md](./lean-plan-flow.md) | `plan → start → finish` 推荐流程、batch receipt、task-scoped 状态和 30 分钟预算 |
+| [lean-plan-flow.md](./lean-plan-flow.md) | `plan → start → status → finish` 推荐流程、batch receipt、task-scoped 状态和 30 分钟预算 |
 | [capability-migration-map.md](./capability-migration-map.md) | 统一入口对既有能力的承载、按需触发与 shadow 验收状态 |
 | [Harness_全景手册.md](../Harness_全景手册.md) | 设计背景、架构全景与历史演进 |
 | [Harness_Workflow.md](../Harness_Workflow.md) | 双闭环 + Work Item provider 总览 |
 | [HARNESS_DOC_CONSISTENCY.md](../HARNESS_DOC_CONSISTENCY.md) | Harness 文档权威边界与一致性审查 |
 | [BMAD_Prelude.md](../BMAD_Prelude.md) | BMAD Planning · BMAD Method + `bmad_method_gate.py` |
-| [USAGE.md](../USAGE.md) | **三入口使用模型与过渡期兼容参考（必读）** |
+| [USAGE.md](../USAGE.md) | **三项主动作 + 只读 status 的使用模型与兼容参考（必读）** |
 | [COLLABORATION.md](../COLLABORATION.md) | 多人协作 |
 | 上级 | [AGENTS.md](../../AGENTS.md) · [ARCHITECTURE.md](../../ARCHITECTURE.md) |
 

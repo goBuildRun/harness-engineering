@@ -11,7 +11,7 @@ input_documents:
 
 # Git-native Harness Upgrade
 
-本计划是 Harness Engineering 下一阶段唯一 Epic/Story backlog。Git 是唯一生命周期事实源；GitHub、CI 和托管平台不参与任务状态、commit 接受、发布资格或 provider 完成态。日常公共入口保持 `start/status/finish`。
+本计划是 Harness Engineering 下一阶段唯一 Epic/Story backlog。Git 是唯一生命周期事实源；GitHub、CI 和托管平台不参与任务状态、commit 接受、发布资格或 provider 完成态。日常公共流程保持 `plan/start/status/finish`，其中 `status` 只读。
 
 ## Requirements
 
@@ -98,9 +98,9 @@ Acceptance criteria:
 
 - 新仓库初始化不生成托管平台 workflow 或生命周期配置。
 - local/guarded 初始化、首个 lite task、finish、commit、status 可在五分钟内完成。
-- public documentation 只展示 `start/status/finish` 日常路径。
+- public documentation 只展示 `plan/start/status/finish` 日常路径，其中 `status` 只读。
 
-Implementation note: 临时新 Git 仓库通过 `start → finish → status` 的 lite 路径在五分钟预算内完成且不生成托管平台目录。Harness 自动生成的 `runs/` 与 lite `task.json` 仍纳入完整 subject/attestation，但不参与 execution tier、scope 或 code-health 风险分类。
+Implementation note: 临时新 Git 仓库通过 `start → finish → status` 的 lite 路径在五分钟预算内完成且不生成托管平台目录；这是显式规划之外的低风险例外。Harness 自动生成的 `runs/` 与 lite `task.json` 仍纳入完整 subject/attestation，但不参与 execution tier、scope 或 code-health 风险分类。
 
 ### E2-S2 Guarded multi-commit reliability
 

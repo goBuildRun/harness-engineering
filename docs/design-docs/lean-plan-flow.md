@@ -7,9 +7,10 @@
 同等级 Story 的公开操作面收敛为：
 
 ```text
-harness plan -> harness start <work-item-id> -> harness finish <task-id>
-                                      \-> harness status <task-id>（只观察）
+harness plan -> harness start <task-id> -> harness status <task-id> -> harness finish <task-id>
 ```
+
+`standard/strict` 使用完整的 `plan → start → status → finish`；低风险 `lite` 可由 `start` 直接生成最小 `task.json`，使用 `start → status → finish`。这只是轻量任务的规划产物压缩，不是跳过风险匹配验证。
 
 规划、Work Item 绑定、Planning Gate、上下文同步和任务凭证仍然存在，但由 batch receipt 编排，不要求使用者逐项运行 `draft-spec`、`sync-spec`、`confirm`、`planning_gate` 和 `activate`。
 
@@ -63,13 +64,14 @@ python3 .harness/scripts/story_cycle_benchmark.py \
 
 | 阶段 | 默认预算 |
 |------|----------|
-| global preflight | 1 分钟 |
-| shared planning | 3 分钟 |
-| start / lifecycle preflight | 1 分钟 |
-| 实现与定向测试 | 10 分钟 |
-| 并行独立 QA 与必要修复 | 7 分钟 |
-| Provider preflight、必要的单次真实验收、GC/finish/commit/readback | 5 分钟 |
-| 缓冲 | 3 分钟 |
+| takeover（接管、范围和生命周期能力） | 2 分钟 |
+| planning（共享规划与 Planning Gate） | 3 分钟 |
+| implementation_test（实现与定向测试） | 10 分钟 |
+| independent_qa（并行独立 QA 与必要修复） | 7 分钟 |
+| deploy_provider（Provider preflight、部署和单次真实验收） | 5 分钟 |
+| finalize（GC、finish、Token、commit、生命周期回读） | 3 分钟 |
+
+总上限为 30 分钟；这是止损上限，不是理想耗时。阶段顺序、阶段重试上限和 finish 重试上限由 `harness_timing.py` 固化，不能通过文档或调用方参数静默延长。
 
 任一阶段超时必须返回结构化 `STAGE_BUDGET_EXCEEDED`，并给出 `stage`、`next_action: stop_and_escalate`；禁止无界重试或静默继续返工。
 

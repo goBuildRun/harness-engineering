@@ -158,7 +158,7 @@ Harness core 的唯一事实源是 Git 对象库。`finish` 先验证工作区�
 
 | Assurance level | 最小环境 | 接受权威 | 保证与边界 |
 |-----------------|----------|----------|------------|
-| `local` | Git + Python + `start/status/finish` | 当前工作区/本地 Git | 结果真实、可复现、可审计；防漏主要依赖正常入口，不能承诺不可绕过 |
+| `local` | Git + Python + `plan/start/status/finish` | 当前工作区/本地 Git | 结果真实、可复现、可审计；低风险 `lite` 可由 `start` 生成最小绑定；防漏主要依赖正常入口，不能承诺不可绕过 |
 | `guarded` | `local` + 版本化 Git hooks | 本地 Git refs + hooks | 对常规 commit/push 机械阻断并暴露显式绕过；hook 可被 `--no-verify` 或本机管理员绕过，因此不等于 enforced |
 | `enforced` | `guarded` + 服务端 `pre-receive` 或发布入口 verifier | 受控 Git remote 或制品发布入口 | 缺少有效 Git attestation 的 commit 不能进入受保护 ref 或正式制品；不要求特定托管平台 |
 
@@ -184,7 +184,7 @@ Harness core 的唯一事实源是 Git 对象库。`finish` 先验证工作区�
 仅靠提示词、`AGENTS.md` 或操作手册不能保证遵循。目标实现使用四层控制：
 
 1. **导航层**：告诉 Agent 正确入口和最小规则。
-2. **CLI 层**：`start/status/finish` 提供唯一正常路径。
+2. **CLI 层**：`plan/start/status/finish` 提供唯一正常路径；低风险 `lite` 可省略显式 `plan`，`status` 只读。
 3. **状态层**：本地状态只允许 `active → blocked|validated`；任何输入变化都把 `validated` 失效回待验证状态。
 4. **接受层**：本地 hook、服务端 `pre-receive` 或发布脚本调用同一 commit verifier；provider 在 `finish` 后最多进入 ready/review，只有 commit 被受控 ref 或发布入口接受后才能进入 `done`。
 
@@ -225,7 +225,7 @@ Harness core 的唯一事实源是 Git 对象库。`finish` 先验证工作区�
 1. 先为四个不变式补可执行验收测试，并记录当前任务耗时、Token、上下文和产物数量基线。
 2. 实现共享 result schema、原子状态写入和成本遥测，以 shadow mode 包装现有 `check.sh`；此阶段结果不改变当前准入判定。
 3. 让 execution tier 分类器在 shadow mode 同时读取计划与实际 diff，验证升级、未知分类和 policy digest，不先开放降本路径。
-4. 提供 `start/status/finish` 门面；`finish` 生成 result，commit hook 生成 attestation，受控接受端重验并签名。
+4. 提供 `plan/start/status/finish` 门面；`finish` 生成 result，commit hook 生成 attestation，受控接受端重验并签名。
 5. Git-native 接受链和 provider 状态流转稳定后，完成受控 `pre-receive` / release gate 验收。
 6. 最后迁移活动任务，隐藏被门面替代的 Agent 可见命令链，并删除冗余证据要求。
 

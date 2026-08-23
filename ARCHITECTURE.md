@@ -208,4 +208,4 @@ Harness 使用两个正交分层：`lite|standard|strict` 决定任务验证深�
 
 产品经验先落在产品 workspace。只有在多个产品中重复成立，并经人工 review，才迁入 harness-engineering rules、templates 或 docs。
 
-参考项目能力也遵循同一扩展原则：优先复用现有 gate、目录语义和 adapter；新增公开入口前必须证明现有 `start/status/finish` 无法承载。
+参考项目能力也遵循同一扩展原则：优先复用现有 gate、目录语义和 adapter；新增公开入口前必须证明现有 `plan/start/status/finish` 无法承载。低风险 `lite` 可由 `start` 生成最小绑定，不能据此跳过 `standard/strict` 的规划凭证。

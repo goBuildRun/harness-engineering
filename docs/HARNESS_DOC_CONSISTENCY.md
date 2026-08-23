@@ -1,7 +1,7 @@
 # Team Product R&D Harness 文档一致性审查报告
 
 > 初始审查日期：2026-06-20  
-> 最近复核：2026-08-12
+> 最近复核：2026-08-23
 > 基准实态：Team Product R&D Harness 已从 embedded harness 调整为 **harness-engineering `harness-engineering/` + product-owned `harness-workspace/`**。
 
 ## 1. 审查结论
@@ -11,13 +11,25 @@
 1. [AGENTS.md](../AGENTS.md) 只维护 Agent 最小导航和不可绕过边界。
 2. [README.md](../README.md) 只维护开源入口与最小快速开始。
 3. [ARCHITECTURE.md](../ARCHITECTURE.md)、[Team_Product_Harness.md](./Team_Product_Harness.md) 和 [Harness_Product_Workspace.md](./Harness_Product_Workspace.md) 分别维护系统架构、通用模型和 workspace 分层。
-4. [USAGE.md](./USAGE.md) 维护三入口使用模型，并明确标注当前可执行的过渡期命令。
+4. [USAGE.md](./USAGE.md) 维护三项主动作（`plan/start/finish`）和只读 `status`，并明确标注当前可执行的过渡期命令。
 5. [design-docs/lean-enforcement.md](./design-docs/lean-enforcement.md) 维护精简强制执行目标。
 6. [Harness_Workflow.md](./Harness_Workflow.md) 只解释流程结构。
 7. [Harness_成熟度评估.md](./Harness_成熟度评估.md) 维护当前评分、缺口和优化优先级。
 8. [Harness_全景手册.md](./Harness_全景手册.md) 只保留设计背景与历史全景。
 
 同一命令、provider 配置、迁移规则或成熟度结论不得在上述文档中并行维护全文。
+
+## 1.1 当前实现基准
+
+以下值直接对应 runtime；变更代码时必须同步更新本节和 [USAGE.md](./USAGE.md)，否则文档审查失败：
+
+| 能力 | 当前基准 |
+|------|----------|
+| 主动作 | `plan`、`start`、`finish`；`status` 只读；低风险 `lite` 可由 `start` 生成最小 `task.json` |
+| Story 阶段 | `takeover` 2m → `planning` 3m → `implementation_test` 10m → `independent_qa` 7m → `deploy_provider` 5m → `finalize` 3m |
+| 重试与超时 | Story 总上限 30m；阶段重试上限 2；同输入 `finish` 上限 2；gate 默认 120s，质量命令按自身上限且受阶段剩余预算约束 |
+| 并行与缓存 | 只读 gate 可 bounded parallel；仅确定性 gate 按真实输入 fingerprint 缓存；QA、GC Agent、浏览器、部署、Provider、回滚不缓存 |
+| 保障语义 | `lite/standard/strict` 是执行深度；`local/guarded/enforced` 是接受保障；`guarded` 始终 `bypassable: true`，未知遥测保持 `unknown/pending` |
 
 | 维度 | 结果 | 说明 |
 |------|------|------|
@@ -73,6 +85,8 @@
 
 ## 4. 核心入口
 
+命令契约只有一套：`plan` 生成规划与 task-scoped 凭证，`start` 接管并记录基线，`status` 只读观察，`finish` 按 tier 执行/复用门禁并生成结果。`standard/strict` 必须有规划凭证；低风险 `lite` 可由 `start` 生成最小 `task.json`。`confirm`、`stage`、workspace/migration 和旧脚本属于兼容或管理能力，不形成第二个完成态。
+
 | 文档 | 职责 |
 |------|------|
 | [README.md](../README.md) | GitHub 中文开源入口 |
@@ -98,13 +112,13 @@
 | 旧目录名只出现在兼容说明中 | `doc_gardening_check.py` 的陈旧引用规则 |
 | Harness 自检不修改 active product 或产品 workspace | 状态型 Growth smoke 在临时产品根执行；`validate_harness.sh` 不调用 `harness_init use` |
 
-## 6. 待实现项
+## 6. 当前缺口与状态
 
 | ID | 项 | 说明 |
 |----|----|------|
 | HDC-003 | provider 深度验证 | 飞书/Jira 基础 adapter 已接入；需要真实租户验证状态流转、Webhook、权限错误 |
 | HDC-004 | 强沙箱 | `run_in_sandbox.sh` 已支持 controlled 与 Docker backend；Firecracker/远程隔离执行器仍是后续项 |
-| HDC-005 | 精简执行门面与结果 schema | `start/status/finish`、原子 `result.json`、tier-aware gate 与 Git-native attestation 已实现；`shadow|enforced` 只作为历史兼容字段 |
+| HDC-005 | 精简执行门面与结果 schema | `plan/start/status/finish`、原子 `result.json`、tier-aware gate 与 Git-native attestation 已实现；低风险 `lite` 可由 `start` 生成最小绑定；`shadow|enforced` 只作为历史兼容字段 |
 | HDC-006 | 成本与缓存 | implementation/harness 分项 schema、绑定 usage receipt、GC provider/model/calls/context/duration、fingerprint 和只读 rollout 汇总已落地；真实第三方 usage response 联调仍需 endpoint/model/key，未知 baseline 或样本不足返回 insufficient_data |
 | HDC-007 | Legacy workspace 兼容 | **已完成**：`workspace audit` 只读分类且有无副作用测试；`migrate-task` 机械拒绝已完成 legacy、缺凭证和不存在任务，仅活动凭证任务可逐项迁移，已有结果只做身份修复 |
 | HDC-010 | 三级保障接入验收 | **已完成**：local/guarded、bare Git receive 阻断、acceptance receipt、provider 消费、authority audit 与独立 SSH GC receipt 已覆盖；产品实例仍须对自己的 authority 单独 install/audit |

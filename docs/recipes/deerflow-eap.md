@@ -2,7 +2,7 @@
 
 本 recipe 描述 DeerFlow-based EAP 这类产品如何叠加在通用 Team Product R&D Harness 之上。它不是 harness core 的必经步骤；其它产品只需要 `harness_init.sh init` 和产品侧 `harness-workspace/project.yaml` 即可接入。
 
-统一入口落地后，recipe 只能向 `harness start/status/finish` 提供产品识别、结构 allowlist、上下文检索和附加 gate；不得新增第四个核心入口，也不得要求使用者手工串联一套 DeerFlow 专属必经流程。下面命令是当前 bootstrap 兼容说明，不是每次产品迭代的操作路径。
+统一入口落地后，recipe 只能向 `harness plan/start/status/finish` 提供产品识别、结构 allowlist、上下文检索和附加 gate；不得新增平行完成态，也不得要求使用者手工串联一套 DeerFlow 专属必经流程。下面命令是当前 bootstrap 兼容说明，不是每次产品迭代的操作路径。
 
 ## 分层
 

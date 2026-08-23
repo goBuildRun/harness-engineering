@@ -8,6 +8,7 @@ independent_qa: pass
 live_strict_trial: pending
 local_epic_id: E4
 local_story_id: E4-S2
+parent_story_id: E4-S1
 iteration_baseline_commit: 86149a76301307c44879904e1c3edadd40eb1f64
 work_item_provider: noop
 external_tasklist_id: unknown
@@ -84,7 +85,7 @@ Total ceiling: `30m`; the operating target is lower and must be revised downward
 - 阶段状态机可在每次受控 transition、gate 和 Provider side effect 前停止，但不能中断未通过 Harness 入口运行的 host 推理；assurance 因此保持 `guarded` / `bypassable: true`。
 - Codex host 长会话的 2.52 亿 input Token 不能仅靠当前 5.4k 字符的 Harness context excerpt 解释；本轮提供 digest/index 与阶段遥测，host 侧阶段新会话/摘要协议留待实测。Harness input/output Token 仍为 `unknown`，telemetry 仍为 `partial`，L3 仍为 `live_validation_pending`。
 - real Provider 的权威响应、真正的离线网络隔离和外部 lifecycle readback 仍需要新的可信执行边界；在该边界存在前，Harness 保持 fail-closed，不接受 adapter 或 caller 自签替代。
-- CI planning credential 仍使用共享 active workspace；跨 Story 的 per-task execution environment 属于兼容性迁移，不在 E4 candidate/release integrity 内伪装成已解决。
+- CI planning credential 已按 `runs/ci/<task-id>/` 隔离，并由 `HARNESS_CI_TASK_ID` 绑定；当前风险转为对各产品 CI 配置的真实接入验证，不再使用共享 active workspace。
 
 ## Verification
 
@@ -92,6 +93,7 @@ Total ceiling: `30m`; the operating target is lower and must be revised downward
 - The mixed worktree is not a release signal: `20` tracked and `5` untracked protected files remain outside the index, including separate strict-evidence/provider compatibility work. Focused compatibility suites were run, but only the exact index is used for E4 acceptance.
 - Independent QA: `PASS`, with no P0/P1/P2 remaining; focused suites passed `93/93`, E4 hardening/integrity passed `37/37`, and the full suite passed `573/573` across non-overlapping batches.
 - A separate single-process full-suite run reported one host `EPERM` during timed-out process-group cleanup (`572/573`); the exact test immediately passed `1/1`, consistent with the independent full-suite result.
+- Historical candidate counts above are retained for auditability. Current HEAD `fd7b66e2b737b1944de35af47e571d6f35c5bcc1` passed the complete suite `622/622` on 2026-08-23; this review also passed manifest, doc gardening, compile and offline benchmark checks.
 - Manifest and smoke validation: `HARNESS_VALID`; Python compile, Bash syntax, module-boundary and `git diff --check` checks passed.
 - Offline benchmark: gate validation `431ms -> 136ms` and unrelated-evidence rerun `133ms` with `4` precise cache hits (`68.45%` and `69.14%` reductions in this run); complete six-stage fixture `831ms -> 476ms`, with QA fan-out reducing the QA stage from `80ms` serial to `20ms` bounded parallel. This is an offline orchestration benchmark, not production P95.
 - Production P95, Judge usage and the next live strict/L3 Story result remain `unknown`/`pending`.

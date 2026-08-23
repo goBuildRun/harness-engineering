@@ -5,11 +5,11 @@
 > **已有项目接入**：[Brownfield_Intake.md](./Brownfield_Intake.md) — 已有项目接入的定位、报告和 review 规则  
 > **多人协作**：[COLLABORATION.md](./COLLABORATION.md) — 多 PM/Dev 并行场景与命令  
 > **精简强制执行目标**：[design-docs/lean-enforcement.md](./design-docs/lean-enforcement.md) — 一个入口面、一个权威结果、风险分层与成本约束  
-> 本文档是 **Team Product R&D Harness 的 canonical 使用说明**。不可跳过的是“先形成与风险匹配的计划，再实施并验证”的合规语义，不是让人或 Agent 手工执行固定数量的命令。推荐正常路径是 `plan → start → finish`；`status` 只观察，不阻塞主路径。BMAD Planning、TDD、QA、安全、知识和协同能力由统一入口按 planning level 与 execution tier 编排。详细设计见 [Lean Planning Flow](./design-docs/lean-plan-flow.md)。
+> 本文档是 **Team Product R&D Harness 的 canonical 使用说明**。不可跳过的是“先形成与风险匹配的计划，再实施并验证”的合规语义，不是让人或 Agent 手工执行固定数量的命令。`standard/strict` 推荐路径是 `plan → start → status → finish`；低风险 `lite` 可直接 `start → status → finish`，由 `start` 生成最小绑定。`status` 只观察，不阻塞主路径。BMAD Planning、TDD、QA、安全、知识和协同能力由统一入口按 planning level 与 execution tier 编排。详细设计见 [Lean Planning Flow](./design-docs/lean-plan-flow.md)。
 
 `AGENTS.md` 为最小地图，本文件说明公开使用方式，并保留统一入口尚未覆盖的兼容命令和诊断参考。
 
-**实现状态说明**：`harness start/status/finish`、workspace audit/migrate、guarded hooks，以及受控 bare Git 的安装、接收阻断、签名 receipt 和固定 TrustPolicy 校验均已通过机械验收。本地 provider 终态已封堵；产品只有在独立 authority service 中接入终态 provider 更新、保护配置和关闭状态账本，并完成实际安装/audit 后才具备 `enforced` 能力，否则保持 `shadow`。
+**实现状态说明**：`harness plan/start/status/finish`、workspace audit/migrate、guarded hooks，以及受控 bare Git 的安装、接收阻断、签名 receipt 和固定 TrustPolicy 校验均已通过机械验收。本地 provider 终态已封堵；产品只有在独立 authority service 中接入终态 provider 更新、保护配置和关闭状态账本，并完成实际安装/audit 后才具备 `enforced` 能力，否则保持 `shadow`。
 
 **升级兼容说明**：已有产品不做全量 workspace 迁移。planning、knowledge 和历史 evidence 原位保留；新任务写新结果；只有进行中或重开的任务补最小运行状态。详细矩阵见 [精简执行设计 §10](./design-docs/lean-enforcement.md#10-历史数据与兼容升级)。
 
@@ -19,7 +19,7 @@
 
 | 场景 | 使用方式 |
 |------|----------|
-| 当前正常路径 | `harness plan --level <L1|L2|L3> --task-dir <dir>` → `harness start <work-item-id>` → `harness finish <task-id>` |
+| 当前正常路径 | `standard/strict`: `harness plan --level <L1|L2|L3> --task-dir <dir>` → `harness start <task-id>` → `harness status` → `harness finish <task-id>`；`lite`: `harness start <task-id> --tier lite` → `harness status` → `harness finish <task-id>` |
 | 兼容能力或特殊排障 | 按任务角色读取对应章节；不要把第 2–8 节串成每个任务都要人工执行的总清单 |
 | runtime 开发/排障 | 才直接调用 `.harness/scripts/` 中的内部命令 |
 
@@ -40,7 +40,7 @@ batch `start` 会把 `flow_policy` 持久化到 `runs/tasks/<task-id>/result.jso
 
 | 保留能力 | 来源 | 目标触发方式 | 当前说明 |
 |----------|------|--------------|----------|
-| 产品分析、规格、方案与实现就绪 | BMAD Method | `start` 按 planning level / execution tier 选择 Quick Flow 或完整规划 | 第 2 节、[BMAD_Prelude.md](./BMAD_Prelude.md) |
+| 产品分析、规格、方案与实现就绪 | BMAD Method | `plan` 按 planning level 选择 Quick Flow 或完整规划；`start` 绑定产物，`finish` 按 execution tier 验证 | 第 2 节、[BMAD_Prelude.md](./BMAD_Prelude.md) |
 | 短地图、渐进上下文、机械反馈与文档园艺 | OpenAI Harness | `start` 加载最小上下文，`finish` 统一检查 | `AGENTS.md`、第 8 节 |
 | L1/L2/L3 规划分级和任务模板 | planning level | 保留为 planning level 与 legacy 兼容，不决定最终 execution tier | 第 2.3 节、`.harness/workflows/` |
 | TDD、调试纪律和完成前验证 | Superpowers | 按 tier 内部执行 | 第 4–5 节 |
@@ -687,7 +687,7 @@ execution tier 与 assurance level 必须分开理解：前者决定任务需要
 
 | 接入等级 | 使用场景 | 日常入口 | 当前状态 |
 |----------|----------|----------|----------|
-| `local` | 个人、本地 Git、快速试用 | `start/status/finish` | 已可用；结果可审计但可被显式绕过 |
+| `local` | 个人、本地 Git、快速试用 | `plan/start/status/finish`（`lite` 可省略 `plan`） | 已可用；结果可审计但可被显式绕过 |
 | `guarded` | 小团队、希望低成本阻止误提交/误推送 | `harness_init.sh init --assurance guarded ...` 安装版本化 `.githooks` | 已实现；hooks 可被 `--no-verify` 或管理员绕过，不等于 enforced |
 | `enforced` | 合规、发布或组织级不可绕过准入 | 日常入口不变，管理员在受控 bare Git 安装并审计 receive authority | 框架能力已端到端验证；仅实际 authority audit 通过的产品可启用 |
 
@@ -699,7 +699,7 @@ Guarded 接入会把 `pre-commit` / `post-commit` / `pre-push` 写入产品 `.gi
 
 首次安装 hooks 时，在暂存接入文件后执行 `harness bootstrap-guarded --task-id <id> --reason '<原因>'`。一次性 receipt 保存在 `.git/harness/`，绑定当前 HEAD、index tree、精确 staged paths 和任务身份；pre-commit 只验证，post-commit 仅在新 commit parent/tree 匹配后消费。已有版本化 hooks 的仓库不能创建 bootstrap receipt，且该机制仍属于可绕过的 `guarded`，不是 `enforced`。
 
-目标公开路径是 `plan/start/finish`，`status` 只读；30 分钟是 Story 的最大预算而非理想耗时，`stage` 记录六个关键阶段（旧结果字段仍显示 `shadow`）：
+目标公开路径是 `plan/start/status/finish`，其中 `status` 只读；低风险 `lite` 可省略显式 `plan`。30 分钟是 Story 的最大预算而非理想耗时，`stage` 记录六个关键阶段（旧结果字段仍显示 `shadow`）：
 
 ```bash
 bash .harness/scripts/harness start demo-login-task --scope src/auth --work-item <provider-id>
@@ -842,7 +842,7 @@ CI Planning credential 自动物化到 `harness-workspace/runs/ci/<task-id>/plan
 |------|------|
 | [Harness_全景手册.md](./Harness_全景手册.md) | **全景：设计·方案·评估·演进** |
 | [Team_Product_Harness.md](./Team_Product_Harness.md) | 通用产品研发 Harness 模型 |
-| [USAGE.md](./USAGE.md) | **本文件：三入口使用模型与过渡期兼容参考** |
+| [USAGE.md](./USAGE.md) | **本文件：三项主动作 + 只读 status 的使用模型与过渡期兼容参考** |
 | [COLLABORATION.md](./COLLABORATION.md) | 多人 PM/Dev 协作 |
 | [BMAD_Work_Item_Contract.md](./BMAD_Work_Item_Contract.md) | BMAD Planning 到 Teambition/飞书/Jira 的同步契约 |
 | [Harness_Workflow.md](./Harness_Workflow.md) | 双闭环 + Work Item provider 总览 |

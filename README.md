@@ -6,7 +6,7 @@
 
 面向软件产品研发团队的独立式 Agent Engineering Lifecycle。它把产品意图、任务身份、实现执行、风险匹配验证和知识沉淀连接成可审计闭环，并由一套生命周期工具服务多个产品仓库。它管理 Agent 产品如何变化，不是 Agent runtime Harness 本身。
 
-> 当前可执行命令以 [docs/USAGE.md](./docs/USAGE.md) 为准。`harness start/status/finish`、单一 `result.json` 和 `lite/standard/strict` 已进入可执行阶段；旧脚本只保留作兼容和诊断入口，不与统一门面形成第二套完成态。
+> 当前可执行命令以 [docs/USAGE.md](./docs/USAGE.md) 为准。标准流程是 `harness plan → start → status → finish`：`plan`、`start`、`finish` 是三个主动作，`status` 只读观察。单一 `result.json` 和 `lite/standard/strict` 已进入可执行阶段；旧脚本只保留作兼容和诊断入口，不与统一门面形成第二套完成态。
 
 ## 核心原则
 
@@ -70,7 +70,7 @@ harness-engineering 不保存产品 PRD、任务实例、测试报告或产品�
 - Intake、产品知识、任务契约、DAG、结构与计划同步。
 - 受控命令、Docker 后端、QA 签章、浏览器 QA 和 CI gate。
 - 历史 workspace、Planning Gate、QA 与 evidence 的兼容读取基础。
-- `harness start/status/finish` 统一门面、原子 `result.json` 和 execution tier 分类。
+- `harness plan/start/finish` 统一门面、只读 `status`、原子 `result.json` 和 execution tier 分类。
 - 成本遥测、确定性 gate fingerprint 缓存、GC 判定与活动任务迁移审计。
 - commit/tree/task/policy/result 绑定的 Git attestation、版本化 Git hooks 和共享 verifier。
 
@@ -117,13 +117,16 @@ bash "$BIN/harness_intake.sh" apply-review
 
 ## 使用模型
 
-正常路径只有：
+正常路径是：
 
 ```bash
+harness plan --level <L1|L2|L3> --task-dir <dir>
 harness start [<task-id>] [--work-item <provider-id>]
 harness status [<task-id>]
 harness finish [<task-id>]
 ```
+
+`status` 只读；`standard/strict` 先执行 `plan`，低风险 `lite` 可直接 `start`，由 `start` 生成最小 `task.json`。旧脚本和 `stage`/`confirm` 仅用于兼容、诊断或受控编排，不是每个 Story 的额外人工步骤。
 
 入口脚本为 `.harness/scripts/harness`。旧命令链仅用于兼容和诊断，不应被照抄成每个任务的固定全链。所有任务都满足共同不变式，独立 QA、TEST/REVIEW、浏览器验证、GC 和人工 Gate 只在当前工序或实际风险要求时启用。
 

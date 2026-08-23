@@ -4,7 +4,7 @@
 > **使用说明**：[USAGE.md](./USAGE.md) · **多人协作**：[COLLABORATION.md](./COLLABORATION.md)
 > **Work Item 配置**：[.harness/work-items/README.md](../.harness/work-items/README.md)
 
-> **当前推荐路径**：[design-docs/lean-plan-flow.md](./design-docs/lean-plan-flow.md)。公开操作面是 `harness plan → start → finish`，`status` 只观察；旧脚本链保留为兼容诊断，不作为每个 Story 的人工步骤。
+> **当前推荐路径**：[design-docs/lean-plan-flow.md](./design-docs/lean-plan-flow.md)。公开操作面是 `harness plan → start → status → finish`，其中 `status` 只观察；低风险 `lite` 可省略显式 `plan`。旧脚本链保留为兼容诊断，不作为每个 Story 的人工步骤。
 
 ## 建设目的
 
@@ -98,7 +98,7 @@ provider 配置、ID 规则和命令只在以下文档维护：
 | **BMAD Method** | Analysis / Planning / Solutioning、产品规格和实现就绪 | `start` 按 planning level / execution tier 选择规划深度，产物继续写入产品 `planning/` |
 | **planning level** | `tasks/_templates`、L1/L2/L3、Entry Gate | 保留 planning level 与 legacy 兼容，由统一入口内部调用 |
 | **Work Item provider** | 多 provider 负责人、状态与讨论 | adapter 保留；任务 ID 分离，生命周期由 `start/finish` 同步 |
-| **OpenAI Harness** | AGENTS 地图、记录系统、机械反馈、QA 分离、GC | 三入口后的核心运行模型 |
+| **OpenAI Harness** | AGENTS 地图、记录系统、机械反馈、QA 分离、GC | 三项主动作后的核心运行模型 |
 | **Superpowers** | 规格先行、TDD、调试与完成前验证 | execution tier 相关内部 gate |
 | **GStack** | 真实环境调查、浏览器 QA、审查视角 | 前端、交互或高风险任务按需触发 |
 | **Flow-X** | CONTEXT / LESSONS / PROGRESS / SUMMARY / TEST / REVIEW / GROWTH | 保留知识与证据语义，产物按恢复、tier 或长期候选生成 |
