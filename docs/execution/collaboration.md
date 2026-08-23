@@ -1,8 +1,8 @@
-# Team Product R&D Harness 多人协作手册
+# 多人协作与角色交接
 
-> **定位**：多 PM 并行设计、多开发并行执行时的协作约定与命令。  
-> **全景上下文**：[Harness_全景手册.md](./Harness_全景手册.md)  
-> **使用说明**：[USAGE.md](./USAGE.md)
+> **定位**：多 PM 并行设计、多开发并行执行时的协作约定与命令。
+> **全景上下文**：[architecture/overview.md](../architecture/overview.md)
+> **使用说明**：[getting-started/cli.md](../getting-started/cli.md)
 > **精简目标**：多人隔离、角色边界和 provider 协同继续保留；推荐使用者调用 `plan/start/finish`，`status` 只观察，现有 `task_workspace`、provider 和 QA 命令收为内部能力。
 
 ---
@@ -69,7 +69,7 @@ bash .harness/scripts/harness_product.sh exec --product-id product-b -- bash .ha
 
 ### 3.0 已有项目接入负责人 — Intake
 
-首次把已有产品接入 Team Product R&D Harness 时，建议由 Tech Lead 运行扫描，PM/QA/架构负责人共同 review。
+首次把已有产品接入 Agent Engineering Lifecycle 时，建议由 Tech Lead 运行扫描，PM/QA/架构负责人共同 review。
 
 ```bash
 bash .harness/scripts/harness_knowledge.sh ensure
@@ -122,7 +122,7 @@ git push -u origin pm/kb-health-spec
 - 不同产品线可选择不同 provider：Teambition 项目、飞书任务清单或 Jira project
 - 验收标准须可测试、可勾选
 
-### 3.2 开发工程师 — Harness Execution
+### 3.2 开发工程师 — Lifecycle Execution
 
 **不需要**单独部署 Harness；**需要**认领 Work Item ID 并激活工作区。
 
@@ -141,7 +141,7 @@ bash .harness/scripts/task_workspace.sh show-active
 # 查看当前 provider 分给我的任务（Teambition/Jira 支持；飞书待租户搜索接口增强）
 bash .harness/scripts/work_item.sh list-mine
 
-# … Harness Execution：tasks-dag → TDD → 风险匹配验证 → check → MR …
+# … Lifecycle Execution：tasks-dag → TDD → 风险匹配验证 → check → MR …
 ```
 
 `start` 会从 batch receipt 和 `03-实施方案.md` 写入边界生成 runtime scope；execution tier 按实际 diff/risk 选择，L3 不再自动等于 strict。再次启动同一 Work Item 不覆盖原 baseline，只允许增强 tier/scope，并拒绝 Work Item 换绑。
@@ -175,7 +175,7 @@ harness-workspace/runs/
         └── qa_approved_T1.json
 ```
 
-Git 权威：`harness-workspace/planning/tasks/<date>-<work-item-id>-简称>/planning_gate_pass.json`（**须随 MR 提交**）。  
+Git 权威：`harness-workspace/planning/tasks/<date>-<work-item-id>-简称>/planning_gate_pass.json`（**须随 MR 提交**）。
 本地执行缓存：`harness-workspace/runs/tasks/<work-item-id>/`（Planning Gate、context、QA 凭证）。
 
 ### 4.2 命令
@@ -186,7 +186,7 @@ Git 权威：`harness-workspace/planning/tasks/<date>-<work-item-id>-简称>/pla
 | `task_workspace.sh show-active` | 查看当前 Work Item ID |
 | `task_workspace.sh infer-mr` | CI/MR：从 git diff 推断任务目录 |
 | `task_workspace.sh qa-path <Tn>` | 查找 QA 凭证路径（排障） |
-| `agent_start.sh <work-item-id>` | **内含 activate**，启动 Harness Execution |
+| `agent_start.sh <work-item-id>` | **内含 activate**，启动 Lifecycle Execution |
 
 ### 4.3 切换任务
 
@@ -269,7 +269,7 @@ bash .harness/scripts/agent_start.sh <新work-item-id>
 
 ### 7.2 CI 推断任务目录
 
-1. 若 MR diff **仅涉及一个** `harness-workspace/planning/tasks/<id>/` → 自动用该目录 phase0  
+1. 若 MR diff **仅涉及一个** `harness-workspace/planning/tasks/<id>/` → 自动用该目录 phase0
 2. 否则设置 CI 变量 `HARNESS_TASK_DIR=harness-workspace/planning/tasks/...`（相对产品根）
 
 ### 7.3 不再支持
@@ -294,10 +294,10 @@ bash .harness/scripts/agent_start.sh <新work-item-id>
 
 | 文档 | 用途 |
 |------|------|
-| [Harness_全景手册.md](./Harness_全景手册.md) | 设计、方案、评估、演进 |
+| [architecture/overview.md](../architecture/overview.md) | 设计、方案、评估、演进 |
 | **本文** | 多人 PM/Dev 协作场景与命令 |
-| [USAGE.md](./USAGE.md) | 三项主动作 + 只读 status 的使用模型与过渡期兼容参考 |
-| [BMAD_Prelude.md](./BMAD_Prelude.md) | BMAD Planning 专章 |
+| [getting-started/cli.md](../getting-started/cli.md) | 三项主动作 + 只读 status 的使用模型与过渡期兼容参考 |
+| [planning/bmad-planning.md](../planning/bmad-planning.md) | BMAD Planning 专章 |
 
 ---
 

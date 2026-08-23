@@ -1,8 +1,8 @@
-# Team Product R&D Harness 全景手册
+# Harness 架构总览
 
-> 文档定位：解释 Team Product R&D Harness 的设计背景、系统模型、能力来源和演进边界。本文不维护命令、provider 配置、实时成熟度或技术债状态。
+> 文档定位：解释 Agent Engineering Lifecycle 的设计背景、系统模型、能力来源和演进边界。本文不维护命令、provider 配置、实时成熟度或技术债状态。
 >
-> 当前使用以 [USAGE.md](./USAGE.md) 为准；精简执行目标以 [lean-enforcement.md](./design-docs/lean-enforcement.md) 为准；当前成熟度以 [Harness_成熟度评估.md](./Harness_成熟度评估.md) 为准。
+> 当前使用以 [getting-started/cli.md](../getting-started/cli.md) 为准；精简执行目标以 [lean-enforcement.md](../design/lean-enforcement.md) 为准；当前成熟度以 [operations/maturity.md](../operations/maturity.md) 为准。
 
 ## 1. 为什么需要 Harness
 
@@ -21,14 +21,14 @@ Harness 的目标不是增加流程，而是让必要流程无法遗漏，让不
 
 ## 2. 核心模型
 
-Team Product R&D Harness 把研发组织为一个事实前导和两个闭环：
+Agent Engineering Lifecycle 把研发组织为一个事实前导和两个闭环：
 
 ```mermaid
 flowchart LR
   I["Brownfield Intake"] --> P["BMAD Planning"]
   N["New product intent"] --> P
   P --> W["Task identity / Work Item"]
-  W --> E["Harness Execution"]
+  W --> E["Lifecycle Execution"]
   E --> V["Risk-matched validation"]
   V --> C["Commit-bound CI result"]
   C --> D["Merge / release / provider done"]
@@ -39,7 +39,7 @@ flowchart LR
 
 1. **事实前导**：已有项目先通过 Intake 识别代码、架构、测试、CI 和上游边界；全新项目直接进入产品规划。
 2. **产品闭环**：BMAD Planning 回答“做什么、为什么、如何验收”，再同步必要的协同信息。
-3. **执行闭环**：Harness Execution 回答“由谁改、改哪里、如何验证、什么结果允许交付”。
+3. **执行闭环**：Lifecycle Execution 回答“由谁改、改哪里、如何验证、什么结果允许交付”。
 4. **知识闭环**：执行证据只形成候选；长期有效内容经 review 后进入产品知识或跨产品规则。
 
 最高原则是：
@@ -48,9 +48,9 @@ flowchart LR
 
 ## 3. 分层与所有权
 
-### 3.1 Harness runtime
+### 3.1 Lifecycle runtime
 
-`harness-engineering/` 负责：
+`harness-engineering/` 负责 Agent 产品的生命周期执行：
 
 - Agent 角色、通用规则和任务模板。
 - 质量、安全、结构、证据和协同 adapter。
@@ -152,7 +152,7 @@ Harness 的能力来自多个成熟项目和方法，但这些来源不形成需
 | Brownfield Intake | 已有项目事实扫描和 review 后入知识 | 每次迭代重新全仓扫描 |
 | Work Item provider | 负责人、状态、讨论和生命周期 | 把完整规格复制到外部系统 |
 
-完整的来源到内部权威映射只在 [references/index.md](./references/index.md) 维护。
+完整的来源到内部权威映射只在 [references.md](../references.md) 维护。
 
 ## 8. Profile 隔离
 
@@ -205,21 +205,21 @@ Agent 的通用代码放置规则始终先解析产品 `project.yaml` 和 active
 - 缺失历史 baseline 时记录 migration baseline，并至少执行一次完整 `standard` 验证。
 - 迁移不移动、不删除、不批量改写 `planning/`、`knowledge/` 或 `evidence/`。
 
-完整规则见 [lean-enforcement.md §10](./design-docs/lean-enforcement.md#10-历史数据与兼容升级)。
+完整规则见 [lean-enforcement.md §10](../design/lean-enforcement.md#10-历史数据与兼容升级)。
 
 ## 12. 文档所有权
 
 | 主题 | 权威文档 |
 |------|----------|
-| 使用模型与当前命令 | [USAGE.md](./USAGE.md) |
-| 精简强制执行目标 | [lean-enforcement.md](./design-docs/lean-enforcement.md) |
-| 系统边界与真相源 | [ARCHITECTURE.md](../ARCHITECTURE.md) |
-| 通用产品模型 | [Team_Product_Harness.md](./Team_Product_Harness.md) |
-| product workspace | [Harness_Product_Workspace.md](./Harness_Product_Workspace.md) |
-| BMAD Planning | [BMAD_Prelude.md](./BMAD_Prelude.md) |
-| 多人协作 | [COLLABORATION.md](./COLLABORATION.md) |
-| 当前成熟度和优先级 | [Harness_成熟度评估.md](./Harness_成熟度评估.md) |
-| 技术债状态 | [tech-debt-tracker.md](./exec-plans/tech-debt-tracker.md) |
-| 外部能力来源 | [references/index.md](./references/index.md) |
+| 使用模型与当前命令 | [getting-started/cli.md](../getting-started/cli.md) |
+| 精简强制执行目标 | [lean-enforcement.md](../design/lean-enforcement.md) |
+| 系统边界与真相源 | [ARCHITECTURE.md](../../ARCHITECTURE.md) |
+| 通用产品模型 | [architecture/team-model.md](./team-model.md) |
+| product workspace | [architecture/workspace.md](./workspace.md) |
+| BMAD Planning | [planning/bmad-planning.md](../planning/bmad-planning.md) |
+| 多人协作 | [execution/collaboration.md](../execution/collaboration.md) |
+| 当前成熟度和优先级 | [operations/maturity.md](../operations/maturity.md) |
+| 技术债状态 | [tech-debt-tracker.md](../operations/tech-debt.md) |
+| 外部能力来源 | [references.md](../references.md) |
 
 本文只解释这些主题如何组成一个系统，不复制它们的命令、配置或实时状态。

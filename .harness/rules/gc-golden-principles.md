@@ -1,6 +1,6 @@
 # GC 黄金原则（熵减机械规则）
 
-> **memory-sweep 使用方式**：[docs/USAGE.md](../../docs/USAGE.md) 第 6 节。
+> **memory-sweep 使用方式**：[getting-started/cli.md](../../docs/getting-started/cli.md) 第 6 节。
 
 > 供 `gc-sweeper` 与 `memory-sweep.sh` 扫描依据。人类品味一旦写入此处，即持续应用于全库。
 

@@ -19,7 +19,7 @@ Teambition 示例：`harness-workspace/planning/tasks/2026-06-17-6a335eb127a6242
 | 阶段 | 写入位置 |
 |------|----------|
 | BMAD Planning | `harness-workspace/planning/tasks/<id>/` 内 `00`～`02`；规格在 `harness-workspace/planning/product-specs/`；计划在 `harness-workspace/planning/exec-plans/`；`planning_gate_pass.json` |
-| Harness Execution | 同任务目录内 `03`～`06`、`tasks-dag.md`、业务代码 |
+| Lifecycle Execution | 同任务目录内 `03`～`06`、`tasks-dag.md`、业务代码 |
 
 QA 凭证在 `harness-workspace/runs/tasks/<work-item-id>/`（本地 gitignore），不在 `harness-workspace/planning/tasks/` 目录。
 
@@ -34,4 +34,4 @@ mkdir -p "$TASK_DIR"
 cp tasks/_templates/00-任务卡.md tasks/_templates/03-实施方案.md tasks/_templates/04-实施记录.md "$TASK_DIR/"
 ```
 
-详见 [docs/BMAD_Prelude.md](../docs/BMAD_Prelude.md) 与 [docs/USAGE.md](../docs/USAGE.md) §2.3。
+详见 [docs/planning/bmad-planning.md](../docs/planning/bmad-planning.md) 与 [docs/getting-started/cli.md](../docs/getting-started/cli.md) §2.3。

@@ -2,8 +2,8 @@
 
 > 状态：Git-native core、受控 bare Git enforcement 与独立 authority GC receipt 已完成机械验证
 > 日期：2026-08-11
-> 适用范围：所有通过 harness-engineering 接入的产品迭代  
-> 当前命令实态仍以 [USAGE.md](../USAGE.md) 为准。
+> 适用范围：所有通过 harness-engineering 接入的产品迭代
+> 当前命令实态仍以 [getting-started/cli.md](../getting-started/cli.md) 为准。
 
 ## 1. 目标
 
@@ -114,7 +114,7 @@ harness-workspace/runs/tasks/<task-id>/result.json
 
 `result.json` 使用任务级单写锁和“临时文件 + 原子替换”更新；中断后可恢复，多个 Agent 不得并发覆盖。它是当前任务的物化状态，不是可由开发者提交后让接受端盲信的证明。
 
-Harness core 的唯一事实源是 Git 对象库。`finish` 先验证工作区并生成 validated result；commit 后由 hook 将 canonical result 写成 Git blob，再生成绑定 `commit SHA + tree SHA + task_id + policy_digest + result object/digest + decision` 的 attestation，并原子写入 `refs/harness/attestations/<commit>` 与 `refs/harness/results/<commit>`。后者只保证 result blob 可被 Git 传输，不是平行完成态。`status` 和接受端 verifier 从 Git object/ref 读取并重算绑定关系；工作区 `result.json` 只是可恢复的物化视图。
+Lifecycle core 的唯一事实源是 Git 对象库。`finish` 先验证工作区并生成 validated result；commit 后由 hook 将 canonical result 写成 Git blob，再生成绑定 `commit SHA + tree SHA + task_id + policy_digest + result object/digest + decision` 的 attestation，并原子写入 `refs/harness/attestations/<commit>` 与 `refs/harness/results/<commit>`。后者只保证 result blob 可被 Git 传输，不是平行完成态。`status` 和接受端 verifier 从 Git object/ref 读取并重算绑定关系；工作区 `result.json` 只是可恢复的物化视图。
 
 代码托管和 CI 不参与 Harness 生命周期。它们可以运行或展示 verifier，但接受真相始终是“目标 Git commit 拥有由相应权限边界生成的有效 attestation”；任何展示层都不得引入第二个状态机。
 
@@ -131,7 +131,7 @@ Harness core 的唯一事实源是 Git 对象库。`finish` 先验证工作区�
 分层规则：
 
 - `start` 只能根据计划、声明范围和已有路径给出初始 execution tier；`status` 与 `finish` 必须根据实际 diff 重新判定。
-- 有效 execution tier 取 Harness core 下限、产品 policy、任务显式升级和实际变更风险四者中的最高值，并在任务生命周期内只升不降。
+- 有效 execution tier 取 Lifecycle core 下限、产品 policy、任务显式升级和实际变更风险四者中的最高值，并在任务生命周期内只升不降。
 - Agent 或人类可以升级 execution tier，不能在缺少证据时自行降级。
 - 无法可靠分类时使用 `standard`；命中高风险因素时强制 `strict`。
 - BMAD 的 L1/L2/L3 规划复杂度与 execution tier 相关但不等同，最终 tier 由实际风险决定。
@@ -229,7 +229,7 @@ Harness core 的唯一事实源是 Git 对象库。`finish` 先验证工作区�
 5. Git-native 接受链和 provider 状态流转稳定后，完成受控 `pre-receive` / release gate 验收。
 6. 最后迁移活动任务，隐藏被门面替代的 Agent 可见命令链，并删除冗余证据要求。
 
-每增加一个新入口或产物，必须同时说明它替代什么；不能证明替代关系的新增内容不进入 Harness core。
+每增加一个新入口或产物，必须同时说明它替代什么；不能证明替代关系的新增内容不进入 Lifecycle core。
 
 上线使用单一 feature flag 支持按产品灰度和回退；回退只恢复旧入口，不删除新格式或历史数据。
 
@@ -237,7 +237,7 @@ Harness core 的唯一事实源是 Git 对象库。`finish` 先验证工作区�
 
 ## 10. 历史数据与兼容升级
 
-升级 Harness runtime 不应要求产品全量重写 `harness-workspace/`。默认策略是：
+升级 Lifecycle runtime 不应要求产品全量重写 `harness-workspace/`。默认策略是：
 
 > 历史数据原位可读，新任务写新格式；只迁移继续执行所必需的最小状态。
 
@@ -276,7 +276,7 @@ harness migrate-task <task-id>
 
 ## 11. 成功判定
 
-当前实施按 [Git-native Harness Upgrade](../exec-plans/active/git-native-harness-upgrade.md) 的 Epic/Story 顺序推进。bare receive verifier、SSH acceptance receipt、受控安装与 audit 已用真实 Git push 验证拒绝、接受、签发和 provider 消费。receive authority 会重跑 gates，不信任客户端自报的独立 GC 结果；触发 Agent GC 时，必须提供 `harness-gc-review` namespace 签名、commit/task/policy/context/triggers/telemetry 完整绑定且 Agent 调用次数为一的 receipt。GC 与 acceptance 共用 allowed-signers trust root，但可使用独立私钥。
+当前实施按 [Git-native Harness Upgrade](../plans/active/git-native-harness-upgrade.md) 的 Epic/Story 顺序推进。bare receive verifier、SSH acceptance receipt、受控安装与 audit 已用真实 Git push 验证拒绝、接受、签发和 provider 消费。receive authority 会重跑 gates，不信任客户端自报的独立 GC 结果；触发 Agent GC 时，必须提供 `harness-gc-review` namespace 签名、commit/task/policy/context/triggers/telemetry 完整绑定且 Agent 调用次数为一的 receipt。GC 与 acceptance 共用 allowed-signers trust root，但可使用独立私钥。
 
 - 未经过 Harness 的变更无法获得有效 attestation、关闭 Work Item 或进入正式 ref/制品。
 - 本地伪造、复制或提交 `result.json` 不能让其他 commit 通过 verifier。

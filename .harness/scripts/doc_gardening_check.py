@@ -17,6 +17,8 @@ from doc_gardening_policy import (
     EXPLICIT_ANCHOR_RE,
     HARNESS_TASKS_OUTPUT,
     HEADING_RE,
+    LEGACY_DOC_LABELS,
+    LINK_LABEL_RE,
     LINK_RE,
     STALE_PATTERN_RULES,
     STALE_SKIP_REL_PATHS,
@@ -146,6 +148,9 @@ def collect_markdown_files(harness_root: Path, product_root: Path) -> list[Path]
         if p.is_file():
             files.append(p)
     files.extend((harness_root / ".harness").glob("**/*.md"))
+    cursor_rules = harness_root / ".cursor/rules"
+    if cursor_rules.is_dir():
+        files.extend(cursor_rules.glob("**/*.mdc"))
     files.extend(harness_root.glob("tasks/**/*.md"))
 
     for sub in ("harness-workspace", "architecture"):
@@ -196,6 +201,20 @@ def check_links(harness_root: Path, product_root: Path, md_files: list[Path]) ->
     return issues
 
 
+def check_legacy_link_labels(harness_root: Path, md_files: list[Path]) -> list[str]:
+    """Reject labels that still advertise removed document paths."""
+    issues: list[str] = []
+    for md in md_files:
+        rel_s = rel_to_harness(md, harness_root)
+        text = md.read_text(encoding="utf-8", errors="ignore")
+        for match in LINK_LABEL_RE.finditer(text):
+            label = match.group(1)
+            for legacy in LEGACY_DOC_LABELS:
+                if legacy in label:
+                    issues.append(f"STALE_LINK_LABEL:{rel_s}:{legacy}")
+    return issues
+
+
 def check_stale_patterns(harness_root: Path, md_files: list[Path]) -> list[str]:
     issues: list[str] = []
     for md in md_files:
@@ -206,7 +225,7 @@ def check_stale_patterns(harness_root: Path, md_files: list[Path]) -> list[str]:
         prose = strip_fenced_code(md.read_text(encoding="utf-8", errors="ignore"))
         for i, line in enumerate(prose.splitlines(), start=1):
             if line.strip().startswith("|") and "模式" in line or (
-                line.strip().startswith("| `") and rel_s == "docs/HARNESS_DOC_CONSISTENCY.md"
+                line.strip().startswith("| `") and rel_s == "docs/governance/documentation.md"
             ):
                 continue
 
@@ -316,6 +335,7 @@ def main() -> int:
     md_files = collect_markdown_files(harness_root, product_root)
     issues: list[str] = []
     issues.extend(check_links(harness_root, product_root, md_files))
+    issues.extend(check_legacy_link_labels(harness_root, md_files))
     issues.extend(check_stale_patterns(harness_root, md_files))
     issues.extend(check_legacy_tool_ref(harness_root))
     issues.extend(check_entropy_files(harness_root, product_root))

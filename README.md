@@ -1,12 +1,12 @@
 # Agent Engineering Lifecycle
 
-> BAEP 子产品：**BuildRun Agent Engineering Lifecycle**<br>
-> 中文：**BuildRun Agent 产品工程生命周期**<br>
+> BAEP 子产品：**Agent Engineering Lifecycle**<br>
+> 中文：**Agent 工程生命周期**<br>
 > 当前物理路径：`harness-engineering/`；历史/兼容 CLI 名称：`harness`。
 
 面向软件产品研发团队的独立式 Agent Engineering Lifecycle。它把产品意图、任务身份、实现执行、风险匹配验证和知识沉淀连接成可审计闭环，并由一套生命周期工具服务多个产品仓库。它管理 Agent 产品如何变化，不是 Agent runtime Harness 本身。
 
-> 当前可执行命令以 [docs/USAGE.md](./docs/USAGE.md) 为准。标准流程是 `harness plan → start → status → finish`：`plan`、`start`、`finish` 是三个主动作，`status` 只读观察。单一 `result.json` 和 `lite/standard/strict` 已进入可执行阶段；旧脚本只保留作兼容和诊断入口，不与统一门面形成第二套完成态。
+> 当前可执行命令以 [docs/getting-started/cli.md](./docs/getting-started/cli.md) 为准。标准流程是 `harness plan → start → status → finish`：`plan`、`start`、`finish` 是三个主动作，`status` 只读观察。单一 `result.json` 和 `lite/standard/strict` 已进入可执行阶段；旧脚本只保留作兼容和诊断入口，不与统一门面形成第二套完成态。
 
 ## 核心原则
 
@@ -58,7 +58,7 @@ harness-engineering 不保存产品 PRD、任务实例、测试报告或产品�
 | Brownfield Intake | 已有项目事实扫描和人工审阅 | 首次接入或事实漂移时运行 |
 | Work Item providers | 负责人、状态、讨论与协同 | provider adapter；任务 ID 与外部 ID 分离 |
 
-完整路由见 [外部参考索引](./docs/references/index.md) 和 [能力保留契约](./docs/design-docs/lean-enforcement.md#11-能力保留契约)。
+完整路由见 [外部参考索引](./docs/references.md) 和 [能力保留契约](./docs/design/lean-enforcement.md#11-能力保留契约)。
 
 ## 当前状态
 
@@ -80,7 +80,7 @@ harness-engineering 不保存产品 PRD、任务实例、测试报告或产品�
 - 受控 bare Git `pre-receive` 或 release gate 的真实环境端到端验收。
 - 更多 provider usage 和 Git-native acceptance lifecycle 实测。
 
-任务风险使用 `lite|standard|strict`，部署保障使用 `local|guarded|enforced`，两者互不替代。结果已提供结构化 `assurance`；兼容字段仍将 `local`/`guarded` 映射为 `shadow`。仅安装 workspace 不代表流程不可绕过。成熟度与实施顺序见 [Harness_成熟度评估.md](./docs/Harness_成熟度评估.md)。
+任务风险使用 `lite|standard|strict`，部署保障使用 `local|guarded|enforced`，两者互不替代。结果已提供结构化 `assurance`；兼容字段仍将 `local`/`guarded` 映射为 `shadow`。仅安装 workspace 不代表流程不可绕过。成熟度与实施顺序见 [成熟度评估](./docs/operations/maturity.md)。
 
 ## 最小接入
 
@@ -98,7 +98,7 @@ bash "$BIN/harness_init.sh" init \
   --install-bmad
 ```
 
-初始化只建立产品 workspace、台账和可选 BMAD 环境。provider、质量命令、沙箱、浏览器 QA 与多人协作配置统一在 [USAGE.md](./docs/USAGE.md) 维护。
+初始化只建立产品 workspace、台账和可选 BMAD 环境。provider、质量命令、沙箱、浏览器 QA 与多人协作配置统一在 [CLI 使用参考](./docs/getting-started/cli.md) 维护。
 
 已有项目首次接入时：
 
@@ -113,7 +113,7 @@ INTAKE 报告只是候选证据。完成报告中的 review 工作台后才能�
 bash "$BIN/harness_intake.sh" apply-review
 ```
 
-若报告仍有未勾选项，`apply-review` 会返回 `INTAKE_REVIEW_PENDING`；`--allow-pending` 只用于生成草稿，不代表正式沉淀完成。完整说明见 [Brownfield_Intake.md](./docs/Brownfield_Intake.md)。
+若报告仍有未勾选项，`apply-review` 会返回 `INTAKE_REVIEW_PENDING`；`--allow-pending` 只用于生成草稿，不代表正式沉淀完成。完整说明见 [Brownfield Intake](./docs/getting-started/brownfield-intake.md)。
 
 ## 使用模型
 
@@ -147,13 +147,13 @@ bash .harness/scripts/doc-gardening.sh
 |------|----------|
 | [AGENTS.md](./AGENTS.md) | Agent 最小地图与不可绕过边界 |
 | [ARCHITECTURE.md](./ARCHITECTURE.md) | 系统边界、状态与真相源 |
-| [docs/USAGE.md](./docs/USAGE.md) | canonical 使用模型和当前兼容命令 |
-| [docs/design-docs/lean-enforcement.md](./docs/design-docs/lean-enforcement.md) | 精简强制执行目标 |
-| [docs/BMAD_Prelude.md](./docs/BMAD_Prelude.md) | BMAD Planning 专章 |
-| [docs/COLLABORATION.md](./docs/COLLABORATION.md) | 多人和 Work Item 协作 |
-| [docs/Brownfield_Intake.md](./docs/Brownfield_Intake.md) | 已有项目接入与 review |
-| [docs/QUALITY.md](./docs/QUALITY.md) | 质量门禁与风险分层 |
-| [docs/references/index.md](./docs/references/index.md) | 参考能力与内部权威路由 |
+| [docs/getting-started/cli.md](./docs/getting-started/cli.md) | canonical 使用模型和当前兼容命令 |
+| [docs/design/lean-enforcement.md](./docs/design/lean-enforcement.md) | 精简强制执行目标 |
+| [docs/planning/bmad-planning.md](./docs/planning/bmad-planning.md) | BMAD Planning 专章 |
+| [docs/execution/collaboration.md](./docs/execution/collaboration.md) | 多人和 Work Item 协作 |
+| [docs/getting-started/brownfield-intake.md](./docs/getting-started/brownfield-intake.md) | 已有项目接入与 review |
+| [docs/governance/quality.md](./docs/governance/quality.md) | 质量门禁与风险分层 |
+| [docs/references.md](./docs/references.md) | 参考能力与内部权威路由 |
 | [.harness/README.md](./.harness/README.md) | runtime 脚本索引 |
 
 历史数据默认原位可读；新任务写新格式；只迁移继续执行所需的最小状态。升级不会批量移动、删除或重写产品 `planning/`、`knowledge/` 和 `evidence/`。

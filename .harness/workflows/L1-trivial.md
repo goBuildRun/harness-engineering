@@ -1,4 +1,4 @@
-# L1 工序（BMAD Planning 简化 + Harness Execution 简化）
+# L1 工序（BMAD Planning 简化 + Lifecycle Execution 简化）
 
 > 定位：当前兼容工序。L1 是 planning level，不等于目标 `lite` execution tier。当前可豁免外部 Work Item；目标状态仍由 `start` 生成可追踪的 Harness 本地任务 ID。
 
@@ -9,7 +9,7 @@
 - `bash .harness/scripts/planning_gate.sh L1`
 - 产出：`runs/planning_gate_pass.json`（兼容写入 `phase0_pass.json`；通常无 `planning/tasks/` 目录）
 
-## Harness Execution
+## Lifecycle Execution
 
 - `bash .harness/scripts/agent_start.sh l1-local`（占位参数；跳过 work_item 校验）
 - 轻量 `tasks-dag.md`（可单任务）

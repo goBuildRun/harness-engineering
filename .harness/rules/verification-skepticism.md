@@ -1,6 +1,6 @@
 # 独立验收与深度怀疑 (Verification & Skepticism)
 
-> **QA 签章与门禁命令**：[docs/USAGE.md](../../docs/USAGE.md) 第 5 节。
+> **QA 签章与门禁命令**：[getting-started/cli.md](../../docs/getting-started/cli.md) 第 5 节。
 
 基于 OpenAI 关于 Harness Engineering 的“执行与验收剥离”哲学，为了避免大模型“为了通过测试而写针对性代码”（即既当运动员又当裁判）。
 

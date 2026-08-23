@@ -1,6 +1,6 @@
 # 已有项目接入（Brownfield Intake）
 
-> 本文是 Team Product R&D Harness 支持已有产品项目的权威说明。操作细节见 [USAGE.md](./USAGE.md)，产品 workspace 结构见 [Harness_Product_Workspace.md](./Harness_Product_Workspace.md)。
+> 本文是 Agent Engineering Lifecycle 支持已有产品项目的权威说明。操作细节见 [getting-started/cli.md](./cli.md)，产品 workspace 结构见 [architecture/workspace.md](../architecture/workspace.md)。
 > Intake 能力在精简方案中继续保留，但只在首次接入、上游版本显著变化或项目事实漂移时运行，不进入每个任务的固定路径。
 
 ## 1. 定位
@@ -175,7 +175,7 @@ intake:
 3. 人工或 Agent review 报告 `## 0. Review 工作台（先处理）`，并深读关键代码入口，完成长期知识摘要。
 4. 用 `harness_intake.sh review-status` 确认可处理项，再运行 `harness_intake.sh apply-review` 自动沉淀受管证据区块到产品知识系统。
 5. 进入 BMAD Planning，创建规格、执行计划与任务包。
-6. 通过 Entry Gate 后进入 Harness Execution。
+6. 通过 Entry Gate 后进入 Lifecycle Execution。
 
 这样做的好处是：BMAD 和 Agent 后续读取到的是经过 review 的项目知识，而不是未经筛选的扫描噪音。
 

@@ -9,7 +9,7 @@ from pathlib import Path
 SCRIPTS_DIR = Path(__file__).resolve().parents[1] / ".harness" / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
-from doc_gardening_check import check_links, github_anchor  # noqa: E402
+from doc_gardening_check import check_legacy_link_labels, check_links, github_anchor  # noqa: E402
 from harness_timing import FINISH_RETRY_LIMIT, STAGE_BUDGETS_MS, STAGE_RETRY_LIMIT  # noqa: E402
 
 
@@ -44,15 +44,28 @@ class DocGardeningAnchorTests(unittest.TestCase):
 
         self.assertEqual(issues, [])
 
+    def test_legacy_link_label_is_reported_even_when_target_is_valid(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            doc = root / "README.md"
+            doc.write_text(
+                "[docs/USAGE.md](./docs/getting-started/cli.md)\n",
+                encoding="utf-8",
+            )
+
+            issues = check_legacy_link_labels(root, [doc])
+
+        self.assertEqual(issues, ["STALE_LINK_LABEL:README.md:docs/USAGE.md"])
+
     def test_public_docs_use_the_canonical_command_contract(self) -> None:
         root = Path(__file__).resolve().parents[1]
         docs = (
             root / "README.md",
             root / "ARCHITECTURE.md",
-            root / "docs/USAGE.md",
-            root / "docs/design-docs/lean-enforcement.md",
-            root / "docs/design-docs/lean-plan-flow.md",
-            root / "docs/HARNESS_DOC_CONSISTENCY.md",
+            root / "docs/getting-started/cli.md",
+            root / "docs/design/lean-enforcement.md",
+            root / "docs/design/lean-plan-flow.md",
+            root / "docs/governance/documentation.md",
         )
         for path in docs:
             text = path.read_text(encoding="utf-8")
@@ -64,7 +77,7 @@ class DocGardeningAnchorTests(unittest.TestCase):
 
     def test_documented_story_budget_matches_runtime_contract(self) -> None:
         root = Path(__file__).resolve().parents[1]
-        text = (root / "docs/design-docs/lean-plan-flow.md").read_text(encoding="utf-8")
+        text = (root / "docs/design/lean-plan-flow.md").read_text(encoding="utf-8")
         for stage, budget_ms in STAGE_BUDGETS_MS.items():
             self.assertIn(stage, text)
             self.assertIn(f"{budget_ms // 60_000} 分钟", text)

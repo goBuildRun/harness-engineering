@@ -273,7 +273,7 @@ text = f"""# 任务上下文: Work Item {wi_id}
 {knowledge_block}
 
 ## Agent 工作指南
-1. harness-engineering/AGENTS.md → docs/USAGE.md → docs/COLLABORATION.md
+1. harness-engineering/AGENTS.md → docs/getting-started/cli.md → docs/execution/collaboration.md
 2. Lead: tasks-dag.md + 03-实施方案路径表
 3. 写前: structure_guard.sh --path；写后: structure_guard.sh --diff + plan_sync_check.sh
 4. 完成: qa_sign_off → subagent-pr-gate → harness_growth review/apply → check.sh → provider ready/review → MR；done 仅由 merge/release CI receipt 写入

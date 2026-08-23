@@ -11,21 +11,27 @@ required_files:
   - .harness/products/README.md
   - .harness/products/registry.example.yaml
   - .harness/products/active-product.example.json
-  - docs/HARNESS_DOC_CONSISTENCY.md
-  - docs/Brownfield_Intake.md
-  - docs/BMAD_Work_Item_Contract.md
-  - docs/Team_Product_Harness.md
-  - docs/Harness_Product_Workspace.md
-  - docs/Harness_成熟度评估.md
-  - docs/Harness_全景手册.md
-  - docs/COLLABORATION.md
-  - docs/USAGE.md
-  - docs/BMAD_Prelude.md
-  - docs/Harness_Workflow.md
-  - docs/QUALITY.md
-  - docs/SECURITY.md
-  - docs/design-docs/core-beliefs.md
-  - docs/exec-plans/tech-debt-tracker.md
+  - docs/index.md
+  - docs/getting-started/cli.md
+  - docs/getting-started/brownfield-intake.md
+  - docs/architecture/overview.md
+  - docs/architecture/team-model.md
+  - docs/architecture/workflow.md
+  - docs/architecture/workspace.md
+  - docs/architecture/principles.md
+  - docs/planning/bmad-planning.md
+  - docs/planning/work-item-contract.md
+  - docs/execution/collaboration.md
+  - docs/governance/quality.md
+  - docs/governance/security.md
+  - docs/governance/reliability.md
+  - docs/governance/documentation.md
+  - docs/design/lean-enforcement.md
+  - docs/design/lean-plan-flow.md
+  - docs/design/capability-migration.md
+  - docs/operations/maturity.md
+  - docs/operations/tech-debt.md
+  - docs/references.md
   - .harness/rules/bmad-entry-gate.md
   - .harness/rules/code-placement.md
   - .harness/rules/doc-boundary.md
@@ -253,7 +259,7 @@ required_files:
   - tests/fixtures/provider_mock_adapter.py
   - tests/test_story_cycle_benchmark.py
   - tests/test_complete_lean_flow.py
-  - docs/design-docs/capability-migration-map.md
+  - docs/design/capability-migration.md
   - tests/test_business_paths.py
   - tests/test_doc_gardening.py
   - tests/test_codex_usage_receipt.py
@@ -280,5 +286,5 @@ required_agents:
 
 agents_max_lines: 85
 agents_must_link:
-  - docs/USAGE.md
+  - docs/getting-started/cli.md
   - ARCHITECTURE.md

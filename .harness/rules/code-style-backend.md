@@ -1,6 +1,6 @@
 # 后端代码风格与实施约束
 
-> **沙箱 TDD 命令**：[docs/USAGE.md](../../docs/USAGE.md) 第 4 节。
+> **沙箱 TDD 命令**：[getting-started/cli.md](../../docs/getting-started/cli.md) 第 4 节。
 
 ## 分层（见 ARCHITECTURE.md）
 

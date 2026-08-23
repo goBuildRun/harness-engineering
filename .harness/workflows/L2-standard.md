@@ -12,7 +12,7 @@
 6. `03-实施方案.md`：登记**目标路径表**
 7. `bash .harness/scripts/planning_gate.sh L2 "$TASK_DIR"`（`TASK_DIR` 是上述产品任务目录；通过后自动 `task_workspace activate`）
 
-## Harness Execution
+## Lifecycle Execution
 
 1. `bash .harness/scripts/agent_start.sh <work-item-id>`（自动从 planning/tasks/ 恢复 Planning Gate；静默 `close in_progress`）
 2. `03-实施方案.md` 明细任务 → 同步 `tasks-dag.md`
@@ -23,4 +23,4 @@
 
 ## 参考
 
-- [docs/USAGE.md](../../docs/USAGE.md) · [docs/COLLABORATION.md](../../docs/COLLABORATION.md)
+- [getting-started/cli.md](../../docs/getting-started/cli.md) · [execution/collaboration.md](../../docs/execution/collaboration.md)

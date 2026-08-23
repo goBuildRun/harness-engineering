@@ -19,7 +19,7 @@ PRODUCT_CONFIG_CANDIDATES = (
     "harness-workspace/config.yaml",
     ".harness-engineering.yaml",
 )
-DEFAULT_HARNESS_NAME = "Team Product R&D Harness"
+DEFAULT_HARNESS_NAME = "Agent Engineering Lifecycle"
 GENERIC_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._:-]{1,127}$"
 
 

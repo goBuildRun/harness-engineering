@@ -12,7 +12,7 @@
 6. planning-agent 或 Lead **只分析不改代码**
 7. `planning_gate.sh L3 "$TASK_DIR"`，其中 `TASK_DIR` 指向上述产品任务目录
 
-## Harness Execution
+## Lifecycle Execution
 
 1. `agent_start.sh <work-item-id>` → `tasks-dag.md` 含跨服务依赖顺序
 2. 子代理按 provider → consumer 顺序；每步 `structure_guard` + `plan_sync_check`
@@ -23,4 +23,4 @@
 
 ## 参考
 
-- [docs/BMAD_Prelude.md](../../docs/BMAD_Prelude.md)
+- [planning/bmad-planning.md](../../docs/planning/bmad-planning.md)

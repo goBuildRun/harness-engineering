@@ -1,14 +1,14 @@
-# Team Product R&D Harness
+# 通用产品研发模型
 
 > 定位：一套可迁移到任意软件产品研发团队的 AI 协作 Harness。具体产品约束通过 profile 承载；核心能力应服务所有需要产品、研发、测试、交付协作的团队。
 >
-> 已有项目接入专章：[Brownfield_Intake.md](./Brownfield_Intake.md)。
-> 当前命令以 [USAGE.md](./USAGE.md) 为准；精简执行目标以 [design-docs/lean-enforcement.md](./design-docs/lean-enforcement.md) 为准。本文只维护通用模型，不维护第二套操作真相。
-> BMAD、OpenAI Harness、Flow-X、Superpowers、GStack、planning level 和 Ralph 的有效能力继续保留；保留对象是能力与语义，不是旧步骤数量。完整矩阵见 [精简执行设计 §1.1](./design-docs/lean-enforcement.md#11-能力保留契约)。
+> 已有项目接入专章：[getting-started/brownfield-intake.md](../getting-started/brownfield-intake.md)。
+> 当前命令以 [getting-started/cli.md](../getting-started/cli.md) 为准；精简执行目标以 [design/lean-enforcement.md](../design/lean-enforcement.md) 为准。本文只维护通用模型，不维护第二套操作真相。
+> BMAD、OpenAI Harness、Flow-X、Superpowers、GStack、planning level 和 Ralph 的有效能力继续保留；保留对象是能力与语义，不是旧步骤数量。完整矩阵见 [精简执行设计 §1.1](../design/lean-enforcement.md#11-能力保留契约)。
 
 ## 1. 一句话定义
 
-Team Product R&D Harness = 已有项目接入 + 产品前导 + 协同真相源 + AI 执行闭环 + 机械质量门禁 + 项目级知识沉淀 + 可审阅自我成长。
+Agent Engineering Lifecycle = 已有项目接入 + 产品前导 + 协同真相源 + AI 执行闭环 + 机械质量门禁 + 项目级知识沉淀 + 可审阅自我成长。
 
 它不是单个 prompt，也不是某个业务项目的脚手架，而是一套把「想清楚、排清楚、做清楚、验清楚、沉淀清楚」连成闭环的研发操作系统。
 
@@ -30,12 +30,12 @@ Team Product R&D Harness = 已有项目接入 + 产品前导 + 协同真相源 +
 |------|-------------|-----------------------|------------------|
 | 上下文工程 | `CONTEXT` / `LESSONS` / `PROGRESS` / `SUMMARY` 清晰 | 机械门禁强，但记忆沉淀较弱 | 新增 `harness-workspace/knowledge/` 全套知识目录 |
 | 任务边界 | 任务契约清楚，读/写/验收边界显式 | `03-实施方案` 有路径表，但可读性不足 | 引入 7 字段任务契约与 `task_contract_check.sh` |
-| 阶段产物 | staged artifacts 完整 | BMAD Planning/Harness Execution 分明 | 保留双闭环，同时把证据目录标准化 |
+| 阶段产物 | staged artifacts 完整 | BMAD Planning/Lifecycle Execution 分明 | 保留双闭环，同时把证据目录标准化 |
 | 测试与审查 | 多层测试与审查理念强 | QA 签章与 PR gate 更机械 | 保留 TEST/REVIEW 语义与机械签章，按 execution tier 选择深度，不保留固定轮数 |
 | 自成长 | `flow-evolve` 思路明确 | 以前主要靠人更新文档 | 新增 `harness_growth.sh scan` 生成候选成长报告 |
 | 组织协同 | 更偏个人/小队工作流 | Work Item、多人协作、CI 门禁更强 | 升级为任意产品研发团队可用的协作 Harness |
 
-结论：Flow-X 更擅长上下文与方法论组织，Team Product R&D Harness 更擅长机械约束、协同系统和交付门禁。升级方向不是二选一，而是用 Harness 承载组织级执行，用 Flow-X 的知识工程补足长期成长能力。
+结论：Flow-X 更擅长上下文与方法论组织，Agent Engineering Lifecycle 更擅长机械约束、协同系统和交付门禁。升级方向不是二选一，而是用 Lifecycle runtime 承载组织级执行，用 Flow-X 的知识工程补足长期成长能力。
 
 ## 4. 从 Flow-X 吸收的机制
 
@@ -87,7 +87,7 @@ bash .harness/scripts/harness_growth.sh apply-review
 | 架构文档 | 模块边界、跨模块契约、容量边界、ADR |
 | 技术债追踪 | 需要排期偿还的机制缺口 |
 
-已有项目接入是另一条入口：`harness_intake.sh scan` 扫描产品既有代码、关键入口、文档、测试与技术栈，生成 `harness-workspace/evidence/intake-reports/<date>-INTAKE.md`；人工或 Agent review 后运行 `harness_intake.sh apply-review`，由 Harness 把受管证据区块写入产品知识系统。详见 [Brownfield_Intake.md](./Brownfield_Intake.md)。
+已有项目接入是另一条入口：`harness_intake.sh scan` 扫描产品既有代码、关键入口、文档、测试与技术栈，生成 `harness-workspace/evidence/intake-reports/<date>-INTAKE.md`；人工或 Agent review 后运行 `harness_intake.sh apply-review`，由 Harness 把受管证据区块写入产品知识系统。详见 [getting-started/brownfield-intake.md](../getting-started/brownfield-intake.md)。
 
 全新项目的入口不同：先通过 BMAD Planning 形成 `planning/product-specs/`、`planning/exec-plans/`、`planning/tasks/`，再由 `harness_knowledge.sh sync-planning` 把产品目标、产品蓝图、架构/方案和任务边界同步到 `CONTEXT.md`。`planning_gate.sh` 通过时会自动执行这一步。
 
@@ -165,7 +165,7 @@ bash .harness/scripts/dag_sync_check.sh --task-dir "$PRODUCT_ROOT/harness-worksp
 已落地：
 
 - JSON gate
-- BMAD Planning/Harness Execution 交接
+- BMAD Planning/Lifecycle Execution 交接
 - Work Item provider 抽象：Teambition、飞书、Jira、noop 可按产品选择
 - 路径白名单与 `plan_sync`
 - `harness-task-v1` 7 字段任务契约与产品知识目录

@@ -1,17 +1,17 @@
-# Harness 使用方式（公开入口与兼容参考）
+# CLI 使用参考（公开入口与兼容命令）
 
-> **全景设计文档**：[Harness_全景手册.md](./Harness_全景手册.md) — 思想、方案、评估、演进  
-> **通用化说明**：[Team_Product_Harness.md](./Team_Product_Harness.md) — 任意产品研发团队的 Harness 模型  
-> **已有项目接入**：[Brownfield_Intake.md](./Brownfield_Intake.md) — 已有项目接入的定位、报告和 review 规则  
-> **多人协作**：[COLLABORATION.md](./COLLABORATION.md) — 多 PM/Dev 并行场景与命令  
-> **精简强制执行目标**：[design-docs/lean-enforcement.md](./design-docs/lean-enforcement.md) — 一个入口面、一个权威结果、风险分层与成本约束  
-> 本文档是 **Team Product R&D Harness 的 canonical 使用说明**。不可跳过的是“先形成与风险匹配的计划，再实施并验证”的合规语义，不是让人或 Agent 手工执行固定数量的命令。`standard/strict` 推荐路径是 `plan → start → status → finish`；低风险 `lite` 可直接 `start → status → finish`，由 `start` 生成最小绑定。`status` 只观察，不阻塞主路径。BMAD Planning、TDD、QA、安全、知识和协同能力由统一入口按 planning level 与 execution tier 编排。详细设计见 [Lean Planning Flow](./design-docs/lean-plan-flow.md)。
+> **全景设计文档**：[architecture/overview.md](../architecture/overview.md) — 思想、方案、评估、演进
+> **通用化说明**：[architecture/team-model.md](../architecture/team-model.md) — 任意产品研发团队的 Harness 模型
+> **已有项目接入**：[getting-started/brownfield-intake.md](./brownfield-intake.md) — 已有项目接入的定位、报告和 review 规则
+> **多人协作**：[execution/collaboration.md](../execution/collaboration.md) — 多 PM/Dev 并行场景与命令
+> **精简强制执行目标**：[design/lean-enforcement.md](../design/lean-enforcement.md) — 一个入口面、一个权威结果、风险分层与成本约束
+> 本文档是 **Agent Engineering Lifecycle 的 canonical 使用说明**。不可跳过的是“先形成与风险匹配的计划，再实施并验证”的合规语义，不是让人或 Agent 手工执行固定数量的命令。`standard/strict` 推荐路径是 `plan → start → status → finish`；低风险 `lite` 可直接 `start → status → finish`，由 `start` 生成最小绑定。`status` 只观察，不阻塞主路径。BMAD Planning、TDD、QA、安全、知识和协同能力由统一入口按 planning level 与 execution tier 编排。详细设计见 [Lean Planning Flow](../design/lean-plan-flow.md)。
 
 `AGENTS.md` 为最小地图，本文件说明公开使用方式，并保留统一入口尚未覆盖的兼容命令和诊断参考。
 
 **实现状态说明**：`harness plan/start/status/finish`、workspace audit/migrate、guarded hooks，以及受控 bare Git 的安装、接收阻断、签名 receipt 和固定 TrustPolicy 校验均已通过机械验收。本地 provider 终态已封堵；产品只有在独立 authority service 中接入终态 provider 更新、保护配置和关闭状态账本，并完成实际安装/audit 后才具备 `enforced` 能力，否则保持 `shadow`。
 
-**升级兼容说明**：已有产品不做全量 workspace 迁移。planning、knowledge 和历史 evidence 原位保留；新任务写新结果；只有进行中或重开的任务补最小运行状态。详细矩阵见 [精简执行设计 §10](./design-docs/lean-enforcement.md#10-历史数据与兼容升级)。
+**升级兼容说明**：已有产品不做全量 workspace 迁移。planning、knowledge 和历史 evidence 原位保留；新任务写新结果；只有进行中或重开的任务补最小运行状态。详细矩阵见 [精简执行设计 §10](../design/lean-enforcement.md#10-历史数据与兼容升级)。
 
 ## 阅读与执行模型
 
@@ -40,7 +40,7 @@ batch `start` 会把 `flow_policy` 持久化到 `runs/tasks/<task-id>/result.jso
 
 | 保留能力 | 来源 | 目标触发方式 | 当前说明 |
 |----------|------|--------------|----------|
-| 产品分析、规格、方案与实现就绪 | BMAD Method | `plan` 按 planning level 选择 Quick Flow 或完整规划；`start` 绑定产物，`finish` 按 execution tier 验证 | 第 2 节、[BMAD_Prelude.md](./BMAD_Prelude.md) |
+| 产品分析、规格、方案与实现就绪 | BMAD Method | `plan` 按 planning level 选择 Quick Flow 或完整规划；`start` 绑定产物，`finish` 按 execution tier 验证 | 第 2 节、[planning/bmad-planning.md](../planning/bmad-planning.md) |
 | 短地图、渐进上下文、机械反馈与文档园艺 | OpenAI Harness | `start` 加载最小上下文，`finish` 统一检查 | `AGENTS.md`、第 8 节 |
 | L1/L2/L3 规划分级和任务模板 | planning level | 保留为 planning level 与 legacy 兼容，不决定最终 execution tier | 第 2.3 节、`.harness/workflows/` |
 | TDD、调试纪律和完成前验证 | Superpowers | 按 tier 内部执行 | 第 4–5 节 |
@@ -50,7 +50,7 @@ batch `start` 会把 `flow_policy` 持久化到 `runs/tasks/<task-id>/result.jso
 | 已有项目事实建档 | Brownfield Intake | 首次接入或事实漂移时触发，不按任务重复 | 第 2.0.1 节 |
 | 多 provider 协同 | Work Item adapter | `start/finish` 绑定并同步生命周期 | 第 2.1、2.5 节 |
 
-目标 `status` 和 `result.json` 必须统一呈现输入/输出 Token、上下文字符数、Agent 调用数、gate 耗时、重跑次数、确定性 gate 缓存命中数及遥测完整性；这些数据不再拆成单独成本报告。完整能力保留规则见 [精简强制执行设计 §1.1](./design-docs/lean-enforcement.md#11-能力保留契约)。
+目标 `status` 和 `result.json` 必须统一呈现输入/输出 Token、上下文字符数、Agent 调用数、gate 耗时、重跑次数、确定性 gate 缓存命中数及遥测完整性；这些数据不再拆成单独成本报告。完整能力保留规则见 [精简强制执行设计 §1.1](../design/lean-enforcement.md#11-能力保留契约)。
 
 ---
 
@@ -67,14 +67,14 @@ batch `start` 会把 `flow_policy` 持久化到 `runs/tasks/<task-id>/result.jso
 | Python | 3.9+（`workspace_paths.py`、`work_item.py` 等） |
 | 权限 | `chmod +x .harness/scripts/*.sh`（首次克隆后执行一次） |
 
-**禁止**：绕过 `.harness/scripts/` 直接在宿主终端跑构建/测试。默认走 controlled argv 后端；需要容器隔离时显式切 Docker backend。  
+**禁止**：绕过 `.harness/scripts/` 直接在宿主终端跑构建/测试。默认走 controlled argv 后端；需要容器隔离时显式切 Docker backend。
 **废弃**：`tools/` 仅转发，勿在新流程中引用。
 
 ---
 
 ## 1. 当前兼容：反馈协议
 
-每个钩子脚本 **始终以 exit 0 结束**，结果写在 stdout 的 JSON 中。人类在终端直跑时默认 pretty：
+每个门禁脚本都以 stdout JSON 表达 `decision`；统一 CLI 和独立门禁的退出码与 `decision` 保持一致（`pass=0`、`block=1`）。人类在终端直跑时默认 pretty：
 
 ```json
 {
@@ -89,7 +89,7 @@ batch `start` 会把 `flow_policy` 持久化到 `runs/tasks/<task-id>/result.jso
 {"decision":"pass","reason":"..."}
 ```
 
-**收到 `block` 时**：读取 `reason` → 修改计划/代码/文档 → 重新调用同一脚本。  
+**收到 `block` 时**：读取 `reason` → 修改计划/代码/文档 → 重新调用同一脚本。
 **禁止**：忽略 JSON、用 shell 退出码判断、向人类辩解以绕过门禁。
 
 解析示例：
@@ -112,8 +112,8 @@ bash .harness/scripts/pretty.sh < /tmp/result.json
 
 ## 2. 当前兼容：BMAD Planning
 
-> **过渡期规则**：产品仍必须具备与风险匹配的 BMAD Planning 结果，但新任务通过 `harness plan` 一次生成 batch receipt 和 Planning Gate，不再要求手工串接多个 BMAD/Work Item 命令。L1 使用 Quick Flow，L2/L3 使用相应完整度；不要求低风险任务运行完整 Analysis / Planning / Solutioning 仪式。产出写入产品侧 **`harness-workspace/planning/`**（由 `harness-workspace/project.yaml` 配置，见 [BMAD_Prelude §0.1](./BMAD_Prelude.md#01-bmad-planning-目录配置产品-harness-workspaceprojectyaml)）。
-> **BMAD 在产品根执行**；**Harness 脚本在 `harness-engineering/` 执行**。详见 [BMAD_Prelude §0.2](./BMAD_Prelude.md#02-bmad-method-在产品根执行必遵)。
+> **过渡期规则**：产品仍必须具备与风险匹配的 BMAD Planning 结果，但新任务通过 `harness plan` 一次生成 batch receipt 和 Planning Gate，不再要求手工串接多个 BMAD/Work Item 命令。L1 使用 Quick Flow，L2/L3 使用相应完整度；不要求低风险任务运行完整 Analysis / Planning / Solutioning 仪式。产出写入产品侧 **`harness-workspace/planning/`**（由 `harness-workspace/project.yaml` 配置，见 [planning/bmad-planning.md §0.1](../planning/bmad-planning.md#01-bmad-planning-目录配置产品-harness-workspaceprojectyaml)）。
+> **BMAD 在产品根执行**；**Harness 脚本在 `harness-engineering/` 执行**。详见 [planning/bmad-planning.md §0.2](../planning/bmad-planning.md#02-bmad-method-在产品根执行必遵)。
 
 ### 2.0 初始化与路径
 
@@ -171,13 +171,13 @@ bash .harness/scripts/harness_intake.sh status
 bash .harness/scripts/harness_intake.sh scan
 ```
 
-配置分工：harness-engineering `.harness/products/registry.yaml` 管本机产品台账；产品侧 `harness-workspace/project.yaml` 管 workspace 结构。说明见 [`Harness_Product_Workspace.md`](./Harness_Product_Workspace.md) 与产品侧 `harness-workspace/planning/README.md`。
+配置分工：harness-engineering `.harness/products/registry.yaml` 管本机产品台账；产品侧 `harness-workspace/project.yaml` 管 workspace 结构。说明见 [architecture/workspace.md](../architecture/workspace.md) 与产品侧 `harness-workspace/planning/README.md`。
 
 产品根解析优先级：命令行 `--product-root/--product-id` → 环境变量 `HARNESS_PRODUCT_ROOT/HARNESS_PRODUCT_ID` → 当前目录发现产品 workspace → `active-product.json` → 旧兼容标记。显式指定产品但找不到时会直接 `block`，不会静默回退到默认 active product。
 
 Work Item provider 也属于产品侧配置。长期选择写在 `<product-root>/harness-workspace/project.yaml`，本机 `.env` 只放密钥；`WORK_ITEM_PROVIDER` 仅用于临时覆盖。
 
-BMAD Planning 到 Work Item 的同步仍遵循 `bmad-work-item-v1`，但推荐由 `harness plan` 批量完成并生成 binding receipt。外部任务只保存摘要、负责人、状态、讨论和 Harness Links；完整产品规格、执行计划和任务包以 `harness-workspace/planning/` 为真相源。`draft-spec` / `sync-spec` 仅是历史兼容入口。详见 [BMAD_Work_Item_Contract.md](./BMAD_Work_Item_Contract.md)。
+BMAD Planning 到 Work Item 的同步仍遵循 `bmad-work-item-v1`，但推荐由 `harness plan` 批量完成并生成 binding receipt。外部任务只保存摘要、负责人、状态、讨论和 Harness Links；完整产品规格、执行计划和任务包以 `harness-workspace/planning/` 为真相源。`draft-spec` / `sync-spec` 仅是历史兼容入口。详见 [planning/work-item-contract.md](../planning/work-item-contract.md)。
 
 | 产品场景 | 产品侧 `project.yaml` | 本机 `.env` / 环境变量 |
 |----------|----------------------|-------------------------|
@@ -264,7 +264,7 @@ bash .harness/scripts/harness_intake.sh apply-review --allow-pending
 | 服务边界、数据流、部署边界 | 迁入产品架构文档 |
 | 一次性噪音或证据不足项 | 留在 INTAKE 报告，不升级 |
 
-完整规则见 [Brownfield_Intake.md](./Brownfield_Intake.md)。
+完整规则见 [getting-started/brownfield-intake.md](./brownfield-intake.md)。
 
 ### 2.1 产品规格（Planning → `harness-workspace/planning/product-specs/`）
 
@@ -335,7 +335,7 @@ bash .harness/scripts/agent_start.sh <work-item-id>
 
 ### 2.6 多人协作要点
 
-> 完整场景与命令见 **[COLLABORATION.md](./COLLABORATION.md)**。
+> 完整场景与命令见 **[execution/collaboration.md](../execution/collaboration.md)**。
 
 | 角色 | 并行方式 | 关键命令 |
 |------|----------|----------|
@@ -673,7 +673,7 @@ bash .harness/scripts/browser_qa_setup.sh check
 
 `mr_ready` 始终输出绑定当前 diff 的 `review_checklist`（correctness/security/tests/scope）。独立 reviewer receipt 必须位于产品 `harness-workspace/runs/`、绑定相同 subject digest、包含四视角结论，且 reviewer 不能是实现或 Lead 角色。设置 `HARNESS_AGENT_REVIEW_RECEIPT=<path>` 提交 receipt；设置 `HARNESS_AGENT_REVIEW_REQUIRED=true` 后，缺少有效 receipt 会返回 `AGENT_REVIEW_REQUIRED`。未启用 required 时 checklist 仅用于 shadow 数据采集，不能宣称已完成独立 Agent Review。
 
-Harness core 不安装或要求托管平台 workflow。GitHub 可作为普通 Git remote、代码浏览和备份通道，但不参与任务状态、commit 准入、发布资格或 Work Item 完成态。
+Lifecycle core 不安装或要求托管平台 workflow。GitHub 可作为普通 Git remote、代码浏览和备份通道，但不参与任务状态、commit 准入、发布资格或 Work Item 完成态。
 
 `finish` 验证当前任务并把结果写入 `result.json`，同时刷新当前 guard audit；其 `head_attestation.phase: pre-commit-head` 明确表示验证的是提交前 HEAD，而不是尚未创建的目标提交。guarded 仓库在 commit 后由 `post-commit` 将该结果作为 canonical Git blob，与目标 commit 的 tree、task、policy 和 result digest 绑定，写入 `refs/harness/attestations/<commit>`；创建时会从 commit tree 重算 subject。`status` 只读验证当前 HEAD 的 attestation、result object 与 hooks，不访问网络。
 
@@ -699,7 +699,7 @@ Guarded 接入会把 `pre-commit` / `post-commit` / `pre-push` 写入产品 `.gi
 
 首次安装 hooks 时，在暂存接入文件后执行 `harness bootstrap-guarded --task-id <id> --reason '<原因>'`。一次性 receipt 保存在 `.git/harness/`，绑定当前 HEAD、index tree、精确 staged paths 和任务身份；pre-commit 只验证，post-commit 仅在新 commit parent/tree 匹配后消费。已有版本化 hooks 的仓库不能创建 bootstrap receipt，且该机制仍属于可绕过的 `guarded`，不是 `enforced`。
 
-目标公开路径是 `plan/start/status/finish`，其中 `status` 只读；低风险 `lite` 可省略显式 `plan`。30 分钟是 Story 的最大预算而非理想耗时，`stage` 记录六个关键阶段（旧结果字段仍显示 `shadow`）：
+目标公开路径是 `plan/start/status/finish`，其中 `status` 只读；低风险 `lite` 可省略显式 `plan`。30 分钟是 Story 的最大预算而非理想耗时。`stage` 仅供统一入口写入六阶段计时和诊断数据，不是使用者需要手工串联的公开步骤（旧结果字段仍显示 `shadow`）：
 
 ```bash
 bash .harness/scripts/harness start demo-login-task --scope src/auth --work-item <provider-id>
@@ -798,7 +798,7 @@ CI Planning credential 自动物化到 `harness-workspace/runs/ci/<task-id>/plan
 
 | 现象 | 处理 |
 |------|------|
-| `BMAD_GATE_BLOCKED` | 补 `harness-workspace/planning/product-specs`、`harness-workspace/planning/tasks` 目录或 Gate 1；见 [BMAD_Prelude.md](./BMAD_Prelude.md) |
+| `BMAD_GATE_BLOCKED` | 补 `harness-workspace/planning/product-specs`、`harness-workspace/planning/tasks` 目录或 Gate 1；见 [planning/bmad-planning.md](../planning/bmad-planning.md) |
 | `NO_PLANNING_GATE` | `check.sh`：先 `planning_gate.sh pass` |
 | `PLANNING_GATE_NOT_FOUND` | `agent_start`：未 MR 合并 `harness-workspace/planning/tasks/` 或未 pull；`git pull` 后重试 |
 | `PLANNING_GATE_INVALID` | Planning Gate JSON 无效；重跑 `planning_gate.sh` |
@@ -832,7 +832,7 @@ CI Planning credential 自动物化到 `harness-workspace/runs/ci/<task-id>/plan
 | `PLAYWRIGHT_*` | 运行 `browser_qa_setup.sh check` 定位；本地可用 `install --install-package`，CI 推荐 Playwright 官方镜像 |
 | `QUALITY_*_UNCONFIGURED` | 产品侧 `harness-workspace/project.yaml` 缺 `quality.commands.lint/test`，或严格 CI 未显式豁免 |
 
-完整错误码见 [Harness_全景手册.md](./Harness_全景手册.md) §18.3。
+完整错误码见 [architecture/overview.md](../architecture/overview.md) §18.3。
 
 ---
 
@@ -840,13 +840,13 @@ CI Planning credential 自动物化到 `harness-workspace/runs/ci/<task-id>/plan
 
 | 文档 | 用途 |
 |------|------|
-| [Harness_全景手册.md](./Harness_全景手册.md) | **全景：设计·方案·评估·演进** |
-| [Team_Product_Harness.md](./Team_Product_Harness.md) | 通用产品研发 Harness 模型 |
-| [USAGE.md](./USAGE.md) | **本文件：三项主动作 + 只读 status 的使用模型与过渡期兼容参考** |
-| [COLLABORATION.md](./COLLABORATION.md) | 多人 PM/Dev 协作 |
-| [BMAD_Work_Item_Contract.md](./BMAD_Work_Item_Contract.md) | BMAD Planning 到 Teambition/飞书/Jira 的同步契约 |
-| [Harness_Workflow.md](./Harness_Workflow.md) | 双闭环 + Work Item provider 总览 |
-| [BMAD_Prelude.md](./BMAD_Prelude.md) | BMAD Planning · BMAD Method 前导 + `bmad_method_gate.py` |
-| [QUALITY.md](./QUALITY.md) | 质量不变式 |
-| [../AGENTS.md](../AGENTS.md) | Agent 导航地图 |
-| [../.harness/README.md](../.harness/README.md) | 脚本与机制索引 |
+| [architecture/overview.md](../architecture/overview.md) | **全景：设计·方案·评估·演进** |
+| [architecture/team-model.md](../architecture/team-model.md) | 通用产品研发 Harness 模型 |
+| [getting-started/cli.md](./cli.md) | **本文件：三项主动作 + 只读 status 的使用模型与过渡期兼容参考** |
+| [execution/collaboration.md](../execution/collaboration.md) | 多人 PM/Dev 协作 |
+| [planning/work-item-contract.md](../planning/work-item-contract.md) | BMAD Planning 到 Teambition/飞书/Jira 的同步契约 |
+| [architecture/workflow.md](../architecture/workflow.md) | 双闭环 + Work Item provider 总览 |
+| [planning/bmad-planning.md](../planning/bmad-planning.md) | BMAD Planning · BMAD Method 前导 + `bmad_method_gate.py` |
+| [governance/quality.md](../governance/quality.md) | 质量不变式 |
+| [../AGENTS.md](../../AGENTS.md) | Agent 导航地图 |
+| [../.harness/README.md](../../.harness/README.md) | 脚本与机制索引 |

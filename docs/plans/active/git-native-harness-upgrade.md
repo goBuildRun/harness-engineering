@@ -4,9 +4,9 @@ status: active
 updated: 2026-08-13
 input_documents:
   - ARCHITECTURE.md
-  - docs/design-docs/lean-enforcement.md
-  - docs/Harness_成熟度评估.md
-  - docs/exec-plans/tech-debt-tracker.md
+  - docs/design/lean-enforcement.md
+  - docs/operations/maturity.md
+  - docs/operations/tech-debt.md
 ---
 
 # Git-native Harness Upgrade

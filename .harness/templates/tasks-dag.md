@@ -17,4 +17,4 @@ bash .harness/scripts/task_contract_check.sh --task-dir <planning/tasks/...>
 bash .harness/scripts/dag_sync_check.sh --task-dir <planning/tasks/...>
 ```
 
-Harness 规则见 `harness-engineering/docs/USAGE.md`；复制到产品任务目录后不要保留指向模板原位置的相对链接。
+Harness 规则见 `harness-engineering/docs/getting-started/cli.md`；复制到产品任务目录后不要保留指向模板原位置的相对链接。

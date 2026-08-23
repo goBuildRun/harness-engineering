@@ -160,7 +160,7 @@ fi
 
 if [[ ${#FAILURES[@]} -gt 0 ]]; then
   REASON=$(printf '%s; ' "${FAILURES[@]}")
-  python3 "$EMIT" block "BMAD_GATE_BLOCKED: ${REASON} 参见 docs/BMAD_Prelude.md"
+  python3 "$EMIT" block "BMAD_GATE_BLOCKED: ${REASON} 参见 docs/planning/bmad-planning.md"
   exit 0
 fi
 

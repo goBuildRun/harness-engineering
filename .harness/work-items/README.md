@@ -1,8 +1,8 @@
 # Work Item 协同层（产品级可替换适配器）
 
-Team Product R&D Harness **不绑定**某一个协同系统。BMAD Planning 与 Harness Execution 通过 **Work Item 抽象层** 对接外部任务系统。
+Agent Engineering Lifecycle **不绑定**某一个协同系统。BMAD Planning 与 Lifecycle Execution 通过 **Work Item 抽象层** 对接外部任务系统。
 
-Work Item 的职责是协同，不是保存 BMAD 产物本体。产品规格、执行计划和任务包的真相源始终是产品仓库的 `harness-workspace/planning/`；Teambition、飞书、Jira 只保存负责人、状态、讨论、摘要和链接。完整契约见 [../../docs/BMAD_Work_Item_Contract.md](../../docs/BMAD_Work_Item_Contract.md)。
+Work Item 的职责是协同，不是保存 BMAD 产物本体。产品规格、执行计划和任务包的真相源始终是产品仓库的 `harness-workspace/planning/`；Teambition、飞书、Jira 只保存负责人、状态、讨论、摘要和链接。完整契约见 [../../docs/planning/work-item-contract.md](../../docs/planning/work-item-contract.md)。
 
 > 目标状态由 `harness start/finish` 绑定并同步 Work Item：本地 `finish` 最多进入 ready/review，只有受控 Git 接收点或发布入口接受目标 commit 后才能写 `done`。下面 `work_item.sh` 是当前 adapter 与兼容命令参考，不是目标公开操作面。
 
@@ -197,7 +197,7 @@ TEAMBITION_OPEN_OPERATOR_ID=
 - `scenario-configs --keyword 任务`：调用 `https://open.teambition.com/api/v3/scenariofieldconfig/search` 查询“任务/需求/缺陷”等类型配置；官方参数为 `q` / `sfcIds` / `pageToken` / `pageSize`，Header 需要 `Authorization: Bearer <appAccessToken>`、`X-Tenant-Id` 和 `X-Tenant-Type: organization`。`appAccessToken` 可直接配置，也可由 `TEAMBITION_OPEN_APP_ID/SECRET` 本地签发 JWT。
 - `draft-spec`：生成待确认任务草稿，不写 Teambition
 - `sync-spec --assignee <id>`：创建任务、设置执行者并回写 `#<taskId>`
-- `verify` / Planning Gate：若配置了 `assignee_id` 或 `TEAMBITION_ASSIGNEE_ID`，必须满足 Teambition raw `executorId == assignee_id` 才允许进入 Harness Execution；参与人不算执行者。
+- `verify` / Planning Gate：若配置了 `assignee_id` 或 `TEAMBITION_ASSIGNEE_ID`，必须满足 Teambition raw `executorId == assignee_id` 才允许进入 Lifecycle Execution；参与人不算执行者。
 - `list-mine`：优先拉取项目任务并按执行者 `executorId` 过滤；若 Teambition 列表接口漏返当前产品已同步的 Work Item，则从 `harness-workspace/planning/product-specs/` 的未勾选 `#taskId` 逐个 `pull` 兜底，并过滤 `isDone=true`
 - `close`：推荐 `status_update_mode: taskflowstatus`，调用 `GET /api/v3/task/{taskId}/tfs` 发现任务工作流状态，再 `PUT /api/v3/task/{taskId}/taskflowstatus` 更新真实任务状态；也可用 `taskflowstatus_id_map` 或 `taskflowstatus_name_map` 显式指定。兼容模式 `status_update_mode: stage` 仍调用 `/v1.0/project/users/{uid}/tasks/{taskId}/stages` 移动看板阶段。
 

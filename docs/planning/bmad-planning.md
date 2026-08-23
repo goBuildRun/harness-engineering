@@ -1,9 +1,11 @@
-# BMAD Planning 前导小闭环（Team Product R&D Harness）
+# BMAD Planning 与 Planning Gate
 
-> **定位**：Team Product R&D Harness 的**产品设计与任务前导闭环**，在 OpenAI 式「主执行闭环」之前运行。  
-> **方法论溯源**：[BMAD Method](https://github.com/bmad-code-org/BMAD-METHOD)（BMM）的 **Analysis → Planning → Solutioning**；Team Product R&D Harness 将其落地为 **BMAD Planning**，产出写入 **产品侧 `harness-workspace/planning/`**，经 `planning_gate.sh` 交接到 Harness Execution。  
+> **产品规格归属**：规格不保存在 `harness-engineering/docs/`。产品规格统一写入产品侧 `harness-workspace/planning/product-specs/`；模板位于 `.harness/templates/product-spec.md`，路径由 `.harness/config.yaml` 与产品 `harness-workspace/project.yaml` 共同决定。
+
+> **定位**：Agent Engineering Lifecycle 的**产品设计与任务前导闭环**，在 OpenAI 式「主执行闭环」之前运行。
+> **方法论溯源**：[BMAD Method](https://github.com/bmad-code-org/BMAD-METHOD)（BMM）的 **Analysis → Planning → Solutioning**；Agent Engineering Lifecycle 将其落地为 **BMAD Planning**，产出写入 **产品侧 `harness-workspace/planning/`**，经 `planning_gate.sh` 交接到 Lifecycle Execution。
 > **Harness 与产出分离**：`harness-engineering/` 仅含规程、脚本、模板；**不入库** PRD / exec-plan / 任务包到 Harness 目录内。
-> **已有项目**：先执行 [Brownfield_Intake.md](./Brownfield_Intake.md)，把既有代码和文档转成可 review 的项目事实，再进入 BMAD Planning。
+> **已有项目**：先执行 [getting-started/brownfield-intake.md](../getting-started/brownfield-intake.md)，把既有代码和文档转成可 review 的项目事实，再进入 BMAD Planning。
 > **精简升级**：BMAD 的需求澄清、规划和 Solutioning 继续保留；推荐由 `harness plan` 批量生成 planning bundle，再由 `harness start` 按 planning level 与实际风险选择 execution tier。使用者不再手工编排 BMAD、Work Item、Planning Gate 和 context sync 命令链。
 
 ---
@@ -17,17 +19,17 @@
 ```
                     三体产品闭环（缺一环即断链）
 ┌─────────────────────────────────────────────────────────────────┐
-│  ① BMAD Method     ② Work Item        ③ Harness Execution        │
+│  ① BMAD Method     ② Work Item        ③ Lifecycle Execution       │
 │  Analysis/Planning/  provider/ID 对齐    按规格写码、QA、MR        │
 │  Solutioning         排期与状态          Implementation           │
 │  ↓ 产品真相          ↓ 协同真相          ↓ 工程真相                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-| 维度 | BMAD Method（BMM） | Team Product R&D Harness BMAD Planning（落地层） |
+| 维度 | BMAD Method（BMM） | Agent Engineering Lifecycle BMAD Planning（落地层） |
 |------|-------------------|----------------------------------|
 | **必经能力** | Analysis → Planning → Solutioning | 按 planning level 保留；L1 用 Quick Flow，L2/L3 使用相应完整度 |
-| **Implementation** | Dev/Story/QA 循环 | **归入 Harness Execution** |
+| **Implementation** | Dev/Story/QA 循环 | **归入 Lifecycle Execution** |
 | **典型产出** | PRD、架构、就绪检查 | 映射到 **`harness-workspace/planning/product-specs`**、**`harness-workspace/planning/exec-plans`**、**`harness-workspace/planning/tasks`** |
 | **交接** | 模块内 workflow 链 | **`planning_gate.sh`** → `harness-workspace/runs/planning_gate_pass.json` |
 
@@ -131,7 +133,7 @@ harness --product-root "$PRODUCT_ROOT" start <work-item-id>
 harness --product-root "$PRODUCT_ROOT" finish <task-id>
 ```
 
-旧 `draft-spec` / `sync-spec` / `planning_gate.sh` 仍是兼容诊断入口；只有在历史任务或明确 provider 操作时才单独使用。`harness plan --provider-mode configured` 才允许走已确认的外部 provider，并将 create response、readback、项目/Tasklist 和父级 binding 写入同一 receipt；默认 offline 只建立确定性的本地任务包，不猜测 Harness 外部 Epic/Tasklist。完整 BMAD 产物仍以产品仓库 `harness-workspace/planning/` 为真相源。详见 [BMAD_Work_Item_Contract.md](./BMAD_Work_Item_Contract.md)。
+旧 `draft-spec` / `sync-spec` / `planning_gate.sh` 仍是兼容诊断入口；只有在历史任务或明确 provider 操作时才单独使用。`harness plan --provider-mode configured` 才允许走已确认的外部 provider，并将 create response、readback、项目/Tasklist 和父级 binding 写入同一 receipt；默认 offline 只建立确定性的本地任务包，不猜测 Harness 外部 Epic/Tasklist。完整 BMAD 产物仍以产品仓库 `harness-workspace/planning/` 为真相源。详见 [planning/work-item-contract.md](./work-item-contract.md)。
 
 Planning Gate 通过后会自动运行 `harness_knowledge.sh sync-planning`，把 BMAD Planning 形成的产品规格、产品蓝图、架构/执行计划和任务边界写入产品侧 `harness-workspace/knowledge/CONTEXT.md` 的受管区块。全新项目的首批长期上下文应来自这里，而不是依赖聊天记忆。
 
@@ -158,14 +160,14 @@ python3 .harness/scripts/bmad_method_gate.py \
 └──────────────────────────┬──────────────────────────────────┘
                            │ planning_gate.sh pass
 ┌──────────────────────────▼──────────────────────────────────┐
-│  Harness Execution：agent_start → DAG → TDD → QA → MR        │
+│  Lifecycle Execution：agent_start → DAG → TDD → QA → MR       │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-| 维度 | BMAD Planning | Harness Execution |
+| 维度 | BMAD Planning | Lifecycle Execution |
 |------|---------|---------|
 | 主要产出 | `harness-workspace/planning/product-specs/`、`harness-workspace/planning/exec-plans/`、`harness-workspace/planning/tasks/` | 业务代码、`tasks-dag.md`、QA 凭证 |
-| 运行环境 | BMAD @ 产品根 + Harness 门禁脚本 | `harness-engineering/.harness/scripts/` |
+| 运行环境 | BMAD @ 产品根 + Lifecycle 门禁脚本 | `harness-engineering/.harness/scripts/` |
 
 ---
 
@@ -213,7 +215,7 @@ bash .harness/scripts/agent_start.sh <work-item-id>
 ## 4. 相关文档
 
 - `$PRODUCT_ROOT/harness-workspace/planning/README.md` — 产出目录与配置项
-- [USAGE.md](./USAGE.md) — 完整命令
-- [Harness_Workflow.md](./Harness_Workflow.md) — 双闭环总览
-- [Harness_Product_Workspace.md](./Harness_Product_Workspace.md) — harness-engineering 产品台账与产品 `project.yaml` 分工
-- [.harness/rules/bmad-entry-gate.md](../.harness/rules/bmad-entry-gate.md)
+- [getting-started/cli.md](../getting-started/cli.md) — 完整命令
+- [architecture/workflow.md](../architecture/workflow.md) — 双闭环总览
+- [architecture/workspace.md](../architecture/workspace.md) — harness-engineering 产品台账与产品 `project.yaml` 分工
+- [.harness/rules/bmad-entry-gate.md](../../.harness/rules/bmad-entry-gate.md)

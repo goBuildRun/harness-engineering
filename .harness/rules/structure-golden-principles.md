@@ -5,7 +5,7 @@
 ## 放置
 
 1. 新文件 **100%** 落在 active profile 的 package allowlist 内。
-2. 模块依赖方向服从产品架构和 profile 不变式；Harness core 不写死某一种服务分层。
+2. 模块依赖方向服从产品架构和 profile 不变式；Lifecycle core 不写死某一种服务分层。
 3. 文件超过产品约定阈值时拆分或记录技术债；产品未定义时可用 400 行作为 review 提示，不作为跨语言硬规则。
 
 ## 优化（非新功能 PR 也可做）

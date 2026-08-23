@@ -13,7 +13,7 @@ cp .harness/templates/product-spec.md "$PRODUCT_ROOT/{{workspace}}/planning/prod
 
 # 1. 在 Cursor 于产品根执行 BMAD Method（如 bmad-create-prd → bmad-validate-prd）
 # 2. 将产出映射到 planning/product-specs/<功能>.md，填写 front matter 中 bmad_skills / bmad_completed_at
-# 3. L2/L3 另建 {{workspace}}/planning/exec-plans/active/ 与 {{workspace}}/planning/tasks/，见 harness-engineering docs/BMAD_Prelude.md
+# 3. L2/L3 另建 {{workspace}}/planning/exec-plans/active/ 与 {{workspace}}/planning/tasks/，见 harness-engineering docs/planning/bmad-planning.md
 ```
 
 ## Front matter 必填字段

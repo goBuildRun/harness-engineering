@@ -1,6 +1,6 @@
-# BMAD Planning 到 Work Item 的协同契约
+# BMAD 到 Work Item 的同步契约
 
-本文定义 Team Product R&D Harness 如何把 BMAD Planning 产物连接到 Teambition、飞书任务、Jira 等 Work Item 系统。
+本文定义 Agent Engineering Lifecycle 如何把 BMAD Planning 产物连接到 Teambition、飞书任务、Jira 等 Work Item 系统。
 
 > 多 provider 协同能力在精简方案中继续保留。目标状态由 `start/finish` 调用 adapter：本地 `finish pass` 最多同步到 ready/review，只有绑定 commit 的 CI 合并或发布成功后才能写入 `Done`。
 
@@ -54,7 +54,7 @@ bash .harness/scripts/work_item.sh sync-spec \
   --assignee <provider-user-id>
 ```
 
-`sync-spec --assignee` 优先级高于产品侧默认负责人和本机环境变量。同步成功后，开发人员或自动化 Agent 从 Teambition、飞书或 Jira 领取分派给自己的 Work Item，并通过 `agent_start.sh <work-item-id>` 进入 Harness Execution。
+`sync-spec --assignee` 优先级高于产品侧默认负责人和本机环境变量。同步成功后，开发人员或自动化 Agent 从 Teambition、飞书或 Jira 领取分派给自己的 Work Item，并通过 `agent_start.sh <work-item-id>` 进入 Lifecycle Execution。
 
 所有 provider 的 L3 Product Spec 都必须声明 `work_item_type`。`story`/`task` 的父 Work Item 可写在 front matter，或通过 CLI 显式传入；两者同时存在但不一致时同步会阻断，`epic` 携带父级也会阻断：
 
@@ -72,7 +72,7 @@ bash .harness/scripts/work_item.sh sync-spec \
   --parent-id <epic-work-item-id>
 ```
 
-Planning Gate、Harness Execution 或 QA 状态变化后，使用显式描述文件同步既有任务，不创建重复 Work Item：
+Planning Gate、Lifecycle Execution 或 QA 状态变化后，使用显式描述文件同步既有任务，不创建重复 Work Item：
 
 ```bash
 bash .harness/scripts/work_item.sh update-description \
@@ -103,7 +103,7 @@ bash .harness/scripts/work_item.sh update-description \
 ## Gate
 - BMAD Planning: pending
 - Planning Gate: pending
-- Harness Execution: not_started
+- Lifecycle Execution: not_started
 - Assignee: `<provider-user-id>`（如果同步时指定）
 
 ## 验收标准摘要
@@ -126,7 +126,7 @@ L2/L3 进入 Planning Gate 前，需要把这个 ID 填入 `00-任务卡.md` 的
 Backlog
 → BMAD Planning
 → Planning Gate Ready
-→ Harness Execution
+→ Lifecycle Execution
 → QA Review
 → Merge / Release Accepted
 → Done
@@ -158,7 +158,7 @@ growth-review-required
 
 - 一个 L2 Work Item 对应一个产品规格验收项或一个标准功能。
 - 用 Teambition 任务描述保留 `bmad-work-item-v1` 摘要和链接。
-- `--assignee`、`TEAMBITION_ASSIGNEE_ID` 或产品侧 `providers.teambition.assignee_id` 可设置默认执行人。配置 `assignee_id` 后，Work Item Gate 会校验 Teambition raw `executorId == assignee_id`；只有执行者是当前 owner 的任务才能进入 Harness Execution，参与人不算。
+- `--assignee`、`TEAMBITION_ASSIGNEE_ID` 或产品侧 `providers.teambition.assignee_id` 可设置默认执行人。配置 `assignee_id` 后，Work Item Gate 会校验 Teambition raw `executorId == assignee_id`；只有执行者是当前 owner 的任务才能进入 Lifecycle Execution，参与人不算。
 - 如果项目区分“需求 / 任务 / 缺陷”等类型，产品侧必须配置“任务”类型的 `scenariofieldconfig_id`；Harness 的 `sync-spec/create` 会把它写入创建 payload，避免新 Work Item 落入“需求”工作流。可用 `work_item.sh scenario-configs --keyword 任务` 通过 Teambition v3 `scenariofieldconfig/search` 查询类型 ID；该查询需要 `Authorization: Bearer <appAccessToken>`、企业 ID `X-Tenant-Id` 和 `X-Tenant-Type: organization`。`appAccessToken` 可直接配置，也可由 Open App 的 App ID/Secret 按官方 JWT 规则本地签发。
 - 产品侧推荐 `providers.teambition.status_update_mode: taskflowstatus`，`close` 会调用 Teambition Open API v3：先 `GET /api/v3/task/{taskId}/tfs` 查询任务所在工作流状态，再 `PUT /api/v3/task/{taskId}/taskflowstatus` 更新真实任务状态。可配置 `taskflowstatus_id_map` 或 `taskflowstatus_name_map` 显式指定状态。
 - 兼容模式 `providers.teambition.status_update_mode: stage` 与 `stage_id_map` 仍可把 Harness 状态映射到 Teambition 看板阶段；`close` 会调用 `/v1.0/project/users/{uid}/tasks/{taskId}/stages`。

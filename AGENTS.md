@@ -1,10 +1,10 @@
-# Team Product R&D Harness Agent Map
+# Agent Engineering Lifecycle Agent Map
 
 本文件是 Agent 的最小导航图。它只回答“我该读哪里、遵守什么边界、用哪个角色”，不承载完整操作手册。
 
 ## System Intent
 
-Team Product R&D Harness 是一套独立的产品研发 Harness runtime。它服务 1..N 个产品仓库；产品自己的规格、任务、运行状态、知识和证据沉淀在产品侧 `harness-workspace/`。
+Agent Engineering Lifecycle 是一套独立的产品研发生命周期工具。它服务 1..N 个产品仓库；产品自己的规格、任务、运行状态、知识和证据沉淀在产品侧 `harness-workspace/`。
 
 设计基准：
 
@@ -19,14 +19,14 @@ Team Product R&D Harness 是一套独立的产品研发 Harness runtime。它服
 | 你要做什么 | 入口 |
 |------------|------|
 | 理解整体架构 | [ARCHITECTURE.md](ARCHITECTURE.md) |
-| 开始使用 Harness | [docs/USAGE.md](docs/USAGE.md) |
-| 理解 harness-engineering / product workspace 分层 | [docs/Harness_Product_Workspace.md](docs/Harness_Product_Workspace.md) |
-| 理解通用产品研发模型 | [docs/Team_Product_Harness.md](docs/Team_Product_Harness.md) |
-| 多人协作与 Work Item | [docs/COLLABORATION.md](docs/COLLABORATION.md) |
-| 质量门禁 | [docs/QUALITY.md](docs/QUALITY.md) |
-| BMAD 前导 | [docs/BMAD_Prelude.md](docs/BMAD_Prelude.md) |
-| 当前成熟度与技术债 | [docs/Harness_成熟度评估.md](docs/Harness_成熟度评估.md) |
-| 理解精简目标与能力保留 | [docs/design-docs/lean-enforcement.md](docs/design-docs/lean-enforcement.md) |
+| 开始使用 Harness | [docs/getting-started/cli.md](docs/getting-started/cli.md) |
+| 理解 harness-engineering / product workspace 分层 | [docs/architecture/workspace.md](docs/architecture/workspace.md) |
+| 理解通用产品研发模型 | [docs/architecture/team-model.md](docs/architecture/team-model.md) |
+| 多人协作与 Work Item | [docs/execution/collaboration.md](docs/execution/collaboration.md) |
+| 质量门禁 | [docs/governance/quality.md](docs/governance/quality.md) |
+| BMAD 前导 | [docs/planning/bmad-planning.md](docs/planning/bmad-planning.md) |
+| 当前成熟度与技术债 | [docs/operations/maturity.md](docs/operations/maturity.md) · [docs/operations/tech-debt.md](docs/operations/tech-debt.md) |
+| 理解精简目标与能力保留 | [docs/design/lean-enforcement.md](docs/design/lean-enforcement.md) |
 
 ## Role Map
 

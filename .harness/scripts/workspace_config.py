@@ -20,7 +20,7 @@ DEFAULT_PHASE0 = {
 }
 DEFAULT_BMAD = {"install_root": "."}
 DEFAULT_HARNESS = {
-    "name": "Team Product R&D Harness",
+    "name": "Agent Engineering Lifecycle",
     "profile": "generic",
     "product_name": "Product",
     "product_id": "product",

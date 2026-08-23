@@ -4,7 +4,7 @@
 # 与 .harness/products/active-product.json 决定。
 
 harness:
-  name: Team Product R&D Harness
+  name: Agent Engineering Lifecycle
   # profile 用于承载具体产品/领域约束。core 默认保持 generic；
   # 具体产品约束应通过产品侧 project.yaml 或 profile 声明。
   profile: generic
@@ -29,7 +29,7 @@ phase0:
   exec_plans_active: exec-plans/active
   exec_plans_completed: exec-plans/completed
   tasks: tasks
-  # 本地运行状态与 Harness Execution 任务工作区，位于 harness-workspace/runs。
+  # 本地运行状态与 Lifecycle Execution 任务工作区，位于 harness-workspace/runs。
   agent_workspace: ../runs
 
 bmad:

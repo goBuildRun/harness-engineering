@@ -1,6 +1,6 @@
 # 协作法则：基于 Markdown 的 DAG 与 Subagent 调度
 
-> **完整使用方式（命令逐步说明）**：[docs/USAGE.md](../../docs/USAGE.md)
+> **完整使用方式（命令逐步说明）**：[getting-started/cli.md](../../docs/getting-started/cli.md)
 
 作为本工程的 Lead Agent（主智能体），你不能自己去写多仓库交叉的脏活累活。你是一个“包工头”。
 

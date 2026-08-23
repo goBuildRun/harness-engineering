@@ -1,6 +1,6 @@
-# Claude Adapter For Team Product R&D Harness
+# Claude Adapter For Agent Engineering Lifecycle
 
-本文件只描述 Claude 使用 harness-engineering 时的适配约束。完整流程以 [docs/USAGE.md](docs/USAGE.md) 为准；架构边界见 [ARCHITECTURE.md](ARCHITECTURE.md)。
+本文件只描述 Claude 使用 harness-engineering 时的适配约束。完整流程以 [docs/getting-started/cli.md](docs/getting-started/cli.md) 为准；架构边界见 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
 ## Identity
 
@@ -20,8 +20,8 @@
 |------|------|
 | 不知道从哪里开始 | [AGENTS.md](AGENTS.md) |
 | 理解 harness-engineering / product workspace 边界 | [ARCHITECTURE.md](ARCHITECTURE.md) |
-| 执行具体步骤 | [docs/USAGE.md](docs/USAGE.md) |
-| 拆 DAG 与任务契约 | [docs/Harness_Workflow.md](docs/Harness_Workflow.md) |
+| 执行具体步骤 | [docs/getting-started/cli.md](docs/getting-started/cli.md) |
+| 拆 DAG 与任务契约 | [docs/architecture/workflow.md](docs/architecture/workflow.md) |
 | QA 与验收纪律 | `.harness/rules/verification-skepticism.md` |
 | 结构与写入边界 | `.harness/rules/code-placement.md` |
 
@@ -37,7 +37,7 @@
 
 ## Command Policy
 
-Claude 可以调用 Harness 脚本，但不要把脚本清单复制进本文件。需要命令时查 [docs/USAGE.md](docs/USAGE.md) 或 [.harness/README.md](.harness/README.md)。
+Claude 可以调用 Harness 脚本，但不要把脚本清单复制进本文件。需要命令时查 [docs/getting-started/cli.md](docs/getting-started/cli.md) 或 [.harness/README.md](.harness/README.md)。
 
 特别约束：
 

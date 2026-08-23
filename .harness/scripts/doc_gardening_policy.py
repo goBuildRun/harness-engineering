@@ -37,9 +37,8 @@ ALLOW_LINE_SUBSTRINGS = (
 
 ALLOW_DOCS_PRODUCT_SPECS_FILES = frozenset(
     {
-        "docs/BMAD_Prelude.md",
-        "docs/HARNESS_DOC_CONSISTENCY.md",
-        "docs/product-specs/README.md",
+        "docs/planning/bmad-planning.md",
+        "docs/governance/documentation.md",
         ".harness/scripts/phase0_paths.py",
         ".harness/rules/doc-boundary.md",
     }
@@ -48,9 +47,8 @@ ALLOW_DOCS_PRODUCT_SPECS_FILES = frozenset(
 # 整文件跳过「陈旧路径」扫描（元文档 / 兼容说明）
 STALE_SKIP_REL_PATHS = frozenset(
     {
-        "docs/HARNESS_DOC_CONSISTENCY.md",
-        "docs/BMAD_Prelude.md",
-        "docs/product-specs/README.md",
+        "docs/governance/documentation.md",
+        "docs/planning/bmad-planning.md",
     }
 )
 
@@ -81,8 +79,20 @@ HARNESS_TASKS_OUTPUT = re.compile(r"(?<![_/])harness-engineering/tasks/(?!_templ
 BARE_AGENT_WS = re.compile(r"(?<![\w])\.agent-workspace/")
 
 LINK_RE = re.compile(r"\]\(([^)]+)\)")
+LINK_LABEL_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
 HEADING_RE = re.compile(r"^#{1,6}\s+(.+?)\s*#*\s*$")
 EXPLICIT_ANCHOR_RE = re.compile(r"<(?:a|span)\s+(?:name|id)=[\"']([^\"']+)[\"']", re.IGNORECASE)
+
+LEGACY_DOC_LABELS = (
+    "docs/USAGE.md",
+    "docs/BMAD_Prelude.md",
+    "docs/COLLABORATION.md",
+    "docs/Brownfield_Intake.md",
+    "docs/QUALITY.md",
+    "docs/SECURITY.md",
+    "docs/RELIABILITY.md",
+    "docs/references/index.md",
+)
 
 ENTRY_DOC_LIMITS = {
     "AGENTS.md": {"max_lines": 85, "max_harness_refs": 8},

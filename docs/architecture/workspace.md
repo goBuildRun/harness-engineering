@@ -1,12 +1,12 @@
-# harness-engineering + Product Workspace 设计解读
+# Workspace 分层与所有权
 
-> 日期：2026-06-20  
-> 结论：Team Product R&D Harness 已从 embedded harness 调整为 **harness-engineering + product-owned workspace**。`harness-engineering/` 是高于具体产品的研发 Harness；每个产品仓库保存自己的配置、规划产物、运行状态、知识与证据。
+> 日期：2026-06-20
+> 结论：Agent Engineering Lifecycle 已从 embedded harness 调整为 **harness-engineering + product-owned workspace**。`harness-engineering/` 是高于具体产品的生命周期 runtime；每个产品仓库保存自己的配置、规划产物、运行状态、知识与证据。
 > **精简升级边界**：目录职责、知识语义、证据语义和历史审计链继续保留；新产物改为按 planning level、execution tier、任务恢复或长期候选按需生成，不再把每个目录都解释为每个任务必须写一份文件。
 
 ## 1. 设计目标
 
-Team Product R&D Harness 不是某个产品仓库里的脚手架，而是一套可服务 1..N 个软件产品研发团队的 Harness。
+Agent Engineering Lifecycle 不是某个产品仓库里的脚手架，而是一套可服务 1..N 个软件产品研发团队的生命周期工具。
 
 它应该回答五个问题：
 
@@ -110,13 +110,13 @@ product workspace 保存产品私有内容：
 - 产品知识库
 - 已有项目接入、测试、审查、成长证据
 
-这些内容随着产品演进，不随着 harness-engineering 复制或全量迁移。升级 runtime 时历史 planning、knowledge 和 evidence 原位可读；仅进行中或重开任务补齐继续执行所需的最小状态，详见 [精简强制执行设计 §10](./design-docs/lean-enforcement.md#10-历史数据与兼容升级)。
+这些内容随着产品演进，不随着 harness-engineering 复制或全量迁移。升级 runtime 时历史 planning、knowledge 和 evidence 原位可读；仅进行中或重开任务补齐继续执行所需的最小状态，详见 [精简强制执行设计 §10](../design/lean-enforcement.md#10-历史数据与兼容升级)。
 
 ## 4. 为什么不用 `phase0/` 做顶级目录
 
 `phase0` 是流程阶段，不是稳定的信息架构。顶级目录如果叫 `phase0`，会带来三个问题：
 
-1. 它把“阶段名”和“资产类型”混在一起，后续 Harness Execution、QA、Growth 证据不好归位。
+1. 它把“阶段名”和“资产类型”混在一起，后续 Lifecycle Execution、QA、Growth 证据不好归位。
 2. 它暗示产物只属于某个阶段，而 `tasks/`、`evidence/`、`knowledge/` 会跨阶段被持续读取。
 3. 它让产品仓库结构难以被非 Harness 用户理解。
 
@@ -129,7 +129,7 @@ product workspace 保存产品私有内容：
 | `knowledge/` | 长期产品记忆：BMAD 规划、已有项目接入、成长沉淀 | 是 |
 | `evidence/` | 接入、测试、审查、摘要、成长报告 | 是 |
 
-历史 `Phase 0` 术语统一映射为：BMAD Method 前导 → Planning Gate → Harness Execution。
+历史 `Phase 0` 术语统一映射为：BMAD Method 前导 → Planning Gate → Lifecycle Execution。
 
 ## 5. 启动与绑定
 
@@ -285,7 +285,7 @@ BMAD 是产品前导方法，不属于 harness-engineering runtime。
 | BMAD 正式映射产物 | `harness-workspace/planning/` |
 | Planning Gate | harness-engineering `.harness/scripts/planning_gate.sh`（`bmad_entry_gate.sh` 为兼容入口） |
 | BMAD 规划沉淀 | `harness_knowledge.sh sync-planning` → `harness-workspace/knowledge/CONTEXT.md` |
-| Harness Execution 启动 | harness-engineering `.harness/scripts/agent_start.sh` |
+| Lifecycle Execution 启动 | harness-engineering `.harness/scripts/agent_start.sh` |
 
 初始化脚本会在 `_bmad/` 存在后写入 `_bmad/custom/config.toml`，将 BMAD 原生输出校准到 `harness-workspace/bmad-output/`，并标准化创建 `planning-artifacts/`、`design-artifacts/`、`implementation-artifacts/`、`test-artifacts/`。`design-artifacts/` 会同时配置为 `modules.bmm.design_artifacts` 与 `modules.cis.design_artifacts`。需要自动安装时显式加参数；安装完成但未生成 `_bmad/` 时必须 `block`：
 
@@ -301,7 +301,7 @@ bash .harness/scripts/harness_init.sh init \
 
 ## 8. 已有项目接入、知识沉淀与自我成长
 
-Team Product R&D Harness 的成长能力属于产品 workspace，而不是 harness-engineering runtime 自动吞掉所有经验。
+Agent Engineering Lifecycle 的成长能力属于产品 workspace，而不是 lifecycle runtime 自动吞掉所有经验。
 
 已有项目接入闭环如下：
 
@@ -311,7 +311,7 @@ Team Product R&D Harness 的成长能力属于产品 workspace，而不是 harne
 4. 人类 review 接入报告。
 5. 长期稳定事实进入 `knowledge/CONTEXT.md`、`knowledge/LESSONS.md`、产品架构文档或技术债 Work Item。
 
-完整说明见 [Brownfield_Intake.md](./Brownfield_Intake.md)。
+完整说明见 [getting-started/brownfield-intake.md](../getting-started/brownfield-intake.md)。
 
 任务后的自我成长闭环如下：
 
@@ -328,7 +328,7 @@ Team Product R&D Harness 的成长能力属于产品 workspace，而不是 harne
 
 ## 9. 迁移状态
 
-> 下一代精简执行的完整兼容策略见 [design-docs/lean-enforcement.md §10](./design-docs/lean-enforcement.md#10-历史数据与兼容升级)。升级原则是历史数据原位可读、新任务写新格式，仅对进行中或重开的任务补最小运行状态。
+> 下一代精简执行的完整兼容策略见 [design/lean-enforcement.md §10](../design/lean-enforcement.md#10-历史数据与兼容升级)。升级原则是历史数据原位可读、新任务写新格式，仅对进行中或重开的任务补最小运行状态。
 
 已完成：
 

@@ -1,10 +1,10 @@
-# Team Product R&D Harness Architecture
+# Agent Engineering Lifecycle Architecture
 
-本文是 harness-engineering 的架构入口。它描述系统边界、状态流、配置分工和质量门禁；当前操作见 [docs/USAGE.md](docs/USAGE.md)，精简执行目标见 [docs/design-docs/lean-enforcement.md](docs/design-docs/lean-enforcement.md)。
+本文是 harness-engineering 的架构入口。它描述系统边界、状态流、配置分工和质量门禁；完整文档地图见 [docs/index.md](docs/index.md)，当前操作见 [docs/getting-started/cli.md](docs/getting-started/cli.md)，精简执行目标见 [docs/design/lean-enforcement.md](docs/design/lean-enforcement.md)。
 
 ## 1. Architecture Intent
 
-Team Product R&D Harness 是独立于具体产品仓库的研发 Harness。它不属于任意单一产品业务代码，也不应该被复制到每个产品里。
+Agent Engineering Lifecycle 是独立于具体产品仓库的产品研发生命周期工具。它不属于任意单一产品业务代码，也不应该被复制到每个产品里。
 
 核心目标：
 
@@ -12,7 +12,7 @@ Team Product R&D Harness 是独立于具体产品仓库的研发 Harness。它�
 - 让每个产品仓库保留自己的配置、规格、任务、证据和长期知识。
 - 把产品前导、Agent 执行、风险匹配验证、熵减和知识沉淀连成可审计闭环。
 - 把关键约束固化为脚本和 CI 门禁，而不是只写在提示词里。
-- 在统一执行面后保留参考项目中已验证的能力，不保留其命令数量和固定仪式；完整契约见 [docs/design-docs/lean-enforcement.md §1.1](docs/design-docs/lean-enforcement.md#11-能力保留契约)。
+- 在统一执行面后保留参考项目中已验证的能力，不保留其命令数量和固定仪式；完整契约见 [docs/design/lean-enforcement.md §1.1](docs/design/lean-enforcement.md#11-能力保留契约)。
 
 ## 2. System Boundary
 
@@ -125,7 +125,7 @@ flowchart TD
 - INTAKE 报告不是长期知识，不能自动进入 `CONTEXT.md` / `LESSONS.md`。
 - 老项目事实必须经过人工 review 后，再进入 BMAD Planning 和后续 Agent 执行上下文。
 
-完整说明见 [docs/Brownfield_Intake.md](docs/Brownfield_Intake.md)。
+完整说明见 [docs/getting-started/brownfield-intake.md](docs/getting-started/brownfield-intake.md)。
 
 ## 6. Execution Flow
 
@@ -154,17 +154,17 @@ flowchart TD
 - 没有产品前导凭证，不启动执行闭环。
 - 已有项目接入报告未经 review，不能当成长期知识。
 - 没有任务契约，不调度实现 Agent。
-- 没有与 execution tier 匹配的验证和有效 Harness 结果，不允许任务完成；独立 QA 与 TEST/REVIEW 证据由 `standard` / `strict` 要求触发。
+- 没有与 execution tier 匹配的验证和有效生命周期结果，不允许任务完成；独立 QA 与 TEST/REVIEW 证据由 `standard` / `strict` 要求触发。
 - 没有结构守门和计划同步，不允许合并。
 - 没有人工 review 和 `harness_growth.sh apply-review`，成长候选不能进入产品知识；没有跨产品 review，不能升级成全局规则。
 
-Harness 使用两个正交分层：`lite|standard|strict` 决定任务验证深度，`local|guarded|enforced` 决定接受保障。core 只依赖 Git：`local` 生成任务结果；`guarded` 由 `post-commit` 生成 attestation 并用 repo-local hooks 验证；`enforced` 由受控 bare Git 的 `pre-receive` 逐 commit 重验并阻断，`post-receive` 为实际已接受 commit 签发 receipt，provider 终态只消费有效 receipt。框架端到端能力已验证；单个产品只有其实际 authority 的安装审计通过后才可标记 enforced。代码托管和 CI 不参与 Harness 生命周期。
+Agent Engineering Lifecycle 使用两个正交分层：`lite|standard|strict` 决定任务验证深度，`local|guarded|enforced` 决定接受保障。core 只依赖 Git：`local` 生成任务结果；`guarded` 由 `post-commit` 生成 attestation 并用 repo-local hooks 验证；`enforced` 由受控 bare Git 的 `pre-receive` 逐 commit 重验并阻断，`post-receive` 为实际已接受 commit 签发 receipt，provider 终态只消费有效 receipt。框架 fixture 的端到端能力已验证；单个产品只有其实际 authority 的安装审计通过后才可标记 enforced。代码托管和 CI 不参与 Agent Engineering Lifecycle 的生命周期事实。
 
 ## 7. Gate Chain
 
 | 门禁 | 保护的问题 |
 |------|------------|
-| Harness validate | runtime 文件和 manifest 完整 |
+| Lifecycle validate | runtime 文件和 manifest 完整 |
 | Intake scan | 已有项目事实形成可 review 证据 |
 | Planning Gate | BMAD Planning 产物和任务包真实存在 |
 | Task contract check | 实现任务有 read/write/action/verify/done |
@@ -190,8 +190,8 @@ Harness 使用两个正交分层：`lite|standard|strict` 决定任务验证深�
 - `AGENTS.md`：Agent 地图，只指路不展开流程。
 - `ARCHITECTURE.md`：架构入口，讲边界、状态和门禁。
 - `CLAUDE.md`：Claude 适配层，只写工具差异和硬约束。
-- `docs/USAGE.md`：公开使用模型与当前兼容命令参考。
-- `docs/Brownfield_Intake.md`：已有项目接入的定位、流程、报告与 review 规则。
+- `docs/getting-started/cli.md`：公开使用模型与当前兼容命令参考。
+- `docs/getting-started/brownfield-intake.md`：已有项目接入的定位、流程、报告与 review 规则。
 - `.harness/README.md`：runtime 内部脚本索引。
 
 这条分层本身由 doc-gardening 维护，避免入口文档重新长成百科。

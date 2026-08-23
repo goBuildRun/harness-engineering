@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Project knowledge artifact bootstrap for the Team Product R&D Harness."""
+"""Project knowledge artifact bootstrap for Agent Engineering Lifecycle."""
 from __future__ import annotations
 
 import argparse

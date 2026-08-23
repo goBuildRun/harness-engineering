@@ -39,4 +39,4 @@
 | `{{workspace}}/evidence/` | intake-reports/summaries/progress/test-reports/review-reports/growth-reports |
 | `{{workspace}}/runs/` | 门禁与工作区状态（勿手改除非调试） |
 
-任务卡模板位于 harness-engineering 的 `tasks/_templates/`；Harness Execution 写码规程见 harness-engineering `docs/USAGE.md`。
+任务卡模板位于 harness-engineering 的 `tasks/_templates/`；Lifecycle Execution 写码规程见 harness-engineering `docs/getting-started/cli.md`。

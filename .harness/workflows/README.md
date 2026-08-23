@@ -1,7 +1,7 @@
 # workflows/ — 任务类型工序（规划分级）
 
 Lead / planning-agent 在 **BMAD Planning**（含 `bmad_method_gate.py` 留痕）完成分级后，按级别选用工序。  
-官方分级说明：[docs/BMAD_Prelude.md](../../docs/BMAD_Prelude.md)
+官方分级说明：[planning/bmad-planning.md](../../docs/planning/bmad-planning.md)
 
 L1/L2/L3 是继承自 planning level 思路的 **planning level**，继续用于规格和任务包复杂度；它不等于目标 `lite/standard/strict` execution tier。统一入口落地后，这些工序由 `start/finish` 内部选择，不再要求 Agent 手工串联。
 
@@ -11,9 +11,9 @@ L1/L2/L3 是继承自 planning level 思路的 **planning level**，继续用于
 
 ```
 新任务
-  ├─ 先做 BMAD Planning：docs/BMAD_Prelude.md
+  ├─ 先做 BMAD Planning：docs/planning/bmad-planning.md
   ├─ planning_gate.sh pass
-  └─ Harness Execution：docs/USAGE.md（OpenAI 主闭环）
+  └─ Lifecycle Execution：docs/getting-started/cli.md（OpenAI 主闭环）
        ├─ L1 → L1-trivial.md
        ├─ L2 → L2-standard.md
        └─ L3 → L3-cross-service.md

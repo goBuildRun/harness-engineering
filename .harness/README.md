@@ -1,13 +1,13 @@
-# Harness Runtime Internals
+# Agent Engineering Lifecycle Runtime Internals
 
-本目录是 harness-engineering 的运行时内部区，保存可复用的 Agent 配置、规则、脚本、模板、工作流和 Work Item provider。
+本目录是 Agent Engineering Lifecycle 的运行时内部区，物理路径为 `harness-engineering/.harness/`，保存可复用的 Agent 配置、规则、脚本、模板、工作流和 Work Item provider。
 
 面向使用者的入口不是本文件：
 
 - Agent 地图：[../AGENTS.md](../AGENTS.md)
 - 架构入口：[../ARCHITECTURE.md](../ARCHITECTURE.md)
-- 使用与兼容参考：[../docs/USAGE.md](../docs/USAGE.md)
-- harness-engineering / product workspace 分层：[../docs/Harness_Product_Workspace.md](../docs/Harness_Product_Workspace.md)
+- 使用与兼容参考：[../docs/getting-started/cli.md](../docs/getting-started/cli.md)
+- harness-engineering / product workspace 分层：[../docs/architecture/workspace.md](../docs/architecture/workspace.md)
 
 ## Directory Map
 
@@ -25,7 +25,7 @@
 
 ## Stable Interfaces
 
-外部文档应尽量引用稳定概念，不直接展开 runtime 内部路径。确需执行命令时，优先引用 [../docs/USAGE.md](../docs/USAGE.md)。
+外部文档应尽量引用稳定概念，不直接展开 runtime 内部路径。确需执行命令时，优先引用 [../docs/getting-started/cli.md](../docs/getting-started/cli.md)。
 
 当前稳定接口：
 
@@ -56,7 +56,7 @@
 | `release_preflight.sh` | 开源发布前检查本机台账、绝对路径和疑似密钥泄漏 |
 | `check.sh` | 发布前完整机械门禁 |
 
-Work Item 同步契约由 [../docs/BMAD_Work_Item_Contract.md](../docs/BMAD_Work_Item_Contract.md) 维护，runtime 脚本只负责执行该契约。
+Work Item 同步契约由 [../docs/planning/work-item-contract.md](../docs/planning/work-item-contract.md) 维护，runtime 脚本只负责执行该契约。
 
 ## Ownership Rules
 

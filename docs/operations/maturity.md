@@ -1,17 +1,17 @@
-# Team Product R&D Harness 成熟度评估
+# Harness 成熟度与路线
 
-> 初始评估日期：2026-06-21  
+> 初始评估日期：2026-06-21
 > 最近复核：2026-08-12
-> 评估对象：harness-engineering `harness-engineering/` 当前实现 + product-owned `harness-workspace/`  
+> 评估对象：harness-engineering `harness-engineering/` 当前实现 + product-owned `harness-workspace/`
 > 评估口径：以资深 Harness Engineering 工程师视角，区分「框架骨架成熟度」与「生产闭环成熟度」。
 
 ## 1. 总体结论
 
-Team Product R&D Harness 已经从 embedded 项目脚手架升级为 **harness-engineering + product-owned workspace**。它当前的核心价值不在于单个脚本，而在于把已有项目接入、产品前导、Work Item 协同、Agent 执行、机械门禁、QA 签章、知识沉淀和自我成长串成了一个可运行闭环。
+Agent Engineering Lifecycle 已经从 embedded 项目脚手架升级为 **harness-engineering + product-owned workspace**。它当前的核心价值不在于单个脚本，而在于把已有项目接入、产品前导、Work Item 协同、Agent 执行、机械门禁、QA 签章、知识沉淀和自我成长串成了一个可运行闭环。
 
 但它还没有完全进入「生产级全自动强约束 Harness」状态。关键差距集中在 Firecracker/远程隔离执行器、更多业务栈质量矩阵、复杂浏览器交互脚本库、业务服务大规模实战、第二协同 provider 验证。
 
-2026-08-09 对多个试点产品的迭代证据复核新增一个更优先的判断：当前流程存在明显固定税，简单任务也承担完整命令链和多份重复证据，成熟产品的历史 evidence 又持续推高上下文成本。下一阶段首先落实 [精简强制执行设计](./design-docs/lean-enforcement.md)，目标是增强不可绕过性，同时减少 Agent 可见入口、重复 gate、重复证据和无关上下文。
+2026-08-09 对多个试点产品的迭代证据复核新增一个更优先的判断：当前流程存在明显固定税，简单任务也承担完整命令链和多份重复证据，成熟产品的历史 evidence 又持续推高上下文成本。下一阶段首先落实 [精简强制执行设计](../design/lean-enforcement.md)，目标是增强不可绕过性，同时减少 Agent 可见入口、重复 gate、重复证据和无关上下文。
 
 ## 2. 双评分
 
@@ -79,7 +79,7 @@ Team Product R&D Harness 已经从 embedded 项目脚手架升级为 **harness-e
 | Work Item 状态回写串联 | 本地验证通过不等于已经合并或发布 | 本地 `finish` 最多同步 ready/review；CI 合并或发布成功后再 close |
 | Intake review 例行化 | 已有项目接入报告生成了，不 review 就不会变成知识 | 首次接入后固定 review `intake-reports/`，迁入 CONTEXT/LESSONS/REFERENCE_SYSTEMS/架构文档 |
 | Growth review 例行化 | 有候选但不 review/apply 就不会真正成长 | 仅在发现长期候选时生成 Growth，周期性清理候选积压，不按每任务空跑 |
-| 飞书/Jira 深度验证 | 证明 Team Product Harness 不是 Teambition 专用 | 基础 provider 已接入；下一步用真实租户验证创建、查询、状态流转、权限错误 |
+| 飞书/Jira 深度验证 | 证明 Agent Engineering Lifecycle 不是 Teambition 专用 | 基础 provider 已接入；下一步用真实租户验证创建、查询、状态流转、权限错误 |
 | Work Item 状态语义映射 | 让 `bmad-work-item-v1` 不只创建任务，也能推动看板状态 | 按 provider 补齐 Planning Gate / QA / Done 的真实状态流转 |
 
 ### P2：中期做，进入更强生产级
@@ -112,6 +112,6 @@ Team Product R&D Harness 已经从 embedded 项目脚手架升级为 **harness-e
 
 ## 8. 最终判断
 
-Team Product R&D Harness 当前已经达到 **可试运行、可迭代、可审计** 的成熟度。它比普通 AI Coding 流程强很多，因为它已经把「做什么、谁做、改哪里、怎么验、谁签、如何沉淀」变成了可执行系统。
+Agent Engineering Lifecycle 当前已经达到 **可试运行、可迭代、可审计** 的成熟度。它比普通 AI Coding 流程强很多，因为它已经把「做什么、谁做、改哪里、怎么验、谁签、如何沉淀」变成了可执行系统。
 
 接下来最值得投入的不是再增加更多文档，而是把 **更完整业务测试、依赖边界、Playwright 工程化、真沙箱、provider 状态回写** 接到机械门禁里。做到这些后，它才会从「优秀的产品研发 Harness 骨架」进入「可开源推广的生产级 Harness」。

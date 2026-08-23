@@ -4,7 +4,7 @@
 
 harness-engineering runtime 不放在这里。harness-engineering 可以位于任意路径，通过 `harness_init.sh init/use` 绑定本产品根目录。
 
-> 正常路径只有 `harness start/status/finish`；当前 runtime 已提供 shadow 统一门面，下面命令仅保留初始化、诊断和 L2 兼容用途。目录语义继续保留，但 TEST、REVIEW、SUMMARY、PROGRESS、GROWTH 等产物按 execution tier、任务恢复或长期候选生成，不要求每个任务全部创建。
+> `standard/strict` 正常路径是 `harness plan → start → status → finish`；低风险 `lite` 可省略显式 `plan`。当前 lifecycle runtime 已提供统一门面，下面命令仅保留初始化、诊断和兼容用途。结果中的 `enforcement: shadow` 只是旧字段兼容值，不代表当前 assurance 等级。目录语义继续保留，但 TEST、REVIEW、SUMMARY、PROGRESS、GROWTH 等产物按 execution tier、任务恢复或长期候选生成，不要求每个任务全部创建。
 
 ## 1. Workspace 结构
 
@@ -123,7 +123,7 @@ bash .harness/scripts/planning_gate.sh L2 "$TASK_DIR"
 
 通过后检查 `{{workspace}}/knowledge/CONTEXT.md`，应能看到 `BMAD Planning 规划沉淀` 区块。
 
-当前 Harness Execution 启动：
+当前 Lifecycle Execution 启动：
 
 ```bash
 bash .harness/scripts/agent_start.sh <work-item-id>
@@ -150,9 +150,9 @@ bash .harness/scripts/browser_qa_setup.sh check
 | 1 | 本文 | 产品侧 workspace 与新人路径 |
 | 2 | harness-engineering `AGENTS.md` | Agent 地图 |
 | 3 | harness-engineering `ARCHITECTURE.md` | harness-engineering / product workspace 边界 |
-| 4 | harness-engineering `docs/USAGE.md` | 三入口使用模型与过渡期兼容参考 |
-| 5 | harness-engineering `docs/Brownfield_Intake.md` | 已有项目接入、INTAKE 报告与 review 规则 |
-| 6 | harness-engineering `docs/BMAD_Prelude.md` | BMAD 与 planning 映射 |
+| 4 | harness-engineering `docs/getting-started/cli.md` | 主动作与只读 status 的使用模型及兼容参考 |
+| 5 | harness-engineering `docs/getting-started/brownfield-intake.md` | 已有项目接入、INTAKE 报告与 review 规则 |
+| 6 | harness-engineering `docs/planning/bmad-planning.md` | BMAD 与 planning 映射 |
 | 7 | 产品架构文档 | 产品服务边界、目录结构、数据库和部署约束 |
 
 ## 6. 常见误区
