@@ -151,6 +151,17 @@ def run_remote(argv: list[str], timeout: int) -> tuple[bool, str]:
     return result.get("decision") == "pass", reason
 
 
+def parse_timeout(raw: str | None) -> tuple[int, str | None]:
+    value = (raw or "600").strip()
+    try:
+        timeout = int(value)
+    except ValueError:
+        return 0, "SANDBOX_TIMEOUT_INVALID: HARNESS_SANDBOX_TIMEOUT_SECONDS must be a positive integer"
+    if timeout <= 0:
+        return 0, "SANDBOX_TIMEOUT_INVALID: HARNESS_SANDBOX_TIMEOUT_SECONDS must be a positive integer"
+    return timeout, None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(add_help=True)
     parser.add_argument("--cwd", default=os.getcwd())
@@ -178,7 +189,12 @@ def main() -> int:
     if not cwd.is_dir():
         emit("block", f"SANDBOX_CWD_NOT_FOUND: {cwd}")
         return 1
-    timeout = int(os.environ.get("HARNESS_SANDBOX_TIMEOUT_SECONDS") or "600")
+    timeout, timeout_error = parse_timeout(
+        os.environ.get("HARNESS_SANDBOX_TIMEOUT_SECONDS"),
+    )
+    if timeout_error:
+        emit("block", timeout_error)
+        return 1
     if args.backend == "docker":
         ok, reason = run_docker(argv, cwd, timeout)
     elif args.backend == "remote":

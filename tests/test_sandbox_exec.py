@@ -14,7 +14,7 @@ SCRIPTS = Path(__file__).resolve().parents[1] / ".harness" / "scripts"
 ROOT = SCRIPTS.parents[1]
 sys.path.insert(0, str(SCRIPTS))
 
-from sandbox_exec import docker_command, main as sandbox_main, run_remote  # noqa: E402
+from sandbox_exec import docker_command, main as sandbox_main, parse_timeout, run_remote  # noqa: E402
 from sandbox_acceptance import accept  # noqa: E402
 
 
@@ -33,6 +33,14 @@ class Response:
 
 
 class SandboxExecTest(unittest.TestCase):
+    def test_timeout_parser_fails_closed_for_invalid_values(self) -> None:
+        self.assertEqual(parse_timeout(None), (600, None))
+        for value in ("abc", "0", "-1", "  "):
+            with self.subTest(value=value):
+                timeout, reason = parse_timeout(value)
+                self.assertEqual(timeout, 0)
+                self.assertIn("SANDBOX_TIMEOUT_INVALID", reason or "")
+
     def test_docker_command_mounts_cwd_disables_network_and_preserves_argv(self) -> None:
         cwd = Path("/tmp/product root")
         argv = ["python3", "-c", "print('ok')", "value with spaces", "$literal"]
@@ -113,6 +121,19 @@ class SandboxExecTest(unittest.TestCase):
                 ]):
             self.assertEqual(sandbox_main(), 0)
         self.assertEqual(emitted[-1]["decision"], "pass")
+
+    def test_invalid_timeout_emits_block_and_nonzero_exit(self) -> None:
+        emitted = []
+        with patch.dict(os.environ, {"HARNESS_SANDBOX_TIMEOUT_SECONDS": "abc"}), patch(
+            "sandbox_exec.emit", side_effect=lambda decision, reason, **extra: emitted.append({
+                "decision": decision, "reason": reason, **extra,
+            }),
+        ), patch.object(sys, "argv", [
+            "sandbox_exec.py", "--cwd", str(ROOT), "--", "python3", "-V",
+        ]):
+            self.assertEqual(sandbox_main(), 1)
+        self.assertEqual(emitted[-1]["decision"], "block")
+        self.assertIn("SANDBOX_TIMEOUT_INVALID", emitted[-1]["reason"])
 
     def test_shell_wrapper_without_command_returns_nonzero_block(self) -> None:
         completed = subprocess.run(
