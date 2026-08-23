@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+from contextlib import contextmanager
 import fcntl
 import hashlib
 import io
@@ -11,16 +12,14 @@ import os
 import re
 import subprocess
 import tempfile
-import time
 import tokenize
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from harness_schema import assert_result
 from harness_assurance import snapshot as assurance_snapshot
+from harness_gc_contract import telemetry_add_gc, valid_gc_result
 from harness_tier import TIERS, classify_tier, task_kind_tier
-from harness_gc_context import build_gc_context
-from harness_gc_validation import valid_mechanical_adjudication
 from harness_task_resolution import resolve_task_id, valid_task_id
 from harness_timing import STAGE_BUDGETS_MS, initialize_cycle
 
@@ -109,6 +108,19 @@ def atomic_write_result(path: Path, result: dict[str, Any]) -> None:
             if os.path.exists(name):
                 os.unlink(name)
         fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+
+
+@contextmanager
+def task_operation_lock(path: Path):
+    """Serialize a complete task transition, not only its final file replace."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = path.with_suffix(path.suffix + ".operation.lock")
+    with lock_path.open("a+", encoding="utf-8") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
 
 
 def load_result(path: Path) -> dict[str, Any]:
@@ -215,19 +227,6 @@ def cache_matches(check: dict[str, Any], expected_fingerprint: str,
     )
 
 
-def valid_gc_result(gc_result: dict[str, Any] | None, result: dict[str, Any],
-                    subject_digest: str, policy_digest: str,
-                    mechanical: dict[str, Any] | None = None) -> bool:
-    return bool(
-        gc_result and gc_result.get("decision") == "pass"
-        and gc_result.get("role") == "gc-sweeper" and gc_result.get("independent") is True
-        and gc_result.get("task_id") == result.get("task_id")
-        and gc_result.get("subject_digest") == subject_digest
-        and gc_result.get("policy_digest") == policy_digest
-        and valid_mechanical_adjudication(gc_result, mechanical)
-    )
-
-
 def apply_code_health(result: dict[str, Any], mechanical: dict[str, Any], *,
                       gc_result: dict[str, Any] | None,
                       subject_digest: str = "", policy_digest: str = "") -> None:
@@ -268,23 +267,19 @@ def apply_code_health(result: dict[str, Any], mechanical: dict[str, Any], *,
     result.setdefault("checks", {})["code_health"] = combined
 
 
-def telemetry_add_gc(result: dict[str, Any], *, context_chars: int, duration_ms: int) -> None:
-    cost = result["cost"]["harness"]
-    cost["agent_calls"] = int(cost.get("agent_calls") or 0) + 1
-    cost["context_chars"] = int(cost.get("context_chars") or 0) + context_chars
-    cost["gate_duration_ms"] = int(cost.get("gate_duration_ms") or 0) + duration_ms
-
-
 def finish_decision(result: dict[str, Any]) -> str:
     invariant_pass = all(value == "pass" for value in result.get("invariants", {}).values())
     checks_pass = all(check.get("decision") == "pass" for check in result.get("checks", {}).values())
     cycle = result.get("cycle") or {}
+    stages = cycle.get("stages", {})
+    finalize_status = (stages.get("finalize") or {}).get("status")
     cycle_pass = not cycle.get("stage_enforced") or (
-        not cycle.get("current_stage")
-        and all(
+        all(
             (cycle.get("stages", {}).get(stage) or {}).get("status") == "pass"
-            for stage in STAGE_BUDGETS_MS
+            for stage in tuple(STAGE_BUDGETS_MS)[:-1]
         )
+        and finalize_status in {"active", "pass"}
+        and cycle.get("current_stage") in {"finalize", ""}
     )
     decision = (
         "pass" if invariant_pass and checks_pass and cycle_pass and not result.get("blockers")
@@ -344,49 +339,7 @@ def policy_for(harness: Path, product: Path) -> str:
                               hashlib.sha256(path.read_bytes()).hexdigest()) for path in paths if path.is_file()])
 
 
-def read_gc_result(task_root: Path) -> dict[str, Any] | None:
-    path = task_root / "gc_result.json"
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-
-
-def invoke_gc_once(result: dict[str, Any], task_root: Path, mechanical: dict[str, Any],
-                   changed: list[str], repo: Path) -> dict[str, Any] | None:
-    existing = read_gc_result(task_root)
-    if valid_gc_result(existing, result, mechanical.get("subject_digest", ""),
-                       result.get("policy_digest", ""), mechanical=mechanical):
-        return existing
-    argv_json = os.environ.get("HARNESS_GC_AGENT_ARGV", "").strip()
-    if not argv_json:
-        return None
-    if result["cost"]["harness"].get("agent_calls", 0) >= 1:
-        result["blockers"] = sorted(set(result.get("blockers", [])) | {"BUDGET_APPROVAL_REQUIRED"})
-        return None
-    try:
-        argv = json.loads(argv_json)
-        if not isinstance(argv, list) or not argv or not all(isinstance(item, str) for item in argv):
-            raise ValueError
-    except (json.JSONDecodeError, ValueError):
-        result["blockers"] = sorted(set(result.get("blockers", [])) | {"GC_RUNNER_INVALID"})
-        return None
-    try:
-        context, context_chars = build_gc_context(result, mechanical, changed, repo)
-    except ValueError:
-        result["blockers"] = sorted(
-            set(result.get("blockers", [])) | {"BUDGET_APPROVAL_REQUIRED"})
-        return None
-    context_path = task_root / "gc_context.json"
-    context_path.write_text(json.dumps(context, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    started = time.monotonic()
-    completed = subprocess.run([*argv, str(context_path), str(task_root / "gc_result.json")], check=False)
-    telemetry_add_gc(result, context_chars=context_chars,
-                     duration_ms=int((time.monotonic() - started) * 1000))
-    if completed.returncode != 0:
-        result["blockers"] = sorted(set(result.get("blockers", [])) | {"GC_REQUIRED"})
-        return None
-    return read_gc_result(task_root)
+from harness_gc_runner import invoke_gc_once  # noqa: E402  compatibility re-export
 
 
 def main() -> int:

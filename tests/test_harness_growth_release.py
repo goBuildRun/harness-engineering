@@ -25,14 +25,26 @@ class HarnessGrowthReleaseTest(unittest.TestCase):
         self.assertEqual(result["decision"], "pass")
         self.assertEqual(result["followups_pending_review"], ["x-GROWTH-CAPTURE.md"])
 
-    def test_blocker_and_historical_unknown_fail_closed(self) -> None:
+    def test_blocker_fails_closed_and_historical_unmarked_is_followup(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             capture = root / "x-GROWTH-CAPTURE.md"
             capture.write_text("- **Release impact**：blocker\n", encoding="utf-8")
             self.assertEqual(release_status(root)["reason"], "GROWTH_RELEASE_BLOCKER")
             capture.write_text("# legacy capture\n", encoding="utf-8")
-            self.assertEqual(release_status(root)["reason"], "GROWTH_RELEASE_IMPACT_UNKNOWN")
+            result = release_status(root)
+            self.assertEqual(result["reason"], "GROWTH_RELEASE_CLEAR")
+            self.assertEqual(result["legacy_unmarked"], ["x-GROWTH-CAPTURE.md"])
+
+    def test_work_item_binding_does_not_use_substring_matches(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "2026-WI-420-GROWTH-CAPTURE.md").write_text(
+                "- **Release impact**：blocker\n", encoding="utf-8",
+            )
+            result = release_status(root, "WI-42")
+        self.assertEqual(result["decision"], "pass")
+        self.assertEqual(result["captures"], 0)
 
 
 if __name__ == "__main__":

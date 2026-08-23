@@ -7,13 +7,24 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / ".harness" / "scripts"
+sys.path.insert(0, str(SCRIPTS))
+
+import harness_gates  # noqa: E402
 
 
 class HarnessCliExitContractTest(unittest.TestCase):
+    def test_standalone_gate_plan_uses_decision_as_exit_status(self) -> None:
+        with mock.patch.object(sys, "argv", ["harness_gates.py"]), mock.patch.object(
+            harness_gates, "run_gate_plan",
+            return_value={"decision": "block", "checks": {}, "missing": ["harness"]},
+        ), mock.patch.object(harness_gates, "dump_json"):
+            self.assertEqual(harness_gates.main(), 1)
+
     def test_block_decision_returns_one_and_pass_returns_zero(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product = Path(tmp)
@@ -44,10 +55,11 @@ class HarnessCliExitContractTest(unittest.TestCase):
             )
             commands = (
                 [
-                    "python3", str(SCRIPTS / "provider_verifier_preflight.py"),
+                    "python3", str(SCRIPTS / "harness_provider_preflight.py"),
                     "--contract", str(product / "missing-contract.json"),
-                    "--trace", str(product / "missing-trace.json"),
+                    "--adapter", str(product / "missing-adapter.py"),
                     "--expected-subject", "subject",
+                    "--provider", "mock", "--", "missing-adapter",
                 ],
                 [
                     "python3", str(SCRIPTS / "harness_growth_release.py"),

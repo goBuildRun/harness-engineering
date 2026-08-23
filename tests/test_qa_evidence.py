@@ -139,7 +139,7 @@ class QaEvidenceTest(unittest.TestCase):
             self.assertFalse((runs / "qa_approved_T1.json").exists())
             self.assertEqual(json.loads(scoped.read_text())["work_item_id"], "WI-42")
 
-    def test_qa_sign_off_writes_portable_receipt_reference_to_task_document(self) -> None:
+    def test_qa_sign_off_does_not_append_duplicate_task_document_entry(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product = Path(tmp)
             workspace = product / "harness-workspace"
@@ -171,10 +171,8 @@ class QaEvidenceTest(unittest.TestCase):
             )
 
             text = qa_document.read_text(encoding="utf-8")
-            self.assertNotIn(str(product), text)
-            self.assertIn(
-                "harness-workspace/runs/tasks/WI-42/qa_approved_T1.json", text
-            )
+            self.assertEqual(text, "# QA\n")
+            self.assertTrue((runs / "tasks/WI-42/qa_approved_T1.json").is_file())
 
     def test_work_item_never_falls_back_to_global_qa_receipt(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -200,7 +198,6 @@ class QaEvidenceTest(unittest.TestCase):
             issues = validate_qa_json(receipt, "T1", "WI-42")
 
         self.assertTrue(any(issue.startswith("QA_WORK_ITEM_MISMATCH:") for issue in issues))
-
 
 if __name__ == "__main__":
     unittest.main()

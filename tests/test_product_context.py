@@ -69,6 +69,12 @@ class ProductContextTest(unittest.TestCase):
             script,
         )
 
+    def test_bmad_gate_retry_skips_an_already_passed_planning_stage(self) -> None:
+        script = (SCRIPT_DIR / "bmad_entry_gate.sh").read_text(encoding="utf-8")
+
+        self.assertIn("PLANNING_ALREADY_PASSED", script)
+        self.assertIn('"$PLANNING_ALREADY_PASSED" != "true"', script)
+
     def test_env_product_id_overrides_active_product(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             harness = Path(tmp) / "harness"

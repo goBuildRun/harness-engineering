@@ -63,12 +63,6 @@ if [[ -n "$ACTIVE_WI" ]]; then
 else
   EVIDENCE="$AGENT_WS/qa_approved_${TASK_ID}.json"
 fi
-LEGACY_EVIDENCE="$AGENT_WS/qa_approved_${TASK_ID}.json"
-EVIDENCE_REF="$EVIDENCE"
-if [[ "$EVIDENCE" == "$PRODUCT_ROOT/"* ]]; then
-  EVIDENCE_REF="${EVIDENCE#"$PRODUCT_ROOT"/}"
-fi
-
 BASELINE_FILE=""
 if [[ -n "$ACTIVE_WI" ]]; then
   BASELINE_FILE="$AGENT_WS/tasks/$ACTIVE_WI/worktree_baseline.json"
@@ -101,26 +95,34 @@ if [[ "$DECISION" == "pass" ]]; then
     exit 0
   fi
   BINDING_JSON=$(echo "$RECEIPT_BINDING" | python3 -c "import sys,json; print(json.dumps(json.load(sys.stdin)['binding'], ensure_ascii=False))")
+  CANDIDATE_SNAPSHOT="$AGENT_WS/tasks/$ACTIVE_WI/candidate-snapshot.json"
+  if [[ -f "$CANDIDATE_SNAPSHOT" ]]; then
+    if ! BINDING_JSON=$(python3 - "$BINDING_JSON" "$CANDIDATE_SNAPSHOT" <<'PY'
+import json
+import sys
+
+binding = json.loads(sys.argv[1])
+snapshot = json.loads(open(sys.argv[2], encoding="utf-8").read())
+paths = snapshot.get("candidate_paths")
+subject = str(snapshot.get("candidate_digest") or "")
+digest = str(snapshot.get("snapshot_digest") or "")
+if not isinstance(binding, dict) or not isinstance(paths, list) or not subject or not digest:
+    raise SystemExit(1)
+binding.update({
+    "candidate_paths_reviewed": paths,
+    "candidate_subject_digest": subject,
+    "candidate_snapshot_digest": digest,
+})
+print(json.dumps(binding, ensure_ascii=False))
+PY
+    ); then
+      python3 "$EMIT" block "QA_CANDIDATE_BINDING_INVALID"
+      exit 0
+    fi
+  fi
 fi
 
 python3 "$SCRIPT_DIR/qa_write_evidence.py" "$EVIDENCE" "$TASK_ID" "$ACTIVE_WI" "$DECISION" "$TS" "$SUMMARY" "$PATHS_JSON" "$BINDING_JSON"
-
-# 同步 05-QA验收.md
-PLANNING_GATE="$AGENT_WS/planning_gate_pass.json"
-[[ -f "$PLANNING_GATE" ]] || PLANNING_GATE="$AGENT_WS/phase0_pass.json"
-if [[ -f "$PLANNING_GATE" ]]; then
-  TASK_DIR=$(python3 -c "import json; d=json.load(open('$PLANNING_GATE')); print(d.get('task_dir') or '')" 2>/dev/null)
-  if [[ -n "$TASK_DIR" && -f "$TASK_DIR/05-QA验收.md" ]]; then
-    {
-      echo ""
-      echo "## 自动签章 ${TS}"
-      echo "- 任务: ${TASK_ID}"
-      echo "- 结论: ${DECISION}"
-      echo "- 说明: ${SUMMARY}"
-      echo "- 凭证: ${EVIDENCE_REF}"
-    } >> "$TASK_DIR/05-QA验收.md"
-  fi
-fi
 
 if [[ "$DECISION" == "fail" ]]; then
   python3 "$EMIT" block "QA_REJECTED: 任务 ${TASK_ID} 未通过。${SUMMARY}"

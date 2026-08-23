@@ -1,13 +1,14 @@
 ---
 title: Story Cycle Efficiency Under 30 Minutes
 status: implementation-complete
-updated: 2026-08-22
+updated: 2026-08-23
 owner: harness-engineering
 baseline_commit: 2ea2c8e3148e767718aa66c7a8f0ae850a5201cc
 independent_qa: pass
 live_strict_trial: pending
 local_epic_id: E4
-local_story_id: E4-S1
+local_story_id: E4-S2
+iteration_baseline_commit: 86149a76301307c44879904e1c3edadd40eb1f64
 work_item_provider: noop
 external_tasklist_id: unknown
 external_epic_id: unknown
@@ -82,14 +83,17 @@ Total: `30m`. Agent active time remains `unknown` until the host supplies explic
 - 全局 JSON decision/exit-code 迁移若无法一次更新所有 shell/hook 调用者，只交付版本化 contract checker 与迁移清单，不做破坏性半切换。
 - 阶段状态机可在每次受控 transition、gate 和 Provider side effect 前停止，但不能中断未通过 Harness 入口运行的 host 推理；assurance 因此保持 `guarded` / `bypassable: true`。
 - Codex host 长会话的 2.52 亿 input Token 不能仅靠当前 5.4k 字符的 Harness context excerpt 解释；本轮提供 digest/index 与阶段遥测，host 侧阶段新会话/摘要协议留待实测。Harness input/output Token 仍为 `unknown`，telemetry 仍为 `partial`，L3 仍为 `live_validation_pending`。
+- real Provider 的权威响应、真正的离线网络隔离和外部 lifecycle readback 仍需要新的可信执行边界；在该边界存在前，Harness 保持 fail-closed，不接受 adapter 或 caller 自签替代。
+- CI planning credential 仍使用共享 active workspace；跨 Story 的 per-task execution environment 属于兼容性迁移，不在 E4 candidate/release integrity 内伪装成已解决。
 
 ## Verification
 
-- Final unit suite on the mixed local tree: `400 tests` passed in `72.668s`; this includes concurrent, intentionally unstaged work.
-- Exact staged E4 commit snapshot: `396 tests` passed in `71.299s`.
-- Independent QA: `pass`; no blocker remains on the frozen implementation.
-- Manifest and smoke validation on the exact staged snapshot: `HARNESS_VALID`.
-- Offline benchmark: `400ms -> 120ms` first run and unrelated-evidence rerun (`70%` reduction).
+- Frozen code candidate: commit `59caa75d38bbe6fc1fd4be78ea4ecead91931309`, tree `a984f43f5850fe5d1dbffcd79660b6850f884816`, `68` staged files and zero protected-path overlap.
+- The mixed worktree is not a release signal: `20` tracked and `5` untracked protected files remain outside the index, including separate strict-evidence/provider compatibility work. Focused compatibility suites were run, but only the exact index is used for E4 acceptance.
+- Independent QA: `PASS`, with no P0/P1/P2 remaining; focused suites passed `93/93`, E4 hardening/integrity passed `37/37`, and the full suite passed `573/573` across non-overlapping batches.
+- A separate single-process full-suite run reported one host `EPERM` during timed-out process-group cleanup (`572/573`); the exact test immediately passed `1/1`, consistent with the independent full-suite result.
+- Manifest and smoke validation: `HARNESS_VALID`; Python compile, Bash syntax, module-boundary and `git diff --check` checks passed.
+- Offline benchmark: `477ms -> 137ms` first validation and `139ms` unrelated-evidence rerun with `4` cache hits (`71.28%` and `70.86%` reductions).
 - Production P95, Judge usage and the next live strict/L3 Story result remain `unknown`/`pending`.
 
 ## Suggested Review Order
@@ -97,32 +101,35 @@ Total: `30m`. Agent active time remains `unknown` until the host supplies explic
 **Lifecycle and wall clock**
 
 - Start with enforced stage order, bounded retries, and canonical-only root closure.
-  [`harness_cycle_commands.py:36`](../../../.harness/scripts/harness_cycle_commands.py#L36)
+  [`harness_cycle_stages.py:41`](../../../.harness/scripts/harness_cycle_stages.py#L41)
 
 - Confirm finish computes gates before closing a successful Story exactly once.
-  [`harness_commands.py:186`](../../../.harness/scripts/harness_commands.py#L186)
+  [`harness_finish.py:30`](../../../.harness/scripts/harness_finish.py#L30)
 
 - Verify budgets stop serial and parallel work before another side effect.
-  [`harness_gate_execution.py:282`](../../../.harness/scripts/harness_gate_execution.py#L282)
+  [`harness_gate_execution.py:117`](../../../.harness/scripts/harness_gate_execution.py#L117)
 
 **Provider truth and lifecycle capability**
 
 - Inspect one-shot claims and fresh evidence SHA-256 binding.
-  [`provider_attempt.py:51`](../../../.harness/scripts/provider_attempt.py#L51)
+  [`provider_attempt.py:115`](../../../.harness/scripts/provider_attempt.py#L115)
 
-- Check strict evidence resolves and hashes the actual product-tree file.
-  [`harness_strict_evidence.py:14`](../../../.harness/scripts/harness_strict_evidence.py#L14)
+- Check strict evidence resolves and hashes actual product-tree artifacts and the Provider chain in the gate adapter.
+  [`harness_strict_gate.py:58`](../../../.harness/scripts/harness_strict_gate.py#L58)
+
+- Check the offline adapter execution binds provider, subject, adapter and canonical argv before any real attempt.
+  [`harness_provider_preflight.py:183`](../../../.harness/scripts/harness_provider_preflight.py#L183)
 
 - Review offline lifecycle discovery before strict implementation begins.
-  [`harness_lifecycle_preflight.py:32`](../../../.harness/scripts/harness_lifecycle_preflight.py#L32)
+  [`harness_lifecycle_preflight.py:35`](../../../.harness/scripts/harness_lifecycle_preflight.py#L35)
 
 **Caching, QA, and context**
 
 - Trace dependency-specific digests that drive precise cache invalidation.
-  [`harness_gate_execution.py:154`](../../../.harness/scripts/harness_gate_execution.py#L154)
+  [`harness_gate_inputs.py:176`](../../../.harness/scripts/harness_gate_inputs.py#L176)
 
 - Confirm shared mechanical QA still requires independent per-task receipts.
-  [`qa_evidence_binding.py:142`](../../../.harness/scripts/qa_evidence_binding.py#L142)
+  [`harness_cycle_stage_commands.py:147`](../../../.harness/scripts/harness_cycle_stage_commands.py#L147)
 
 - Review summary/digest/index context injection rather than full artifact replay.
   [`harness_context_index.py:39`](../../../.harness/scripts/harness_context_index.py#L39)
@@ -130,10 +137,10 @@ Total: `30m`. Agent active time remains `unknown` until the host supplies explic
 **Regression evidence**
 
 - Follow the Story stage/root and legacy compatibility regression.
-  [`test_harness_timing.py:93`](../../../tests/test_harness_timing.py#L93)
+  [`test_harness_timing.py:35`](../../../tests/test_harness_timing.py#L35)
 
 - Follow stale evidence and post-attempt tamper rejection.
-  [`test_provider_attempt.py:66`](../../../tests/test_provider_attempt.py#L66)
+  [`test_provider_attempt.py:379`](../../../tests/test_provider_attempt.py#L379)
 
 - Confirm standalone block decisions return nonzero exit status.
-  [`test_harness_cli_exit_contract.py:37`](../../../tests/test_harness_cli_exit_contract.py#L37)
+  [`test_harness_cli_exit_contract.py:28`](../../../tests/test_harness_cli_exit_contract.py#L28)

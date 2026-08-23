@@ -7,10 +7,12 @@ from copy import deepcopy
 import json
 import os
 import subprocess
+import sys
 import time
 import uuid
 from pathlib import Path
 
+from harness_candidate import bound_candidate, refresh_evidence, release_evidence_paths
 from harness_output import dump_json
 from harness_assurance import finalize
 from harness_attestation import verify_attestation
@@ -23,7 +25,7 @@ from harness_runtime import (
     active_task_path, apply_code_health, atomic_write_result, canonical_digest, classify_tier,
     default_result, task_kind_tier, fingerprint, finish_decision, git_changed, invoke_gc_once,
     load_result, mechanical_code_health, now, policy_for, resolve_task_id, result_path,
-    subject_for, workspace_root,
+    subject_for, task_operation_lock, workspace_root,
 )
 from harness_scope import execution_paths, paths_within_scope
 from harness_state import invalidate_if_stale
@@ -31,12 +33,15 @@ from worktree_baseline import capture_baseline, changed_since_baseline
 from harness_ci import cmd_ci_check
 from harness_task_binding import resolve_start_work_item, strengthen_resumed_task
 from harness_task_resolution import bind_active_task, valid_task_id
-from harness_timing import ledger_path
+from harness_timing import budget_status, ledger_path, stage_budget_status
 from harness_cycle_commands import (
     allow_finish_attempt, begin_finish_span, cmd_stage, cmd_usage_baseline,
-    complete_finish_span, refresh_assurance, start_story_cycle,
+    complete_finish_span, load_candidate_snapshot, refresh_assurance, start_story_cycle,
 )
 from harness_lifecycle_preflight import discover as discover_lifecycle, preflight_resumed
+import harness_finish
+
+
 def cmd_start(args: argparse.Namespace) -> int:
     product, harness = Path(args.product_root).resolve(), Path(args.harness_root).resolve()
     task_id = args.task_id or f"task-{uuid.uuid4().hex[:12]}"
@@ -49,25 +54,46 @@ def cmd_start(args: argparse.Namespace) -> int:
     if selection["decision"] == "block":
         dump_json(selection)
         return 0
+    with task_operation_lock(active_task_path(product)), task_operation_lock(path):
+        return _cmd_start_locked(args, product, harness, task_id, path, selection)
+
+
+def _cmd_start_locked(
+    args: argparse.Namespace, product: Path, harness: Path, task_id: str, path: Path,
+    selection: dict[str, object],
+) -> int:
     if path.exists():
         outcome = strengthen_resumed_task(load_result(path), args, task_id, harness, product,
                                           resolved_work_item=selection["work_item"])
+        if outcome.get("decision") == "block":
+            dump_json(outcome)
+            return 0
+        resumed_work_item = (outcome.get("result") or {}).get("work_item") or {}
+        if not bind_active_task(
+            product, task_id, str(resumed_work_item.get("id") or ""),
+        ):
+            dump_json({"decision": "block", "reason": "ACTIVE_TASK_BINDING_CONFLICT"})
+            return 0
         outcome = preflight_resumed(outcome, product, selection["work_item"])
         if outcome.pop("changed", False):
             atomic_write_result(path, outcome["result"])
         dump_json(outcome)
         return 0
+    work_item = selection["work_item"]
+    work_item_id = str((work_item or {}).get("id") or "")
     change_reason = str(getattr(args, "reason", "") or "").strip()
     if args.kind in {"scope-change", "hotfix"} and not change_reason:
         dump_json({"decision": "block", "reason": "TASK_KIND_REASON_REQUIRED", "kind": args.kind})
         return 0
-    work_item = selection["work_item"]
     initial = task_kind_tier(args.kind, args.tier or "standard")
     lifecycle = discover_lifecycle(
         product, str((work_item or {}).get("provider") or ""),
     )
     if initial == "strict" and lifecycle["decision"] == "block":
         dump_json({"decision": "block", "reason": lifecycle["reason"], "lifecycle": lifecycle})
+        return 0
+    if not bind_active_task(product, task_id, work_item_id):
+        dump_json({"decision": "block", "reason": "ACTIVE_TASK_BINDING_CONFLICT"})
         return 0
     result = default_result(task_id, initial_tier=initial, work_item=work_item)
     result["lifecycle"] = lifecycle
@@ -79,6 +105,7 @@ def cmd_start(args: argparse.Namespace) -> int:
         "task_id": task_id, "scope": args.scope, "tier_floor": initial,
         "work_item": (work_item or {}).get("id"), "kind": args.kind, "change_reason": change_reason or None,
         "primary_role": "gc-sweeper" if args.kind == "debt-maintenance" else "lead-agent",
+        "confirmation": "implicit-direct-start",
     }
     result["binding_digest"] = canonical_digest(binding)
     result["invariants"]["task_identity"] = "pass"
@@ -91,9 +118,6 @@ def cmd_start(args: argparse.Namespace) -> int:
         binding_path.write_text(json.dumps(binding, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     start_story_cycle(result, path, task_id, work_item)
     atomic_write_result(path, result)
-    active = active_task_path(product)
-    active.parent.mkdir(parents=True, exist_ok=True)
-    active.write_text(json.dumps({"task_id": task_id, "activated_at": now()}, indent=2) + "\n")
     dump_json({"decision": "pass", "reason": "TASK_STARTED", "result": result})
     return 0
 def cmd_amend(args: argparse.Namespace) -> int:
@@ -102,9 +126,6 @@ def cmd_amend(args: argparse.Namespace) -> int:
         dump_json({"decision": "block", "reason": "TASK_ID_INVALID"})
         return 0
     path = result_path(product, args.task_id)
-    if not path.is_file():
-        dump_json({"decision": "block", "reason": "TASK_NOT_FOUND"})
-        return 0
     reason = str(args.reason or "").strip()
     scope = sorted({str(item).strip().rstrip("/") for item in args.scope if str(item).strip()})
     if not reason:
@@ -114,40 +135,44 @@ def cmd_amend(args: argparse.Namespace) -> int:
         dump_json({"decision": "block", "reason": "TASK_AMEND_SCOPE_INVALID"})
         return 0
 
-    result = load_result(path)
-    previous = dict(result.get("task") or {})
-    binding = {
-        **previous,
-        "task_id": args.task_id,
-        "scope": scope,
-        "tier_floor": result["tier"]["initial"],
-        "work_item": (result.get("work_item") or {}).get("id"),
-        "source": previous.get("source") or result.get("baseline", {}).get("source") or "amendment",
-    }
-    if getattr(args, "kind", ""):
-        binding["kind"] = args.kind
-    revisions = list(result.get("binding_revisions") or [])
-    revisions.append({
-        "amended_at": now(), "reason": reason,
-        "previous_binding_digest": result.get("binding_digest") or "",
-        "previous_scope": list(previous.get("scope") or []), "scope": scope,
-        "previous_kind": previous.get("kind") or "", "kind": binding.get("kind") or "",
-    })
-    result["task"] = binding
-    result["binding_revisions"] = revisions
-    result["binding_digest"] = canonical_digest(binding)
-    result["policy_digest"] = policy_for(harness, product)
-    result.get("cost", {}).pop("receipt", None)
-    result["tier"]["effective"] = result["tier"]["initial"]
-    result["state"] = "active"
-    result["decision"] = "block"
-    result["blockers"] = sorted(set(result.get("blockers") or []) | {"TASK_BINDING_CHANGED"})
-    result["invariants"]["scope"] = "pending"
-    result["invariants"]["risk_validation"] = "pending"
-    result["invariants"]["final_result"] = "pending"
-    for check in result.get("checks", {}).values():
-        check["stale"] = True
-    atomic_write_result(path, result)
+    with task_operation_lock(path):
+        if not path.is_file():
+            dump_json({"decision": "block", "reason": "TASK_NOT_FOUND"})
+            return 0
+        result = load_result(path)
+        previous = dict(result.get("task") or {})
+        binding = {
+            **previous,
+            "task_id": args.task_id,
+            "scope": scope,
+            "tier_floor": result["tier"]["initial"],
+            "work_item": (result.get("work_item") or {}).get("id"),
+            "source": previous.get("source") or result.get("baseline", {}).get("source") or "amendment",
+        }
+        if getattr(args, "kind", ""):
+            binding["kind"] = args.kind
+        revisions = list(result.get("binding_revisions") or [])
+        revisions.append({
+            "amended_at": now(), "reason": reason,
+            "previous_binding_digest": result.get("binding_digest") or "",
+            "previous_scope": list(previous.get("scope") or []), "scope": scope,
+            "previous_kind": previous.get("kind") or "", "kind": binding.get("kind") or "",
+        })
+        result["task"] = binding
+        result["binding_revisions"] = revisions
+        result["binding_digest"] = canonical_digest(binding)
+        result["policy_digest"] = policy_for(harness, product)
+        result.get("cost", {}).pop("receipt", None)
+        result["tier"]["effective"] = result["tier"]["initial"]
+        result["state"] = "active"
+        result["decision"] = "block"
+        result["blockers"] = sorted(set(result.get("blockers") or []) | {"TASK_BINDING_CHANGED"})
+        result["invariants"]["scope"] = "pending"
+        result["invariants"]["risk_validation"] = "pending"
+        result["invariants"]["final_result"] = "pending"
+        for check in result.get("checks", {}).values():
+            check["stale"] = True
+        atomic_write_result(path, result)
     dump_json({"decision": "pass", "reason": "TASK_BINDING_AMENDED", "result": result})
     return 0
 
@@ -184,217 +209,4 @@ def cmd_status(args: argparse.Namespace) -> int:
     return 0
 
 def cmd_finish(args: argparse.Namespace) -> int:
-    started = time.monotonic()
-    product, harness = Path(args.product_root).resolve(), Path(args.harness_root).resolve()
-    task_id, candidates = resolve_task_id(product, args.task_id)
-    if not task_id:
-        reason = "TASK_ID_INVALID" if candidates == ["TASK_ID_INVALID"] else "TASK_INFERENCE_AMBIGUOUS"
-        dump_json({"decision": "block", "reason": reason, "candidates": candidates})
-        return 0
-    path = result_path(product, task_id)
-    if not path.is_file():
-        dump_json({"decision": "block", "reason": "TASK_NOT_FOUND"})
-        return 0
-    result = load_result(path)
-    work_item = result.get("work_item") or {}
-    work_item_id = str(work_item.get("id") or "") if isinstance(work_item, dict) else ""
-    if not bind_active_task(product, task_id, work_item_id):
-        dump_json({"decision": "block", "reason": "ACTIVE_TASK_BINDING_CONFLICT"})
-        return 0
-    previous_checks = deepcopy(result.get("checks", {}))
-    had_checks = bool(result.get("checks"))
-    result["blockers"] = []
-    if had_checks and result.get("state") != "active":
-        result["cost"]["harness"]["reruns"] = int(
-            result["cost"]["harness"].get("reruns") or 0
-        ) + 1
-    task_root, baseline = path.parent, path.parent / "worktree_baseline.json"
-    changed = changed_since_baseline(product, baseline) if baseline.is_file() else git_changed(product)
-    effective_changed = execution_paths(product, task_id, changed)
-    tier_floor = result["tier"]["effective"]
-    subject = subject_for(product, changed)
-    current_policy = policy_for(harness, product)
-    attempt = allow_finish_attempt(
-        result, subject=subject, policy=current_policy, tier_floor=tier_floor,
-    )
-    if attempt["decision"] == "block":
-        atomic_write_result(path, result)
-        dump_json({"decision": "block", "reason": attempt["reason"], "result": result})
-        return 0
-    finish_span, finish_started_ms = begin_finish_span(
-        result, path, task_id, work_item_id, attempt,
-    )
-    atomic_write_result(path, result)
-    invalidate_if_stale(result, subject, current_policy)
-    result["subject"] = {"kind": "worktree", "digest": subject, "paths": changed}
-    result["policy_digest"] = current_policy
-    result["blockers"] = [
-        blocker for blocker in result.get("blockers", []) if blocker != "INPUT_CHANGED"
-    ]
-    tools = tool_digest([
-        harness / ".harness/scripts/harness_runtime.py",
-        harness / ".harness/scripts/harness_scope.py",
-        harness / ".harness/scripts/harness_cache.py",
-    ])
-    tier_fingerprint = fingerprint(
-        "tier", subject, current_policy, effective_changed, tier_floor, tools,
-    )
-    tier_check = reuse_check(
-        previous_checks.get("tier"), gate="tier", fingerprint=tier_fingerprint,
-        subject_digest=subject, policy_digest=current_policy,
-    )
-    if tier_check:
-        effective = tier_check["effective_tier"]
-        result["cost"]["harness"]["cache_hits"] = int(
-            result["cost"]["harness"].get("cache_hits") or 0
-        ) + 1
-    else:
-        effective = classify_tier(effective_changed, floor=tier_floor,
-                                  kind=str(result.get("task", {}).get("kind") or "implementation"))
-        tier_check = executed_check(
-            decision="pass", fingerprint=tier_fingerprint,
-            subject_digest=subject, policy_digest=current_policy,
-            completed_at=now(), effective_tier=effective,
-        )
-    result["tier"]["effective"] = effective
-    result["checks"]["tier"] = tier_check
-    declared = set(result.get("task", {}).get("scope") or [])
-    result["invariants"]["task_identity"] = "pass" if result.get("task_id") else "block"
-    scope_fingerprint = fingerprint(
-        "scope", subject, current_policy, effective_changed, sorted(declared), tools,
-    )
-    scope_check = reuse_check(
-        previous_checks.get("scope"), gate="scope", fingerprint=scope_fingerprint,
-        subject_digest=subject, policy_digest=current_policy,
-    )
-    if scope_check:
-        result["cost"]["harness"]["cache_hits"] = int(
-            result["cost"]["harness"].get("cache_hits") or 0
-        ) + 1
-    else:
-        scope_pass = bool(declared) and paths_within_scope(effective_changed, declared)
-        scope_check = executed_check(
-            decision="pass" if scope_pass else "block",
-            fingerprint=scope_fingerprint, subject_digest=subject,
-            policy_digest=current_policy, completed_at=now(),
-        )
-    result["checks"]["scope"] = scope_check
-    result["invariants"]["scope"] = scope_check["decision"]
-    mechanical = mechanical_code_health(product, effective_changed, tier=effective)
-    mechanical["fingerprint"] = fingerprint(
-        "code_health", subject, result["policy_digest"], effective_changed, effective)
-    gc_result = invoke_gc_once(result, task_root, mechanical, changed, product) if mechanical["agent_required"] else None
-    if gc_result:
-        changed_after = changed_since_baseline(product, baseline) if baseline.is_file() else git_changed(product)
-        effective_after = execution_paths(product, task_id, changed_after)
-        subject_after = subject_for(product, changed_after)
-        if subject_after != subject:
-            changed, subject = changed_after, subject_after
-            effective_changed = effective_after
-            effective = classify_tier(effective_changed, floor=effective,
-                                      kind=str(result.get("task", {}).get("kind") or "implementation"))
-            result["tier"]["effective"] = effective
-            result["subject"] = {"kind": "worktree", "digest": subject, "paths": changed}
-            tier_fingerprint = fingerprint(
-                "tier", subject, current_policy, effective_changed, tier_floor, tools,
-            )
-            result["checks"]["tier"] = executed_check(
-                decision="pass", fingerprint=tier_fingerprint,
-                subject_digest=subject, policy_digest=current_policy,
-                completed_at=now(), effective_tier=effective,
-            )
-            scope_pass = bool(declared) and paths_within_scope(effective_changed, declared)
-            scope_fingerprint = fingerprint(
-                "scope", subject, current_policy, effective_changed, sorted(declared), tools,
-            )
-            result["checks"]["scope"] = executed_check(
-                decision="pass" if scope_pass else "block",
-                fingerprint=scope_fingerprint, subject_digest=subject,
-                policy_digest=current_policy, completed_at=now(),
-            )
-            result["invariants"]["scope"] = result["checks"]["scope"]["decision"]
-            mechanical = mechanical_code_health(product, effective_changed, tier=effective)
-            mechanical["fingerprint"] = fingerprint(
-                "code_health", subject, result["policy_digest"], effective_changed, effective
-            )
-            result["checks"].pop("tests", None)
-            result["checks"].pop("structure", None)
-    apply_code_health(result, mechanical, gc_result=gc_result, subject_digest=subject,
-                      policy_digest=result["policy_digest"])
-    post_gate_inputs_changed = False
-    if not args.skip_legacy_gates:
-        gates = run_gate_plan(
-            harness, product, tier=effective, subject_digest=subject,
-            policy_digest=result["policy_digest"], changed_files=changed,
-            previous_checks=previous_checks,
-            remaining_budget_ms=max(0, min(
-                int(attempt["remaining_ms"]),
-                int(result["cycle"]["stage_budgets_ms"]["finalize"]),
-            ) - int((time.monotonic() - started) * 1000)),
-            ledger=ledger_path(path), task_id=task_id, work_item_id=work_item_id,
-        )
-        result["cost"]["harness"]["cache_hits"] = int(
-            result["cost"]["harness"].get("cache_hits") or 0
-        ) + int(gates.get("cache_hits") or 0)
-        result["checks"].update(gates["checks"])
-        if gates["missing"]:
-            result["blockers"].append("REQUIRED_GATE_MISSING")
-        result["checks"] = checks_for_tier(result["checks"], effective)
-        changed_after_gates = (
-            changed_since_baseline(product, baseline) if baseline.is_file()
-            else git_changed(product)
-        )
-        subject_after_gates = subject_for(product, changed_after_gates)
-        policy_after_gates = policy_for(harness, product)
-        post_gate_inputs_changed = (
-            subject_after_gates != subject or policy_after_gates != result["policy_digest"]
-        )
-        if post_gate_inputs_changed:
-            invalidate_if_stale(result, subject_after_gates, policy_after_gates)
-            changed, subject = changed_after_gates, subject_after_gates
-            result["subject"] = {"kind": "worktree", "digest": subject, "paths": changed}
-            result["policy_digest"] = policy_after_gates
-            result["invariants"]["scope"] = "pending"
-    result["invariants"]["risk_validation"] = (
-        "pending" if post_gate_inputs_changed else
-        "pass" if all(
-            check.get("decision") == "pass" and not check.get("stale")
-            for check in result["checks"].values()
-        ) else "block"
-    )
-    result["invariants"]["final_result"] = "pending" if post_gate_inputs_changed else "pass"
-    result["cost"]["harness"]["gate_duration_ms"] += int((time.monotonic() - started) * 1000)
-    apply_automatic_usage(result, task_id=task_id, subject_digest=subject,
-                          policy_digest=result["policy_digest"])
-    receipt = automatic_receipt(task_id, subject, result["policy_digest"])
-    apply_story_usage(result, receipt)
-    epic_id = str((result.get("task") or {}).get("epic_id") or "")
-    if epic_id:
-        results = []
-        for candidate in (workspace_root(product) / "runs" / "tasks").glob("*/result.json"):
-            try:
-                results.append(load_result(candidate))
-            except (OSError, ValueError):
-                continue
-        results = [item for item in results if item.get("task_id") != task_id] + [result]
-        result["cost"]["epic"] = aggregate_epic_usage(epic_id, results)
-    enforce_budget(result)
-    finalize(result, finish_decision)
-    refresh_assurance(result, product, result["policy_digest"], phase="pre-commit-head")
-    reason = (
-        "INPUT_CHANGED" if post_gate_inputs_changed
-        else result["blockers"][0] if result["blockers"] else "FINISH_OK"
-    )
-    try:
-        complete_finish_span(
-            result, path, task_id=task_id, work_item_id=work_item_id, span_id=finish_span,
-            started_epoch_ms=finish_started_ms, decision=result["decision"], reason=reason,
-            attempt=attempt, tool_wait_ms="unknown",
-        )
-    except OSError:
-        result["decision"], result["state"] = "block", "blocked"
-        result["blockers"] = sorted(set(result["blockers"]) | {"STORY_LEDGER_WRITE_FAILED"})
-        reason = "STORY_LEDGER_WRITE_FAILED"
-    atomic_write_result(path, result)
-    dump_json({"decision": result["decision"], "reason": reason, "result": result})
-    return 0
+    return harness_finish.execute_finish(args, commands=sys.modules[__name__])

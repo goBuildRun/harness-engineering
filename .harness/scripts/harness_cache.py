@@ -15,8 +15,12 @@ CACHEABLE_GATES = {
 
 
 def tool_digest(paths: list[Path]) -> str:
+    expanded = set(paths)
+    for path in paths:
+        if path.name in {"harness_runtime.py", "harness_scope.py", "harness_cache.py"}:
+            expanded.add(path.parent / "harness_tier.py")
     digest = hashlib.sha256()
-    for path in sorted(paths, key=str):
+    for path in sorted(expanded, key=str):
         digest.update(str(path).encode("utf-8"))
         digest.update(path.read_bytes() if path.is_file() else b"absent")
     return digest.hexdigest()

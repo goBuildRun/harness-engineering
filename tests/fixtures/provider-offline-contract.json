@@ -1,0 +1,11 @@
+{
+  "schema": "harness-provider-call-contract-v2",
+  "subject_digest": "subject",
+  "provider": "mock",
+  "required_calls": [
+    "provider.accept"
+  ],
+  "allowed_calls": [
+    "provider.accept"
+  ]
+}

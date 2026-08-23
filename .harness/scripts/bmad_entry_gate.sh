@@ -102,6 +102,8 @@ fi
 
 # Work Item 门禁（L2/L3 强制；L1 豁免）
 WORK_ITEM_JSON="null"
+PLANNING_ALREADY_PASSED="false"
+CONFIRMED_WI_ID=""
 if [[ "$LEVEL" == "L2" || "$LEVEL" == "L3" ]] && [[ -n "$TASK_DIR_ABS" ]]; then
   WI_GATE=$(python3 "$SCRIPT_DIR/work_item.py" --harness-root "$HARNESS_ROOT" gate --level "$LEVEL" --task-dir "$TASK_DIR_ABS")
   if echo "$WI_GATE" | python3 -c "import sys,json; d=json.load(sys.stdin); sys.exit(0 if d.get('decision')=='pass' else 1)" 2>/dev/null; then
@@ -109,6 +111,50 @@ if [[ "$LEVEL" == "L2" || "$LEVEL" == "L3" ]] && [[ -n "$TASK_DIR_ABS" ]]; then
   else
     WI_REASON=$(echo "$WI_GATE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('reason','WORK_ITEM_GATE_FAIL'))" 2>/dev/null || echo "WORK_ITEM_GATE_FAIL")
     FAILURES+=("$WI_REASON")
+  fi
+fi
+
+if [[ "$LEVEL" == "L3" && "$WORK_ITEM_JSON" != "null" ]]; then
+  CONFIRMED_WI_ID=$(echo "$WORK_ITEM_JSON" | python3 -c "import sys,json; print((json.load(sys.stdin) or {}).get('id') or '')" 2>/dev/null || echo "")
+  CONFIRM_RESULT="$AGENT_WS/tasks/$CONFIRMED_WI_ID/result.json"
+  if PLANNING_STATE=$(python3 - "$CONFIRM_RESULT" "$CONFIRMED_WI_ID" <<'PY'
+import json, sys
+from pathlib import Path
+
+try:
+    result = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+except (OSError, json.JSONDecodeError):
+    raise SystemExit(1)
+cycle = result.get("cycle") or {}
+task = result.get("task") or {}
+identity_valid = (
+    result.get("task_id") == sys.argv[2]
+    and task.get("confirmation") == "explicit"
+    and cycle.get("confirmed_at")
+    and cycle.get("deadline_at")
+    and not cycle.get("ended_at")
+)
+planning = (cycle.get("stages") or {}).get("planning") or {}
+later_started = any(
+    ((cycle.get("stages") or {}).get(stage) or {}).get("status")
+    not in {None, "pending"}
+    for stage in (
+        "implementation_test", "independent_qa", "deploy_provider", "finalize"
+    )
+)
+if identity_valid and cycle.get("current_stage") == "planning" and planning.get("status") == "active":
+    print("active")
+elif identity_valid and planning.get("status") == "pass" and not later_started:
+    print("passed")
+else:
+    raise SystemExit(1)
+PY
+  ); then
+    if [[ "$PLANNING_STATE" == "passed" ]]; then
+      PLANNING_ALREADY_PASSED="true"
+    fi
+  else
+    FAILURES+=("STORY_CONFIRMATION_REQUIRED: L3 须在 Planning 前运行 harness confirm $CONFIRMED_WI_ID --work-item $CONFIRMED_WI_ID --tier strict")
   fi
 fi
 
@@ -142,6 +188,15 @@ if [[ "$WORK_ITEM_JSON" != "null" ]]; then
   WI_ID=$(echo "$WORK_ITEM_JSON" | python3 -c "import sys,json; print((json.load(sys.stdin) or {}).get('id') or '')" 2>/dev/null || echo "")
   if [[ -n "$WI_ID" ]]; then
     bash "$SCRIPT_DIR/task_workspace.sh" activate "$WI_ID" >/dev/null 2>&1 || true
+  fi
+fi
+
+if [[ "$LEVEL" == "L3" && "$WORK_ITEM_JSON" != "null" && -n "$CONFIRMED_WI_ID" && "$PLANNING_ALREADY_PASSED" != "true" ]]; then
+  PLANNING_STAGE=$("$SCRIPT_DIR/harness" stage "$CONFIRMED_WI_ID" end planning \
+    --decision pass --reason PLANNING_GATE_PASSED --tool-wait-ms unknown || true)
+  if ! echo "$PLANNING_STAGE" | python3 -c "import sys,json; sys.exit(0 if json.load(sys.stdin).get('decision')=='pass' else 1)" 2>/dev/null; then
+    echo "$PLANNING_STAGE"
+    exit 0
   fi
 fi
 

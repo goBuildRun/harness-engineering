@@ -122,6 +122,20 @@ if ! echo "$RUNTIME_START" | python3 -c "import sys,json; d=json.load(sys.stdin)
   exit 0
 fi
 
+if [[ "$LEVEL" == "L3" ]]; then
+  CURRENT_STAGE=$(echo "$RUNTIME_START" | python3 -c "import sys,json; d=json.load(sys.stdin); print(((d.get('result') or {}).get('cycle') or {}).get('current_stage') or '')" 2>/dev/null || echo "")
+  if [[ -z "$CURRENT_STAGE" ]]; then
+    IMPLEMENTATION_STAGE=$("$SCRIPT_DIR/harness" stage "$WORK_ITEM_ID" start implementation_test || true)
+    if ! echo "$IMPLEMENTATION_STAGE" | python3 -c "import sys,json; sys.exit(0 if json.load(sys.stdin).get('decision')=='pass' else 1)" 2>/dev/null; then
+      harness_print_json "$IMPLEMENTATION_STAGE"
+      exit 0
+    fi
+  elif [[ "$CURRENT_STAGE" != "implementation_test" ]]; then
+    python3 "$EMIT" block "STAGE_RESUME_CONFLICT: expected implementation_test, found $CURRENT_STAGE"
+    exit 0
+  fi
+fi
+
 if [[ ! -f "$BASELINE_FILE" ]]; then
   python3 "$SCRIPT_DIR/worktree_baseline.py" capture \
     --repo "$PRODUCT_ROOT" \

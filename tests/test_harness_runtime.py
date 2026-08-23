@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -40,6 +41,8 @@ from harness_task_resolution import bind_active_task  # noqa: E402
 import harness_commands  # noqa: E402
 import harness_ci  # noqa: E402
 import harness_cli  # noqa: E402
+import harness_cycle_release  # noqa: E402
+import harness_cycle_usage  # noqa: E402
 import harness_migration_commands  # noqa: E402
 
 
@@ -59,6 +62,44 @@ def complete_story_stages(product: Path, task_id: str) -> None:
 
 
 class HarnessRuntimeTest(unittest.TestCase):
+    def test_finish_facade_injects_live_commands_namespace(self) -> None:
+        args = SimpleNamespace(task_id="facade-contract")
+        with mock.patch.object(
+            harness_commands.harness_finish, "execute_finish", return_value=7,
+        ) as execute_finish:
+            self.assertEqual(harness_commands.cmd_finish(args), 7)
+        execute_finish.assert_called_once_with(args, commands=harness_commands)
+
+    def test_finish_locks_shared_active_task_before_task_result(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            result = product / "result.json"
+            active = product / "active_task.json"
+            result.write_text("{}\n", encoding="utf-8")
+            locked = []
+
+            @contextmanager
+            def operation_lock(path):
+                locked.append(path)
+                yield
+
+            commands = SimpleNamespace(
+                time=SimpleNamespace(monotonic=lambda: 0), Path=Path,
+                resolve_task_id=lambda _product, _task: ("task-1", []),
+                result_path=lambda _product, _task: result,
+                active_task_path=lambda _product: active,
+                task_operation_lock=operation_lock,
+            )
+            args = SimpleNamespace(
+                product_root=str(product), harness_root=str(ROOT), task_id="task-1",
+            )
+            with mock.patch.object(
+                harness_commands.harness_finish, "_execute_finish_locked", return_value=0,
+            ):
+                harness_commands.harness_finish.execute_finish(args, commands=commands)
+
+        self.assertEqual(locked, [active, result])
+
     def test_start_resume_monotonically_strengthens_tier_and_scope(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product = Path(tmp)
@@ -529,6 +570,74 @@ class HarnessRuntimeTest(unittest.TestCase):
             self.assertNotIn("receipt", amended["cost"])
             self.assertEqual(amended["policy_digest"], "new-policy")
 
+    def test_concurrent_amendments_preserve_both_binding_revisions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            task_id = "concurrent-amend"
+            path = result_path(product, task_id)
+            atomic_write_result(path, default_result(task_id))
+            command = [
+                sys.executable, str(SCRIPTS / "harness_runtime.py"),
+                "--harness-root", str(ROOT), "--product-root", str(product),
+                "amend-task", task_id,
+            ]
+            processes = [
+                subprocess.Popen(
+                    [*command, "--scope", scope, "--reason", reason],
+                    text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                )
+                for scope, reason in (("src/one", "first amendment"), ("src/two", "second amendment"))
+            ]
+            for process in processes:
+                stdout, stderr = process.communicate(timeout=20)
+                self.assertEqual(process.returncode, 0, stdout + stderr)
+                self.assertEqual(json.loads(stdout)["decision"], "pass")
+            amended = load_result(path)
+
+        self.assertEqual(len(amended["binding_revisions"]), 2)
+        self.assertEqual(
+            {revision["reason"] for revision in amended["binding_revisions"]},
+            {"first amendment", "second amendment"},
+        )
+        self.assertTrue(amended["binding_revisions"][1]["previous_binding_digest"])
+        self.assertEqual(
+            amended["binding_revisions"][1]["previous_scope"],
+            amended["binding_revisions"][0]["scope"],
+        )
+
+    def test_usage_baseline_holds_task_operation_lock_for_update(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            task_id = "usage-lock"
+            path = result_path(product, task_id)
+            atomic_write_result(path, default_result(task_id))
+            receipt = {
+                "implementation": {"input_tokens": 10, "output_tokens": 4},
+                "source": {
+                    "session_id": "session-1", "usage_event_at": "now",
+                    "rollout_sha256": "a" * 64,
+                },
+            }
+            operation_lock = mock.MagicMock()
+            with mock.patch.object(
+                harness_cycle_usage, "task_operation_lock", return_value=operation_lock,
+            ) as lock_factory, mock.patch.object(
+                harness_cycle_usage, "automatic_receipt", return_value=receipt,
+            ), mock.patch.object(
+                harness_cycle_usage, "changed_since_baseline", return_value=[],
+            ), mock.patch.object(harness_cycle_usage, "dump_json"):
+                harness_cycle_usage.cmd_usage_baseline(SimpleNamespace(
+                    product_root=str(product), harness_root=str(ROOT), task_id=task_id,
+                    reason="capture exact endpoint", epic_id="EPIC-4",
+                ))
+
+            lock_factory.assert_called_once_with(path.resolve())
+            operation_lock.__enter__.assert_called_once_with()
+            operation_lock.__exit__.assert_called_once()
+            stored = load_result(path)
+        self.assertEqual(stored["cost"]["story_usage_baseline"]["input_tokens"], 10)
+        self.assertEqual(stored["task"]["epic_id"], "EPIC-4")
+
     def test_amend_task_rejects_unsafe_scope_without_writing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product = Path(tmp)
@@ -608,6 +717,134 @@ class HarnessRuntimeTest(unittest.TestCase):
             ))
             self.assertEqual(rerun["decision"], "pass")
             self.assertGreaterEqual(rerun["result"]["cost"]["harness"]["reruns"], 1)
+
+    def test_explicit_story_closes_only_after_candidate_commit_and_lifecycle_readback(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            (product / "src").mkdir()
+            (product / ".gitignore").write_text("harness-workspace/runs/\n", encoding="utf-8")
+            subprocess.run(["git", "init", "-q"], cwd=product, check=True)
+            subprocess.run(["git", "config", "user.email", "harness@example.invalid"], cwd=product, check=True)
+            subprocess.run(["git", "config", "user.name", "Harness Test"], cwd=product, check=True)
+            subprocess.run(["git", "add", "."], cwd=product, check=True)
+            subprocess.run(["git", "commit", "-qm", "base"], cwd=product, check=True)
+            command = [
+                "python3", str(SCRIPTS / "harness_runtime.py"),
+                "--harness-root", str(ROOT), "--product-root", str(product),
+            ]
+            confirmed = json.loads(subprocess.check_output([
+                *command, "confirm", "explicit-cycle", "--work-item", "explicit-cycle",
+                "--provider", "noop", "--tier", "lite", "--scope", "src",
+            ], text=True))
+            self.assertEqual(confirmed["reason"], "STORY_CONFIRMED")
+            for action, stage in (
+                ("end", "planning"), ("start", "implementation_test"),
+            ):
+                subprocess.check_output([*command, "stage", "explicit-cycle", action, stage], text=True)
+            (product / "src/feature.py").write_text("VALUE = 1\n", encoding="utf-8")
+            subprocess.check_output([
+                *command, "stage", "explicit-cycle", "end", "implementation_test",
+            ], text=True)
+            subprocess.check_output([
+                *command, "stage", "explicit-cycle", "start", "independent_qa",
+            ], text=True)
+            task_result_path = result_path(product, "explicit-cycle")
+            stage_result = load_result(task_result_path)
+            self.assertEqual(
+                finish_stage(
+                    stage_result, task_result_path, "explicit-cycle", "independent_qa",
+                    decision="pass", reason="STAGE_COMPLETED",
+                )["decision"],
+                "pass",
+            )
+            self.assertEqual(
+                begin_stage(stage_result, task_result_path, "explicit-cycle", "deploy_provider")[
+                    "decision"
+                ],
+                "pass",
+            )
+            self.assertEqual(
+                finish_stage(
+                    stage_result, task_result_path, "explicit-cycle", "deploy_provider",
+                    decision="pass", reason="STAGE_COMPLETED",
+                )["decision"],
+                "pass",
+            )
+            self.assertEqual(
+                begin_stage(stage_result, task_result_path, "explicit-cycle", "finalize")["decision"],
+                "pass",
+            )
+            atomic_write_result(task_result_path, stage_result)
+            finish_argv = [*command, "finish", "explicit-cycle", "--skip-legacy-gates"]
+            processes = [
+                subprocess.Popen(finish_argv, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                for _ in range(2)
+            ]
+            outcomes = []
+            for process in processes:
+                stdout, stderr = process.communicate(timeout=20)
+                self.assertEqual(process.returncode, 0, stdout + stderr)
+                outcomes.append(json.loads(stdout))
+            self.assertTrue(all(item["decision"] == "pass" for item in outcomes), outcomes)
+            finished_result = load_result(result_path(product, "explicit-cycle"))
+            self.assertNotIn("ended_at", finished_result["cycle"])
+            self.assertEqual(
+                sorted(item["attempt"] for item in finished_result["cycle"]["finish_attempts"]),
+                [1, 2],
+            )
+            self.assertEqual(
+                finished_result["cycle"]["stages"]["finalize"]["status"], "active",
+            )
+            failed_process = subprocess.run(
+                [*command, "release-ready", "explicit-cycle", "--commit", "HEAD"],
+                text=True, capture_output=True, check=False,
+            )
+            self.assertEqual(failed_process.returncode, 1, failed_process.stderr)
+            failed_release = json.loads(failed_process.stdout)
+            self.assertEqual(failed_release["decision"], "block")
+            self.assertEqual(failed_release["reason"], "CANDIDATE_COMMIT_PATHS_MISMATCH")
+            self.assertEqual(
+                failed_release["result"]["cycle"]["canonical_finish"]["decision"], "pass",
+            )
+            self.assertIn("CANDIDATE_COMMIT_PATHS_MISMATCH", failed_release["result"]["blockers"])
+            last_stop = failed_release["result"]["cycle"]["last_stop"]
+            self.assertEqual(last_stop["phase"], "release_ready")
+            self.assertTrue(last_stop["retryable"])
+            self.assertEqual(
+                last_stop["canonical_finish_input_digest"],
+                failed_release["result"]["cycle"]["canonical_finish"]["input_digest"],
+            )
+            subprocess.run(["git", "add", "src/feature.py"], cwd=product, check=True)
+            subprocess.run(["git", "commit", "-qm", "candidate"], cwd=product, check=True)
+            attested_result = {
+                **failed_release["result"],
+                "decision": "pass", "state": "validated", "blockers": [],
+            }
+            release_output = []
+            with mock.patch.object(
+                harness_cycle_release, "verify_attestation",
+                return_value={
+                    "decision": "pass", "reason": "ATTESTATION_VALID",
+                    "result": attested_result,
+                },
+            ), mock.patch.object(
+                harness_cycle_release, "validate_current_release_evidence",
+                return_value={"decision": "pass", "reason": "RELEASE_EVIDENCE_CURRENT"},
+            ), mock.patch.object(
+                harness_cycle_release, "dump_json", side_effect=release_output.append,
+            ):
+                harness_cycle_release.cmd_release_ready(
+                    SimpleNamespace(
+                        product_root=str(product), task_id="explicit-cycle",
+                        commit="HEAD", receipt="",
+                    ),
+                    refresh_assurance=mock.Mock(),
+                )
+            released = release_output[-1]
+        self.assertEqual(released["reason"], "STORY_READY_TO_RELEASE")
+        self.assertEqual(released["result"]["state"], "ready_to_release")
+        self.assertIn("ended_at", released["result"]["cycle"])
+        self.assertEqual(len(released["result"]["cycle"]["finish_attempts"]), 2)
 
     def test_status_projects_input_change_without_mutating_result(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -701,6 +938,43 @@ class HarnessRuntimeTest(unittest.TestCase):
             self.assertEqual(result["invariants"]["risk_validation"], "pending")
             self.assertEqual(result["invariants"]["final_result"], "pending")
             self.assertTrue(all(check.get("stale") is True for check in result["checks"].values()))
+
+    def test_finish_crossing_total_deadline_persists_block_and_does_not_close_root(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            (product / "docs").mkdir()
+            (product / "docs/note.md").write_text("base\n")
+            subprocess.run(["git", "init", "-q"], cwd=product, check=True)
+            common = {"product_root": str(product), "harness_root": str(ROOT)}
+            with mock.patch.object(harness_commands, "dump_json"):
+                harness_commands.cmd_start(SimpleNamespace(
+                    **common, task_id="deadline-cross", tier="lite", scope=["docs"],
+                    work_item="", kind="implementation", reason="",
+                ))
+            (product / "docs/note.md").write_text("changed\n")
+            complete_story_stages(product, "deadline-cross")
+            ok = {
+                "decision": "pass", "reason": "STORY_BUDGET_OK",
+                "budget_ms": 1_800_000, "elapsed_ms": 1, "remaining_ms": 1_799_999,
+            }
+            expired = {
+                "decision": "block", "reason": "STORY_BUDGET_EXCEEDED",
+                "budget_ms": 1_800_000, "elapsed_ms": 1_800_000, "remaining_ms": 0,
+            }
+            captured = []
+            with mock.patch.object(
+                harness_commands, "budget_status", side_effect=[ok, ok, expired],
+            ), mock.patch.object(
+                harness_commands, "dump_json", side_effect=captured.append,
+            ):
+                harness_commands.cmd_finish(SimpleNamespace(
+                    **common, task_id="deadline-cross", skip_legacy_gates=True,
+                ))
+            result = captured[-1]["result"]
+        self.assertEqual(captured[-1]["decision"], "block")
+        self.assertIn("STORY_BUDGET_EXCEEDED", result["blockers"])
+        self.assertNotIn("ended_at", result["cycle"])
+        self.assertEqual(result["cycle"]["canonical_finish"]["decision"], "block")
 
     def test_ci_checks_are_always_executed(self) -> None:
         completed = subprocess.run([

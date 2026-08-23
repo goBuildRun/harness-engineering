@@ -8,15 +8,20 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from harness_runtime import canonical_digest, now
 from harness_output import dump_json
 from process_control import run_process_group
-from harness_task_resolution import valid_task_id
 from workspace_paths import active_planning_gate_path, load_layout
-from harness_gate_execution import build_spec, execute_specs, gate_input_digest
-from harness_strict_evidence import validate as _strict_evidence
+from harness_gate_execution import (
+    CandidateManifest, GateInputError, build_spec, execute_specs, gate_input_digest,
+)
+from harness_gate_work_items import (
+    committed_work_item, committed_work_item_resolution, prepare_ci_task,
+    validate_planning_credential,
+)
+from harness_strict_gate import validate as _strict_evidence
 
 
 TIER_GATES = {
@@ -96,6 +101,36 @@ def _gate_timeout_seconds() -> int:
         return DEFAULT_GATE_TIMEOUT_SECONDS
 
 
+def _not_executed_check(
+    name: str, subject_digest: str, policy_digest: str, reason: str, timeout_kind: str,
+) -> dict[str, Any]:
+    input_digest = canonical_digest({"gate": name, "not_executed": reason})
+    return {
+        "decision": "block", "source": "not_executed",
+        "subject_digest": subject_digest, "policy_digest": policy_digest,
+        "input_digest": input_digest,
+        "fingerprint": canonical_digest({"gate": name, "input": input_digest}),
+        "started_at": now(), "completed_at": now(),
+        "duration_ms": 0, "tool_wait_ms": 0, "attempt": 0,
+        "retry_limit": 1, "budget_ms": 0,
+        "timeout_kind": timeout_kind, "reason": reason,
+    }
+
+
+def _blocked_gate_plan(
+    required_gates: list[str], subject_digest: str, policy_digest: str,
+    reason: str, plan_started: float, clock: Callable[[], float],
+) -> dict[str, Any]:
+    checks = {
+        name: _not_executed_check(name, subject_digest, policy_digest, reason, "input")
+        for name in required_gates
+    }
+    return {
+        "decision": "block", "checks": checks, "missing": [], "cache_hits": 0,
+        "wall_duration_ms": int((clock() - plan_started) * 1000), "reason": reason,
+    }
+
+
 def _run_gate_command(command: list[str], *, gate: str, cwd: Path,
                       env: dict[str, str], timeout: float) -> tuple[dict[str, Any], int]:
     try:
@@ -112,96 +147,6 @@ def _run_gate_command(command: list[str], *, gate: str, cwd: Path,
     return _payload(completed.stdout, completed.returncode), completed.returncode
 
 
-def prepare_ci_task(harness: Path, product: Path, task_id: str) -> bool:
-    if not valid_task_id(task_id):
-        return False
-    layout = load_layout(harness, product)
-    task_dir = layout.tasks / task_id
-    if not task_dir.is_dir() and layout.tasks.is_dir():
-        matches = [
-            candidate for candidate in layout.tasks.iterdir()
-            if candidate.is_dir()
-            and (_task_work_item(candidate) or {}).get("id") == task_id
-        ]
-        if len(matches) == 1:
-            task_dir = matches[0]
-    source = next(
-        (path for path in (task_dir / "planning_gate_pass.json", task_dir / "phase0_pass.json")
-         if path.is_file()),
-        None,
-    )
-    if source is None:
-        return False
-    try:
-        credential = json.loads(source.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return False
-    if credential.get("decision") != "pass":
-        return False
-    credential["task_dir"] = str(task_dir.resolve())
-    target = layout.runs_root / "planning_gate_pass.json"
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(json.dumps(credential, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    work_item = str((credential.get("work_item") or {}).get("id") or task_id)
-    (layout.runs_root / "active_task.json").write_text(
-        json.dumps({"work_item_id": work_item, "task_id": task_id}, indent=2) + "\n",
-        encoding="utf-8",
-    )
-    return True
-
-
-def _task_work_item_resolution(task_dir: Path) -> dict[str, Any]:
-    candidates = []
-    for name in ("task.json", "planning_gate_pass.json", "phase0_pass.json"):
-        try:
-            data = json.loads((task_dir / name).read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        value = data.get("work_item")
-        if isinstance(value, dict) and value.get("id"):
-            candidates.append({"source": f"{task_dir.name}/{name}", "id": str(value["id"]),
-                               "provider": str(value.get("provider") or "")})
-        elif isinstance(value, str) and value:
-            candidates.append({"source": f"{task_dir.name}/{name}", "id": value, "provider": ""})
-    candidates.sort(key=lambda item: item["source"])
-    ids = {item["id"] for item in candidates}
-    providers = {item["provider"] for item in candidates if item["provider"]}
-    if len(ids) == 1 and len(providers) <= 1:
-        return {"status": "unique", "work_item": {"id": next(iter(ids)),
-                "provider": next(iter(providers), "")}, "candidates": candidates}
-    status = "ambiguous" if candidates else "missing"
-    return {"status": status, "work_item": None, "candidates": candidates}
-
-
-def _task_work_item(task_dir: Path) -> dict[str, str] | None:
-    return _task_work_item_resolution(task_dir)["work_item"]
-
-
-def committed_work_item_resolution(harness: Path, product: Path, task_id: str) -> dict[str, Any]:
-    if not valid_task_id(task_id):
-        return {"status": "missing", "work_item": None, "candidates": []}
-    tasks = load_layout(harness, product).tasks
-    if not tasks.is_dir():
-        return {"status": "missing", "work_item": None, "candidates": []}
-    records = [(task_dir, resolution) for task_dir in sorted(tasks.iterdir()) if task_dir.is_dir()
-               and (resolution := _task_work_item_resolution(task_dir))["candidates"]]
-    direct = next((value for task_dir, value in records if task_dir.name == task_id), None)
-    target_ids = {task_id, *(item["id"] for item in (direct or {}).get("candidates", []))}
-    matches = [(task_dir, value) for task_dir, value in records if task_dir.name == task_id
-               or any(item["id"] in target_ids for item in value["candidates"])]
-    candidates = sorted((item for _task_dir, value in matches for item in value["candidates"]),
-                        key=lambda item: item["source"])
-    if len(matches) == 1 and matches[0][1]["status"] == "unique":
-        return {"status": "unique", "work_item": matches[0][1]["work_item"],
-                "candidates": candidates}
-    status = "ambiguous" if matches else "missing"
-    return {"status": status, "work_item": None, "candidates": candidates}
-
-
-def committed_work_item(harness: Path, product: Path, task_id: str) -> dict[str, str] | None:
-    return committed_work_item_resolution(harness, product, task_id)["work_item"]
-
-
 def run_gate_plan(harness: Path, product: Path, *, tier: str,
                   subject_digest: str, policy_digest: str,
                   ci_task_id: str = "", changed_files: list[str] | None = None,
@@ -209,45 +154,61 @@ def run_gate_plan(harness: Path, product: Path, *, tier: str,
                   previous_checks: dict[str, dict[str, Any]] | None = None,
                   remaining_budget_ms: int | None = None,
                   ledger: Path | None = None,
-                  task_id: str = "", work_item_id: str = "") -> dict[str, Any]:
-    plan_started = time.monotonic()
+                  task_id: str = "", work_item_id: str = "",
+                  work_item_provider: str = "",
+                  clock: Callable[[], float] = time.monotonic) -> dict[str, Any]:
+    plan_started = clock()
+    deadline = (
+        plan_started + max(0, remaining_budget_ms) / 1000
+        if remaining_budget_ms is not None else None
+    )
+    required_gates = list(TIER_GATES[tier])
+    if tier == "standard" and browser_required(changed_files or []):
+        required_gates.append("browser_qa")
     if ci_task_id and tier != "lite":
-        prepare_ci_task(harness, product, ci_task_id)
+        if not prepare_ci_task(harness, product, ci_task_id):
+            return _blocked_gate_plan(
+                required_gates, subject_digest, policy_digest,
+                "CI_PLANNING_CREDENTIAL_INVALID", plan_started, clock,
+            )
     layout = load_layout(harness, product)
     planning_gate = active_planning_gate_path(layout)
     try:
         planning_credential = json.loads(planning_gate.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         planning_credential = {}
+    bound_task_id = ci_task_id or task_id
+    if bound_task_id and tier != "lite":
+        credential_binding = validate_planning_credential(
+            harness, product, bound_task_id, planning_credential,
+            work_item_id=work_item_id, provider=work_item_provider,
+            require_ci_task_id=bool(ci_task_id),
+        )
+        if credential_binding["decision"] == "block":
+            return _blocked_gate_plan(
+                required_gates, subject_digest, policy_digest,
+                credential_binding["reason"], plan_started, clock,
+            )
     commands = _commands(harness)
     if "growth_release" in commands:
         commands["growth_release"] = [
             str(product) if item == "__PRODUCT_ROOT__" else item
             for item in commands["growth_release"]
         ]
-    required_gates = list(TIER_GATES[tier])
-    if tier == "standard" and browser_required(changed_files or []):
-        required_gates.append("browser_qa")
     env = {**os.environ, "HARNESS_PRODUCT_ROOT": str(product)}
     if read_only:
         env.update({"CI": "true", "HARNESS_GATE_READ_ONLY": "1"})
     timeout = _gate_timeout_seconds()
-    if remaining_budget_ms is not None and remaining_budget_ms <= 0:
+    if deadline is not None and clock() >= deadline:
         checks = {
-            name: {
-                "decision": "block", "source": "not_executed",
-                "subject_digest": subject_digest, "policy_digest": policy_digest,
-                "input_digest": canonical_digest({"gate": name, "budget": "exhausted"}),
-                "fingerprint": canonical_digest({"gate": name, "budget": "exhausted"}),
-                "completed_at": now(), "duration_ms": 0, "tool_wait_ms": 0,
-                "attempt": 0, "retry_limit": 1, "budget_ms": 0,
-                "timeout_kind": "story", "reason": "STORY_BUDGET_EXCEEDED",
-            }
-            for name in required_gates
+            name: _not_executed_check(
+                name, subject_digest, policy_digest, "STORY_BUDGET_EXCEEDED", "story",
+            ) for name in required_gates
         }
         return {
             "decision": "block", "checks": checks, "missing": [], "cache_hits": 0,
-            "wall_duration_ms": 0, "reason": "STORY_BUDGET_EXCEEDED",
+            "wall_duration_ms": int((clock() - plan_started) * 1000),
+            "reason": "STORY_BUDGET_EXCEEDED",
         }
 
     planning_check = None
@@ -270,7 +231,7 @@ def run_gate_plan(harness: Path, product: Path, *, tier: str,
             return {
                 "decision": "block", "checks": {"planning": planning_check},
                 "missing": sorted(set(required_gates) - {"planning"}), "cache_hits": 0,
-                "wall_duration_ms": int((time.monotonic() - plan_started) * 1000),
+                "wall_duration_ms": int((clock() - plan_started) * 1000),
                 "reason": "NO_PLANNING_GATE",
             }
 
@@ -292,16 +253,40 @@ def run_gate_plan(harness: Path, product: Path, *, tier: str,
         commands_to_run[name] = command
 
     specs = []
-    for name, command in commands_to_run.items():
-        input_digest = gate_input_digest(
-            name, harness=harness, product=product, changed_files=changed_files or [],
-            planning_gate=planning_gate, planning_credential=planning_credential,
-            command=command,
-        )
-        specs.append(build_spec(
-            name, command, input_digest=input_digest, tier=tier,
-            configured_timeout=timeout, remaining_budget_ms=remaining_budget_ms,
-        ))
+    candidates_manifest = CandidateManifest(
+        harness, product, deadline=deadline, clock=clock,
+    )
+    try:
+        for name, command in commands_to_run.items():
+            input_digest = gate_input_digest(
+                name, harness=harness, product=product, changed_files=changed_files or [],
+                planning_gate=planning_gate, planning_credential=planning_credential,
+                command=command, task_id=task_id, work_item_id=work_item_id,
+                candidates_manifest=candidates_manifest, deadline=deadline,
+            )
+            current_remaining_ms = (
+                max(0, int((deadline - clock()) * 1000)) if deadline is not None else None
+            )
+            specs.append(build_spec(
+                name, command, input_digest=input_digest, tier=tier,
+                configured_timeout=timeout, remaining_budget_ms=current_remaining_ms,
+                cache_safe=candidates_manifest.gate_cache_safe(name),
+            ))
+    except GateInputError as exc:
+        timeout_kind = "stage" if exc.reason == "STAGE_BUDGET_EXCEEDED" else "input"
+        checks = {
+            name: (
+                planning_check if name == "planning" and planning_check is not None
+                else _not_executed_check(
+                    name, subject_digest, policy_digest, exc.reason, timeout_kind,
+                )
+            ) for name in required_gates
+        }
+        return {
+            "decision": "block", "checks": checks, "missing": [], "cache_hits": 0,
+            "wall_duration_ms": int((clock() - plan_started) * 1000),
+            "reason": exc.reason,
+        }
 
     def runner(command: list[str], name: str, gate_timeout: float) -> tuple[dict[str, Any], int]:
         if name == "browser_qa" and command[:2] == ["browser_qa", "missing-url"]:
@@ -314,7 +299,7 @@ def run_gate_plan(harness: Path, product: Path, *, tier: str,
         specs, runner=runner, previous_checks=previous_checks or {},
         subject_digest=subject_digest, policy_digest=policy_digest,
         ledger=ledger, task_id=task_id, work_item_id=work_item_id,
-        remaining_budget_ms=remaining_budget_ms,
+        deadline=deadline, clock=clock, candidates_manifest=candidates_manifest,
     )
     available = dict(executed)
     if planning_check is not None:
@@ -325,20 +310,42 @@ def run_gate_plan(harness: Path, product: Path, *, tier: str,
         production_policy = (
             work_item.get("production_evidence") if isinstance(work_item, dict) else None
         )
-        payload = _strict_evidence(subject_digest, production_policy, product)
-        input_digest = canonical_digest({
-            "subject": subject_digest, "production_policy": production_policy,
-            "receipt_path_digest": canonical_digest(os.environ.get("HARNESS_STRICT_EVIDENCE", "")),
-        })
-        available["strict_evidence"] = {
-            "decision": payload["decision"], "source": "executed",
-            "subject_digest": subject_digest, "policy_digest": policy_digest,
-            "input_digest": input_digest,
-            "fingerprint": canonical_digest({"gate": "strict_evidence", "input": input_digest}),
-            "started_at": now(), "completed_at": now(), "duration_ms": 0,
-            "tool_wait_ms": 0, "attempt": 1, "retry_limit": 1, "budget_ms": 0,
-            "timeout_kind": "none", "reason": str(payload.get("reason") or ""),
-        }
+        expected_provider = (
+            str(work_item.get("provider") or "") if isinstance(work_item, dict) else ""
+        )
+        strict_started = clock()
+        if deadline is not None and strict_started >= deadline:
+            available["strict_evidence"] = _not_executed_check(
+                "strict_evidence", subject_digest, policy_digest,
+                "STAGE_BUDGET_EXCEEDED", "stage",
+            )
+        else:
+            try:
+                payload = _strict_evidence(
+                    subject_digest, production_policy, product, expected_provider,
+                )
+            except (OSError, RuntimeError, UnicodeDecodeError, ValueError):
+                payload = {"decision": "block", "reason": "STRICT_EVIDENCE_INVALID"}
+            if deadline is not None and clock() >= deadline:
+                payload = {"decision": "block", "reason": "STAGE_BUDGET_EXCEEDED"}
+            input_digest = canonical_digest({
+                "subject": subject_digest, "production_policy": production_policy,
+                "receipt_path_digest": canonical_digest(
+                    os.environ.get("HARNESS_STRICT_EVIDENCE", ""),
+                ),
+            })
+            stage_timeout = payload.get("reason") == "STAGE_BUDGET_EXCEEDED"
+            available["strict_evidence"] = {
+                "decision": payload["decision"], "source": "executed",
+                "subject_digest": subject_digest, "policy_digest": policy_digest,
+                "input_digest": input_digest,
+                "fingerprint": canonical_digest({"gate": "strict_evidence", "input": input_digest}),
+                "started_at": now(), "completed_at": now(),
+                "duration_ms": max(0, int((clock() - strict_started) * 1000)),
+                "tool_wait_ms": 0, "attempt": 1, "retry_limit": 1, "budget_ms": 0,
+                "timeout_kind": "stage" if stage_timeout else "none",
+                "reason": str(payload.get("reason") or ""),
+            }
 
     checks = {name: available[name] for name in required_gates if name in available}
     required = set(required_gates)
@@ -349,7 +356,7 @@ def run_gate_plan(harness: Path, product: Path, *, tier: str,
     return {
         "decision": decision, "checks": checks, "missing": missing,
         "cache_hits": cache_hits,
-        "wall_duration_ms": int((time.monotonic() - plan_started) * 1000),
+        "wall_duration_ms": int((clock() - plan_started) * 1000),
     }
 
 
@@ -368,7 +375,7 @@ def main() -> int:
         tier=args.tier, subject_digest=args.subject, policy_digest=args.policy,
     )
     dump_json(result)
-    return 0
+    return 0 if result["decision"] == "pass" else 1
 
 
 if __name__ == "__main__":

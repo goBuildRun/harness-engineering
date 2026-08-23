@@ -24,19 +24,40 @@ def _config(product: Path) -> dict[str, Any]:
         return {}
     try:
         value = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    except (OSError, ValueError):
-        return {}
-    return value.get("work_item") or {}
+    except (OSError, ValueError, yaml.YAMLError):
+        return {"__invalid__": True}
+    if not isinstance(value, dict):
+        return {"__invalid__": True}
+    work_item = value.get("work_item") or {}
+    return work_item if isinstance(work_item, dict) else {"__invalid__": True}
 
 
 def discover(product: Path, provider_hint: str = "") -> dict[str, Any]:
     work_item = _config(product)
+    if work_item.get("__invalid__"):
+        payload = {
+            "schema": SCHEMA, "decision": "block",
+            "reason": "LIFECYCLE_CONFIG_INVALID",
+            "provider": str(provider_hint or "unknown"),
+            "required_statuses": ["in_progress", "ready_to_release"],
+            "status_mapping": {}, "readback": "unknown", "network_calls": 0,
+            "checked_at": now(),
+        }
+        payload["capability_digest"] = canonical_digest({
+            key: value for key, value in payload.items() if key != "checked_at"
+        })
+        return payload
     provider = str(provider_hint or work_item.get("provider") or "noop").strip().lower()
+    providers = work_item.get("providers") or {}
+    if not isinstance(providers, dict):
+        providers = {}
     provider_config = (
-        (work_item.get("providers") or {}).get(provider)
+        providers.get(provider)
         or work_item.get(provider)
         or {}
     )
+    if not isinstance(provider_config, dict):
+        provider_config = {}
     mapping: dict[str, str] = {}
     readback = "unknown"
     reason = "LIFECYCLE_CAPABILITY_UNKNOWN"
@@ -55,9 +76,17 @@ def discover(product: Path, provider_hint: str = "") -> dict[str, Any]:
             readback, reason = "none", "LIFECYCLE_STATUS_UPDATE_DISABLED"
     elif provider == "teambition":
         configured = provider_config.get("status_map") or provider_config.get("stage_map") or {}
+        if not isinstance(configured, dict):
+            configured = {}
+        in_progress = str((configured or {}).get("in_progress") or "").strip()
         ready = str((configured or {}).get("ready_to_release") or "").strip()
-        mapping = {"ready_to_release": ready or "unknown"}
-        if ready:
+        mapping = {
+            "in_progress": in_progress or "unknown",
+            "ready_to_release": ready or "unknown",
+        }
+        if not in_progress:
+            reason = "LIFECYCLE_IN_PROGRESS_MAPPING_MISSING"
+        elif ready:
             readback, decision, reason = "configured", "pass", "LIFECYCLE_CAPABILITY_OK"
         else:
             reason = "LIFECYCLE_READY_MAPPING_MISSING"

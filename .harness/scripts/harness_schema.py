@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 
-RESULT_STATES = {"active", "blocked", "validated"}
+RESULT_STATES = {"active", "blocked", "validated", "ready_to_release"}
 DECISIONS = {"pass", "block"}
 TIERS = {"lite", "standard", "strict"}
 ASSURANCE_LEVELS = {"local", "guarded", "enforced"}

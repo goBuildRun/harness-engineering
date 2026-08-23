@@ -88,6 +88,19 @@ class AgentStartTest(unittest.TestCase):
                 "work_item": {"id": "local1234", "provider": "noop"},
             }), encoding="utf-8")
             env = {**os.environ, "HARNESS_PRODUCT_ROOT": str(product), "WORK_ITEM_PROVIDER": "noop"}
+            harness = [
+                str(SCRIPT_DIR / "harness"), "--product-root", str(product),
+            ]
+            subprocess.run(
+                [*harness, "confirm", "local1234", "--work-item", "local1234",
+                 "--provider", "noop", "--tier", "strict"],
+                cwd=ROOT, env=env, text=True, check=True, capture_output=True,
+            )
+            subprocess.run(
+                [*harness, "stage", "local1234", "end", "planning",
+                 "--decision", "pass", "--reason", "PLANNING_GATE_PASSED"],
+                cwd=ROOT, env=env, text=True, check=True, capture_output=True,
+            )
 
             completed = subprocess.run(
                 ["bash", str(SCRIPT_DIR / "agent_start.sh"), "local1234"],

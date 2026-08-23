@@ -39,4 +39,4 @@ bash .harness/scripts/subagent-pr-gate.sh T1
 
 主凭证：`runs/tasks/<work-item-id>/qa_approved_<TASK_ID>.json`；`runs/qa_approved_<TASK_ID>.json` 是当前兼容副本。模板见 `.harness/templates/qa-evidence.json`。
 
-任务包含 `05-QA验收.md` 时同步更新；当前 L2 因风险触发 QA 但尚无 `05` 时，应按模板补建该文件，不把缺少可选模板误报为实现失败。
+`qa_sign_off.sh` 只写独立 receipt，不重复追加 `05-QA验收.md`；当前 L2 因风险触发 QA 但尚无 `05` 时，应按模板补建该文件，不把缺少可选模板误报为实现失败。

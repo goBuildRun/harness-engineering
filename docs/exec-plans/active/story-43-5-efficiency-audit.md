@@ -100,57 +100,74 @@ Total `30m`. A phase overrun does not borrow without an explicit revised budget 
 
 ## Implemented Harness Changes
 
-- privacy-safe `wall-clock-ledger.jsonl`, sequential six-stage state machine, canonical-pass-only Story root closure, 30m total/stage budgets, two-attempt ceilings and explicit unknown active time;
+- explicit `confirm` starts the root clock and baseline before L3 Planning; canonical `finish` no longer closes the Story, and `release-ready` closes only after candidate-bound guarded commit plus lifecycle readback;
+- privacy-safe `wall-clock-ledger.jsonl`, sequential six-stage state machine, final deadline rechecks, 30m total/stage budgets, two-attempt ceilings, operation-level task locking and explicit unknown active time;
+- code/planning `candidate_digest` freezes before independent QA while mutable TEST/REVIEW/deploy/Provider receipts use a separate `evidence_digest`; evidence generation cannot invalidate its own candidate;
 - `GateSpec`-style dependency input digest, deterministic cache rebinding to current subject, bounded 120s default gate timeout, stable output ordering and parallel read-only gates;
 - no knowledge/Growth autosync inside `finish`; no planning sync inside provider `close`;
-- shared QA mechanical bundle plus per-task v2 receipt bound to subject, policy, paths and TEST/REVIEW digests; same implementer/reviewer session blocks;
-- generic offline Provider call-contract preflight plus atomic one-shot Provider wrapper; failed attempts consume the slot, v2 receipts bind newly generated evidence SHA-256, and strict real evidence revalidates the actual product-tree file and same-subject digest chain;
+- shared QA mechanical bundle plus per-task mandatory v2 receipt bound to subject, policy, paths and TEST/REVIEW digests; implementer identity is recomputed, reviewer identity is host-issued, and bundle generation is singleflight;
+- generic offline Provider preflight executes the adapter and binds provider/adapter/argv/contract/trace digests; atomic one-shot execution validates evidence schema, decision, subject and provider, and timeout is the minimum remaining deploy/root/caller budget;
 - local lifecycle capability receipt before strict start; no network or secret output;
-- Growth release-impact gate (`blocker|followup|none`); historical unmarked captures fail closed;
-- context summary/digest/index rather than repeated full knowledge artifact injection;
-- canonical `harness` CLI returns exit 1 for outer block and 0 for pass; JSON remains authoritative;
-- metadata-only Story 43.5 fixture and deterministic offline before/after benchmark.
+- Growth release-impact gate (`blocker|followup|none`); exact Work Item binding prevents substring collision and historical unmarked captures remain off-path followups;
+- context summary/digest/index plus bounded phase-handoff receipt rather than repeated full artifact replay; host phase-session compliance remains guarded;
+- canonical `harness` and E4 standalone CLIs align block/pass decision with exit status; JSON remains authoritative;
+- governed QA now binds the active task, planning credential, committed task directory, work item and provider to the current Story before QA pass or deploy; no-task-dir skip remains lite-only;
+- local `finish` validates the same planning identity as CI, ledger end events append once per span and reuse the first persisted outcome after result-write failure;
+- strict Provider evidence is validated by a gate-layer adapter that binds component artifacts and the complete Provider digest chain while leaving the protected legacy validator untouched; path/decode failures become structured fail-closed decisions;
+- the v2 offline Provider adapter preflight now lives in an E4-owned module, with a validated compatibility path for existing v2 receipts; the staged candidate no longer imports uncommitted extensions from protected validator files;
+- release validation exports the Git index as an isolated candidate tree before final QA, preventing unrelated worktree changes from masking missing imports, manifest entries or regression failures;
+- canonical release replay now revalidates the configured lifecycle provider, guarded attestation result, frozen snapshot, current QA/strict evidence and mutable evidence manifest; a caller-authored ready state cannot bypass the guarded commit;
+- stage ledger reads, end-span replay and orphan starts fail closed with structured attribution, while a real Provider attempt persists a block receipt if its candidate/stage/deadline drifts during execution;
+- metadata-only Story 43.5 fixture and real offline gate-executor/cache benchmark.
+- executable dependency closure now validates argv execution position across branches/functions/`exec`, wrapper-local `PATH`, `env -C`, static `cd`/`source`, nested shell/Python loaders, `python -m`, subprocess callable aliases and `executable=`, shebang-selected `.pth` imports, extension modules and absent import/interpreter roots. Assigned/chained `importlib` and `builtins.__import__` aliases, relative `import_module()`, and static `exec(Path(...).read_text())` are resolved; unresolved dynamic execution disables ordinary-gate cache reuse and blocks strict Provider closure. Sourced context changes are scope-aware, shared source analysis propagates non-cacheability to every affected gate, and shell/AST/`.pth` scans share hard size and deadline bounds with structured parse failures.
+- mutable `result.json` and `wall-clock-ledger.jsonl` control records are excluded from their own release-evidence manifest, so final timing append cannot stale an otherwise unchanged release candidate.
 
 ## Offline Benchmark
 
-The fixture models ten equal 40ms gates. It measures orchestration only:
+The fixture runs ten real 40ms offline gate runners through `GateSpec`, `execute_specs` and `reuse_check`. A representative isolated-index run on 2026-08-23 measured:
 
 | Metric | Before | After |
 |---|---:|---:|
-| first validation | 400ms serial | 120ms (8 read-only parallel + 2 serial) |
-| unrelated evidence rerun | 400ms / 0 hits | 120ms with 4 precise hits |
-| reduction | - | 70% first run; 70% unrelated rerun |
+| first validation | 477ms observed serial | 137ms observed (8 read-only parallel + 2 serial) |
+| unrelated evidence rerun | 477ms / 0 hits | 139ms observed with 4 real precise hits |
+| reduction | - | 71.28% first run; 70.86% unrelated rerun |
 
-This does not claim production P95 or a measured 30m Story. The historical baseline remains `34,476,120ms`; the target budget is `1,800,000ms`. The next real strict Story is the required end-to-end test.
+This is executable offline orchestration evidence, not production P95 or a measured 30m Story. Scheduler noise means exact milliseconds vary. The historical baseline remains `34,476,120ms`; the target budget is `1,800,000ms`. The next comparable live strict Story remains the required end-to-end trial.
+
+The iCloud-backed Harness worktree was also sampled with three read-only `git status --untracked-files=no` runs: `0.01s`, `0.05s`, and `0.00s`. The previously observed 30–90s Git waits were not reproduced, so their historical contribution remains `unknown` and is not assigned to Story 43.5.
 
 ## Quality Invariants
 
 | Constraint | Proof after optimization |
 |---|---|
 | L0 safety/authenticity/privacy/source/isolation | gates remain hard; timeout/block never converts to pass |
-| L1 product completion | canonical result and strict evidence remain release inputs |
-| independent QA | v2 receipt requires distinct reviewer session and per-task signature metadata |
+| L1 product completion | canonical result and current strict evidence remain release inputs; release replay revalidates the attested result binding |
+| independent QA | mandatory v2 receipt recomputes implementer identity and requires a distinct host-issued reviewer identity plus per-task digests; host identity is guarded, not cryptographically enforced |
 | real Provider when required | strict evidence requires offline preflight plus real, non-synthetic acceptance receipt |
-| one production attempt | `provider_attempt.py` validates preflight, atomically claims one slot before execution, shares the deploy-stage deadline and blocks every later attempt |
+| one production attempt | `provider_attempt.py` validates adapter-executed preflight, atomically claims one slot before execution, shares deploy/root deadlines, persists post-execution drift as block and blocks every later attempt |
 | unknown telemetry | Agent active, Harness input/output Token, Judge and production P95 remain `unknown`; Harness telemetry remains `partial` and L3 remains `live_validation_pending`; no zero fill |
 | assurance | remains guarded and bypassable; no enforced claim |
 | no GitHub lifecycle | implementation is Git/Python/shell/JSON only |
-| cache safety | QA/GC/browser/deploy/Provider/rollback never cached; reused mechanical result rebinds current subject |
+| cache safety | QA/GC/browser/deploy/Provider/rollback never cached; reused mechanical result rebinds current subject; an ordinary gate with an unresolved dynamic import is downgraded to non-cacheable, while strict Provider closure blocks |
 | parallel safety | only read-only gates parallel; opaque product quality and side effects stay serial |
 
 ## Offline Verification
 
-- Full Harness suite on the final mixed local tree: `400 tests` passed in `72.668s`; this includes concurrent, intentionally unstaged work.
-- Exact staged E4 commit snapshot: `396 tests` passed in `71.299s`.
-- Independent QA: `pass`, including enforced/legacy Story closure, stale/tampered Provider evidence, lifecycle exit-code and budget-stop reproductions.
-- Harness validation on the exact staged snapshot: `HARNESS_VALID: manifest + smoke` passed.
-- Deterministic fixture: `400ms` serial to `120ms` parallel and `120ms` unrelated-evidence rerun, both `70%` reductions.
-- `git diff --check` passed on both the local tree and exact staged snapshot. No production Provider/Judge call, deployment, Feishu write or Story 43.5 mutation was performed.
+- Frozen code candidate: commit `59caa75d38bbe6fc1fd4be78ea4ecead91931309`, tree `a984f43f5850fe5d1dbffcd79660b6850f884816`, `68` staged files and zero protected-path overlap; its manifest and imports are self-contained without protected worktree extensions.
+- The mixed preserved worktree is diagnostic only: `20` tracked and `5` untracked protected files remain outside the index, including separate strict-evidence/provider compatibility work. E4 acceptance uses the exact exported index instead of weakening either change set to make a mixed tree green.
+- Independent final QA: `PASS`; P0/P1/P2 are all empty and all prior `6` P1 plus `3` P2 findings are verified closed. Focused gate/execution/provider suites passed `93/93`, E4 hardening/integrity passed `37/37`, and the full suite passed `573/573` when split across non-overlapping batches.
+- A separate single-process full-suite run completed `572/573`; its only error was host `EPERM` while terminating an already timed-out process group. The exact affected test immediately passed `1/1`, matching the independent split-suite result; this is recorded as host isolation noise rather than hidden or converted into a code pass.
+- Harness validation: `HARNESS_VALID`; Python compile, Bash syntax, module-boundary and `git diff --check` checks passed.
+- Real executor benchmark: `477ms` serial to `137ms` parallel and `139ms` unrelated-evidence rerun with four cache hits in this isolated representative run.
+- No production Provider/Judge call, deployment, Feishu write or Story 43.5 mutation was performed.
 
 ## Remaining Risks And Real Trial
 
 1. Production P95, Judge usage, exact Agent active time and per-rerun historical reason remain `unknown`.
-2. The global ecosystem still contains compatibility scripts whose JSON block historically exits 0. Only canonical `harness` is migrated; all hook/work-item callers need a separate versioned conversion before claiming global consistency.
-3. A product-specific Provider adapter must supply its real required/allowed call contract and invoke production through `provider_attempt.py`. Harness deliberately does not encode small-Zhangluo route names.
-4. Context indexing reduces Harness injection, but Codex host session compaction/new-session policy needs host-side measurement; it is not proven by this repository patch.
-5. The 30m target must be trialed on the next comparable strict/L3 Story: call stage transitions from user confirmation through lifecycle readback, stop before the next controlled gate/Provider side effect on overrun, allow one wrapped real Provider call after preflight, and compare root wall, tool-wait union, cache hits, retries and Token. The Harness cannot preempt uninstrumented host reasoning mid-stage; `guarded` remains bypassable. Judge/P95 remain pending until trustworthy receipts exist.
+2. Legacy compatibility shell/hook callers are not all migrated to nonzero JSON-block exits; canonical and E4 standalone CLIs are consistent, but global conversion remains a versioned compatibility program.
+3. A product-specific Provider adapter must implement the versioned offline/real contract and emit `harness-provider-evidence-v1`; Harness deliberately does not encode small-Zhangluo route names.
+4. Reviewer identity starts at the host-provided session identity and advisory filesystem locks; this is guarded/bypassable, not a cryptographic authority or hostile-process lock.
+5. Context indexing and phase handoff bound Harness injection, but the Codex host must honor phase-session admission; uninstrumented host reasoning cannot be preempted by this repository.
+6. The 30m target must be trialed on the next comparable strict/L3 Story: invoke `confirm` at user approval, record each transition, stop before another controlled side effect on overrun, use one wrapped real Provider call after preflight, create a guarded commit, validate lifecycle readback, then compare root wall, tool-wait union, cache hits, retries and Token. Judge/P95 remain pending until trustworthy receipts exist.
+7. Real Provider authority, trusted offline network isolation and external lifecycle readback remain blocked pending a new trusted execution boundary; adapter/caller self-report is not accepted as proof.
+8. Shared CI active planning credentials still need a per-task execution-environment migration for safe cross-Story concurrency.

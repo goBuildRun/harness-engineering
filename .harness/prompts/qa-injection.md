@@ -20,7 +20,7 @@ bash .harness/scripts/task_workspace.sh qa-path <TASK_ID>   # 排障：凭证路
 
 ## 任务包记录
 
-- 任务已有 `planning/tasks/.../05-QA验收.md` 时，脚本自动追加签章段。
+- `qa_sign_off.sh` 只写独立 receipt；TEST、REVIEW 和 `05-QA验收.md` 由各自工序维护，不重复追加签章段。
 - 当前 L2 因风险触发独立 QA 但没有 `05` 时，先从 `tasks/_templates/05-QA验收.md` 补建；未触发独立 QA 时不要创建空文件。
 
 ## 禁止

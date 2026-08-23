@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -9,7 +10,7 @@ from pathlib import Path
 SCRIPTS = Path(__file__).resolve().parents[1] / ".harness" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
-from harness_cache import executed_check, reuse_check  # noqa: E402
+from harness_cache import executed_check, reuse_check, tool_digest  # noqa: E402
 
 
 class HarnessCacheTest(unittest.TestCase):
@@ -61,6 +62,20 @@ class HarnessCacheTest(unittest.TestCase):
             cached, gate="scope", fingerprint="fp", subject_digest="subject",
             policy_digest="policy",
         ))
+
+    def test_tier_module_change_invalidates_runtime_and_scope_tool_digest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            scripts = Path(tmp)
+            runtime = scripts / "harness_runtime.py"
+            scope = scripts / "harness_scope.py"
+            tier = scripts / "harness_tier.py"
+            runtime.write_text("runtime = 1\n", encoding="utf-8")
+            scope.write_text("scope = 1\n", encoding="utf-8")
+            tier.write_text("tier = 1\n", encoding="utf-8")
+            before = tool_digest([runtime, scope])
+            tier.write_text("tier = 2\n", encoding="utf-8")
+            after = tool_digest([runtime, scope])
+        self.assertNotEqual(before, after)
 
 
 if __name__ == "__main__":

@@ -16,7 +16,10 @@ IMPACT_RE = re.compile(r"^- \*\*Release impact\*\*[：:]\s*(blocker|followup|non
 def _bound(path: Path, work_item_id: str) -> bool:
     if not work_item_id:
         return True
-    if work_item_id in path.name:
+    if re.search(
+        rf"(?<![A-Za-z0-9]){re.escape(work_item_id)}(?![A-Za-z0-9])",
+        path.name,
+    ):
         return True
     try:
         return f"**Work Item**：`{work_item_id}`" in path.read_text(encoding="utf-8", errors="ignore")[:1600]
@@ -27,15 +30,21 @@ def _bound(path: Path, work_item_id: str) -> bool:
 def release_status(progress_dir: Path, work_item_id: str = "") -> dict[str, object]:
     captures = sorted(progress_dir.glob("*-GROWTH-CAPTURE.md")) if progress_dir.is_dir() else []
     captures = [path for path in captures if _bound(path, work_item_id)]
-    blockers, followups, unknown = [], [], []
+    blockers, followups, unknown, legacy_unmarked = [], [], [], []
     for path in captures:
         try:
-            match = IMPACT_RE.search(path.read_text(encoding="utf-8", errors="ignore"))
+            text = path.read_text(encoding="utf-8", errors="ignore")
+            match = IMPACT_RE.search(text)
         except OSError:
+            text = ""
             match = None
         ref = path.name
         if match is None:
-            unknown.append(ref)
+            if "Release impact" not in text:
+                legacy_unmarked.append(ref)
+                followups.append(ref)
+            else:
+                unknown.append(ref)
         elif match.group(1) == "blocker":
             blockers.append(ref)
         elif match.group(1) == "followup":
@@ -50,6 +59,7 @@ def release_status(progress_dir: Path, work_item_id: str = "") -> dict[str, obje
         "decision": decision, "reason": reason, "work_item_id": work_item_id,
         "captures": len(captures), "blockers": blockers,
         "followups_pending_review": followups, "unknown": unknown,
+        "legacy_unmarked": legacy_unmarked,
     }
 
 

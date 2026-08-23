@@ -7,7 +7,8 @@ import os
 import json
 from pathlib import Path
 
-from harness_commands import cmd_amend, cmd_ci_check, cmd_finish, cmd_stage, cmd_start, cmd_status, cmd_usage_baseline
+from harness_commands import cmd_amend, cmd_ci_check, cmd_finish, cmd_start, cmd_status
+from harness_cycle_commands import cmd_confirm, cmd_release_ready, cmd_stage, cmd_usage_baseline
 from harness_assurance import create_bootstrap, create_release_candidate
 from harness_runtime import load_result, resolve_task_id, result_path
 from harness_migration_commands import cmd_audit, cmd_migrate
@@ -30,10 +31,24 @@ def build_parser() -> argparse.ArgumentParser:
         default="implementation",
     )
     start.add_argument("--reason", default="")
+    confirm = sub.add_parser("confirm")
+    confirm.add_argument("task_id")
+    confirm.add_argument("--work-item", default="")
+    confirm.add_argument("--provider", default="")
+    confirm.add_argument("--tier", choices=tuple(TIERS), default="strict")
+    confirm.add_argument("--scope", action="append", default=[])
+    confirm.add_argument(
+        "--kind", choices=("implementation", "debt-maintenance", "scope-change", "hotfix", "harness-maintenance"),
+        default="implementation",
+    )
     sub.add_parser("status").add_argument("task_id", nargs="?")
     finish = sub.add_parser("finish")
     finish.add_argument("task_id", nargs="?")
     finish.add_argument("--skip-legacy-gates", action="store_true", help=argparse.SUPPRESS)
+    release_ready = sub.add_parser("release-ready")
+    release_ready.add_argument("task_id")
+    release_ready.add_argument("--commit", required=True)
+    release_ready.add_argument("--receipt", default="")
     sub.add_parser("workspace").add_argument("action", choices=("audit",))
     migrate = sub.add_parser("migrate-task")
     migrate.add_argument("task_id")
@@ -80,7 +95,8 @@ def main() -> int:
     reset_decision()
     args = build_parser().parse_args()
     handlers = {
-        "start": cmd_start, "status": cmd_status, "finish": cmd_finish,
+        "confirm": cmd_confirm, "start": cmd_start, "status": cmd_status,
+        "finish": cmd_finish, "release-ready": cmd_release_ready,
         "workspace": cmd_audit, "migrate-task": cmd_migrate, "amend-task": cmd_amend,
         "usage-baseline": cmd_usage_baseline,
         "stage": cmd_stage,

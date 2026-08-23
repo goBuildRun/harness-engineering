@@ -52,10 +52,13 @@ required_files:
   - .harness/scripts/ci_gc_review.py
   - .harness/scripts/harness_gc_context.py
   - .harness/scripts/harness_gc_receipt.py
+  - .harness/scripts/harness_gc_contract.py
+  - .harness/scripts/harness_gc_runner.py
   - .harness/scripts/harness_runtime.py
   - .harness/scripts/harness_task_resolution.py
   - .harness/scripts/harness_tier.py
   - .harness/scripts/harness_commands.py
+  - .harness/scripts/harness_finish.py
   - .harness/scripts/harness_ci.py
   - .harness/scripts/harness_attestation.py
   - .harness/scripts/harness_receive.py
@@ -68,13 +71,36 @@ required_files:
   - .harness/scripts/harness_cli.py
   - .harness/scripts/harness_gates.py
   - .harness/scripts/harness_gate_execution.py
+  - .harness/scripts/harness_gate_argv.py
+  - .harness/scripts/harness_gate_dependency_io.py
+  - .harness/scripts/harness_gate_imports.py
+  - .harness/scripts/harness_gate_manifest.py
+  - .harness/scripts/harness_gate_inputs.py
+  - .harness/scripts/harness_gate_language.py
+  - .harness/scripts/harness_gate_python.py
+  - .harness/scripts/harness_gate_tools.py
+  - .harness/scripts/harness_gate_work_items.py
+  - .harness/scripts/harness_strict_gate.py
   - .harness/scripts/harness_strict_evidence.py
   - .harness/scripts/harness_timing.py
+  - .harness/scripts/harness_story_ledger.py
   - .harness/scripts/harness_cycle_commands.py
+  - .harness/scripts/harness_cycle_confirmation.py
+  - .harness/scripts/harness_cycle_release.py
+  - .harness/scripts/harness_release_binding.py
+  - .harness/scripts/harness_cycle_stage_commands.py
+  - .harness/scripts/harness_cycle_stages.py
+  - .harness/scripts/harness_cycle_usage.py
   - .harness/scripts/harness_context_index.py
+  - .harness/scripts/harness_phase_handoff.py
+  - .harness/scripts/harness_candidate.py
+  - .harness/scripts/harness_candidate_git.py
+  - .harness/scripts/harness_release_readback.py
   - .harness/scripts/harness_lifecycle_preflight.py
+  - .harness/scripts/harness_provider_preflight.py
   - .harness/scripts/provider_verifier_preflight.py
   - .harness/scripts/provider_attempt.py
+  - .harness/scripts/harness_provider_postcondition.py
   - .harness/scripts/capability_contract.py
   - .harness/scripts/harness_telemetry.py
   - .harness/scripts/codex_usage_receipt.py
@@ -179,8 +205,14 @@ required_files:
   - tests/test_harness_gates.py
   - tests/test_harness_gate_execution.py
   - tests/test_harness_timing.py
+  - tests/test_harness_cycle_confirmation.py
+  - tests/test_e4_candidate_release_integrity.py
+  - tests/test_e4_gate_language.py
+  - tests/test_e4_review_hardening.py
   - tests/test_harness_context_index.py
+  - tests/test_harness_phase_handoff.py
   - tests/test_harness_lifecycle_preflight.py
+  - tests/test_harness_provider_preflight.py
   - tests/test_provider_verifier_preflight.py
   - tests/test_provider_attempt.py
   - tests/test_harness_growth_release.py
@@ -200,6 +232,8 @@ required_files:
   - tests/test_agent_review.py
   - tests/fixtures/lean-cost-baseline.json
   - tests/fixtures/story-43-5-efficiency.json
+  - tests/fixtures/provider-offline-contract.json
+  - tests/fixtures/provider_mock_adapter.py
   - tests/test_story_cycle_benchmark.py
   - docs/design-docs/capability-migration-map.md
   - tests/test_business_paths.py
