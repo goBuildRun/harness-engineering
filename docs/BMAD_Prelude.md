@@ -4,7 +4,7 @@
 > **方法论溯源**：[BMAD Method](https://github.com/bmad-code-org/BMAD-METHOD)（BMM）的 **Analysis → Planning → Solutioning**；Team Product R&D Harness 将其落地为 **BMAD Planning**，产出写入 **产品侧 `harness-workspace/planning/`**，经 `planning_gate.sh` 交接到 Harness Execution。  
 > **Harness 与产出分离**：`harness-engineering/` 仅含规程、脚本、模板；**不入库** PRD / exec-plan / 任务包到 Harness 目录内。
 > **已有项目**：先执行 [Brownfield_Intake.md](./Brownfield_Intake.md)，把既有代码和文档转成可 review 的项目事实，再进入 BMAD Planning。
-> **精简升级**：BMAD 的需求澄清、规划和 Solutioning 继续保留；目标 `harness start` 按 planning level 与 execution tier 选择 Quick Flow 或完整能力，不要求使用者手工编排 BMAD 与 Harness 命令链。
+> **精简升级**：BMAD 的需求澄清、规划和 Solutioning 继续保留；推荐由 `harness plan` 批量生成 planning bundle，再由 `harness start` 按 planning level 与实际风险选择 execution tier。使用者不再手工编排 BMAD、Work Item、Planning Gate 和 context sync 命令链。
 
 ---
 
@@ -123,15 +123,15 @@ TASK_DIR="$PRODUCT_ROOT/harness-workspace/planning/tasks/$(date +%Y-%m-%d)-<work
 mkdir -p "$TASK_DIR"
 cp tasks/_templates/00-任务卡.md tasks/_templates/03-实施方案.md tasks/_templates/04-实施记录.md "$TASK_DIR/"
 
-# 3. Work Item 草稿确认与同步（可选，L2/L3 生产须真实 Work Item ID）
-bash .harness/scripts/work_item.sh draft-spec "$PRODUCT_ROOT/harness-workspace/planning/product-specs/某功能.md" --assignee <provider-user-id>
-bash .harness/scripts/work_item.sh sync-spec "$PRODUCT_ROOT/harness-workspace/planning/product-specs/某功能.md" --assignee <provider-user-id>
+# 3. 推荐：一次生成 batch planning receipt（默认离线，不猜测外部容器）
+harness --product-root "$PRODUCT_ROOT" plan --level L2 --task-dir "$TASK_DIR"
 
-# 4. Planning Gate
-bash .harness/scripts/planning_gate.sh L2 "$TASK_DIR"
+# 4. 执行闭环
+harness --product-root "$PRODUCT_ROOT" start <work-item-id>
+harness --product-root "$PRODUCT_ROOT" finish <task-id>
 ```
 
-`draft-spec` 使用同一契约生成待确认任务草稿，不写外部系统；`sync-spec` 使用 `bmad-work-item-v1`，只把目标摘要、验收项、负责人、Gate 状态和 Harness Links 同步到 Teambition/飞书/Jira；完整 BMAD 产物仍以产品仓库 `harness-workspace/planning/` 为真相源。详见 [BMAD_Work_Item_Contract.md](./BMAD_Work_Item_Contract.md)。
+旧 `draft-spec` / `sync-spec` / `planning_gate.sh` 仍是兼容诊断入口；只有在历史任务或明确 provider 操作时才单独使用。`harness plan --provider-mode configured` 才允许走已确认的外部 provider；默认只建立本地任务包，不猜测 Harness 外部 Epic/Tasklist。完整 BMAD 产物仍以产品仓库 `harness-workspace/planning/` 为真相源。详见 [BMAD_Work_Item_Contract.md](./BMAD_Work_Item_Contract.md)。
 
 Planning Gate 通过后会自动运行 `harness_knowledge.sh sync-planning`，把 BMAD Planning 形成的产品规格、产品蓝图、架构/执行计划和任务边界写入产品侧 `harness-workspace/knowledge/CONTEXT.md` 的受管区块。全新项目的首批长期上下文应来自这里，而不是依赖聊天记忆。
 
@@ -146,7 +146,7 @@ python3 .harness/scripts/bmad_method_gate.py \
 
 模板：`.harness/templates/product-spec.md` · 规则：`.harness/rules/bmad-entry-gate.md`
 
-> **准入凭证**：Harness Execution 优先读取 `harness-workspace/runs/planning_gate_pass.json`（及 `harness-workspace/planning/tasks/.../planning_gate_pass.json` 副本）；`phase0_pass.json` 仅作为历史兼容副本。
+> **准入凭证**：新流程优先读取 `harness-workspace/runs/planning/<batch-id>/children/<work-item-id>.json` 中的 task-scoped planning credential；历史任务继续读取 `harness-workspace/runs/planning_gate_pass.json`（及 `harness-workspace/planning/tasks/.../planning_gate_pass.json` 副本），`phase0_pass.json` 仅作为兼容副本。
 
 ---
 

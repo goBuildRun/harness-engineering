@@ -56,6 +56,18 @@ def find_gate_in_tasks(layout: Phase0Layout, work_item_id: str = "") -> Path | N
     return None
 
 
+def find_planning_child(layout: Phase0Layout, work_item_id: str) -> dict | None:
+    """Find a batch child receipt without consulting a shared active pointer."""
+    root = layout.agent_workspace / "planning"
+    if not root.is_dir():
+        return None
+    for path in sorted(root.glob("*/children/*.json"), reverse=True):
+        data = load_json(path)
+        if data and str(data.get("work_item_id") or "") == work_item_id:
+            return data
+    return None
+
+
 def task_workspace_dir(layout: Phase0Layout, work_item_id: str) -> Path:
     if not valid_task_id(work_item_id):
         raise ValueError("TASK_ID_INVALID")
@@ -78,15 +90,24 @@ def legacy_context(layout: Phase0Layout) -> Path:
     return layout.agent_workspace / "context.md"
 
 
-def activate_task(layout: Phase0Layout, work_item_id: str) -> dict:
+def activate_task(layout: Phase0Layout, work_item_id: str, *, task_scoped: bool = False) -> dict:
     if work_item_id and not valid_task_id(work_item_id):
         return {"ok": False, "reason": "TASK_ID_INVALID"}
     src = find_gate_in_tasks(layout, work_item_id)
-    if not src:
+    planning_child = None
+    if not src and work_item_id:
+        planning_child = find_planning_child(layout, work_item_id)
+        if planning_child:
+            gate = planning_child.get("planning_gate")
+            if isinstance(gate, dict) and gate.get("decision") == "pass":
+                src = None
+            else:
+                planning_child = None
+    if not src and not planning_child:
         rel = layout.rel(layout.tasks)
         return {"ok": False, "reason": f"PLANNING_GATE_NOT_FOUND: {rel}/ 中无 work_item_id={work_item_id} 的 planning_gate_pass.json（兼容 phase0_pass.json）"}
 
-    data = load_json(src)
+    data = load_json(src) if src else dict(planning_child.get("planning_gate") or {})
     if not data or data.get("decision") != "pass":
         return {"ok": False, "reason": "PLANNING_GATE_INVALID: 任务目录内 planning gate 凭证无效"}
 
@@ -96,27 +117,29 @@ def activate_task(layout: Phase0Layout, work_item_id: str) -> dict:
     ws = task_workspace_dir(layout, wid)
     ws.mkdir(parents=True, exist_ok=True)
 
-    text = src.read_text(encoding="utf-8")
+    text = json.dumps(data, ensure_ascii=False, indent=2) + "\n"
     (ws / "planning_gate_pass.json").write_text(text, encoding="utf-8")
     (ws / "phase0_pass.json").write_text(text, encoding="utf-8")
-    active_gate = active_planning_gate(layout)
-    active_gate.parent.mkdir(parents=True, exist_ok=True)
-    active_gate.write_text(text, encoding="utf-8")
-    legacy = legacy_phase0(layout)
-    legacy.parent.mkdir(parents=True, exist_ok=True)
-    legacy.write_text(text, encoding="utf-8")
+    if not task_scoped:
+        active_gate = active_planning_gate(layout)
+        active_gate.parent.mkdir(parents=True, exist_ok=True)
+        active_gate.write_text(text, encoding="utf-8")
+        legacy = legacy_phase0(layout)
+        legacy.parent.mkdir(parents=True, exist_ok=True)
+        legacy.write_text(text, encoding="utf-8")
 
     active = {
         "work_item_id": wid,
         "task_dir": data.get("task_dir"),
         "workspace_dir": layout.rel(ws),
-        "planning_gate_source": layout.rel(src),
+        "planning_gate_source": layout.rel(src) if src else "batch-receipt",
         "planning_root": layout.rel(layout.planning_root),
-        "phase0_source": layout.rel(src),
+        "phase0_source": layout.rel(src) if src else "batch-receipt",
         "phase0_root": layout.rel(layout.phase0_root),
         "activated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
-    active_task_file(layout).write_text(json.dumps(active, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    if not task_scoped:
+        active_task_file(layout).write_text(json.dumps(active, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return {"ok": True, "work_item_id": wid, "workspace": str(ws), "task_dir": data.get("task_dir")}
 
 
@@ -166,7 +189,7 @@ def qa_evidence_path(layout: Phase0Layout, dag_task_id: str) -> Path:
 
 
 def cmd_activate(work_item_id: str, layout: Phase0Layout) -> int:
-    result = activate_task(layout, work_item_id)
+    result = activate_task(layout, work_item_id, task_scoped=False)
     if result["ok"]:
         emit("pass", f"TASK_ACTIVATED: {result['work_item_id']}", active=result)
     else:
@@ -223,6 +246,7 @@ def main() -> int:
     sub.add_parser("infer-mr")
     p_act = sub.add_parser("activate")
     p_act.add_argument("work_item_id")
+    p_act.add_argument("--task-scoped", action="store_true", help="仅写 runs/tasks/<id>，不覆盖全局 active 状态")
     p_qa = sub.add_parser("qa-path")
     p_qa.add_argument("dag_task_id")
 
@@ -233,7 +257,13 @@ def main() -> int:
     )
 
     if args.cmd == "activate":
-        return cmd_activate(args.work_item_id, layout)
+        result = activate_task(layout, args.work_item_id, task_scoped=args.task_scoped)
+        if result["ok"]:
+            emit("pass", f"TASK_ACTIVATED: {result['work_item_id']}", active=result,
+                 task_scoped=args.task_scoped)
+        else:
+            emit("block", result["reason"])
+        return 0
     if args.cmd == "show-active":
         return cmd_show_active(layout)
     if args.cmd == "infer-mr":

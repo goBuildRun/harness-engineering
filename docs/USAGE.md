@@ -5,7 +5,7 @@
 > **已有项目接入**：[Brownfield_Intake.md](./Brownfield_Intake.md) — 已有项目接入的定位、报告和 review 规则  
 > **多人协作**：[COLLABORATION.md](./COLLABORATION.md) — 多 PM/Dev 并行场景与命令  
 > **精简强制执行目标**：[design-docs/lean-enforcement.md](./design-docs/lean-enforcement.md) — 一个入口面、一个权威结果、风险分层与成本约束  
-> 本文档是 **Team Product R&D Harness 的 canonical 使用说明**。不可跳过的是“先形成与风险匹配的计划，再实施并验证”的合规语义，不是让人或 Agent 手工执行固定数量的命令。目标正常路径只暴露 `start / status / finish`；BMAD Planning、TDD、QA、安全、知识和协同能力由统一入口按 planning level 与 execution tier 编排。
+> 本文档是 **Team Product R&D Harness 的 canonical 使用说明**。不可跳过的是“先形成与风险匹配的计划，再实施并验证”的合规语义，不是让人或 Agent 手工执行固定数量的命令。推荐正常路径是 `plan → start → finish`；`status` 只观察，不阻塞主路径。BMAD Planning、TDD、QA、安全、知识和协同能力由统一入口按 planning level 与 execution tier 编排。详细设计见 [Lean Planning Flow](./design-docs/lean-plan-flow.md)。
 
 `AGENTS.md` 为最小地图，本文件说明公开使用方式，并保留统一入口尚未覆盖的兼容命令和诊断参考。
 
@@ -19,9 +19,20 @@
 
 | 场景 | 使用方式 |
 |------|----------|
-| 当前正常路径 | `harness start [task-id]` → `harness status [task-id]` → `harness finish [task-id]` |
+| 当前正常路径 | `harness plan --level <L1|L2|L3> --task-dir <dir>` → `harness start <work-item-id>` → `harness finish <task-id>` |
 | 兼容能力或特殊排障 | 按任务角色读取对应章节；不要把第 2–8 节串成每个任务都要人工执行的总清单 |
 | runtime 开发/排障 | 才直接调用 `.harness/scripts/` 中的内部命令 |
+
+### 推荐的三段式入口
+
+```bash
+harness --product-root "$PRODUCT_ROOT" plan \
+  --level L3 --task-dir "$PRODUCT_ROOT/harness-workspace/planning/tasks/<task-dir>"
+harness --product-root "$PRODUCT_ROOT" start <work-item-id> --scope <path>
+harness --product-root "$PRODUCT_ROOT" finish <task-id>
+```
+
+`harness plan` 一次生成 batch planning receipt 和每个子任务的 task-scoped 凭证；它内部完成共享前置检查、规划摘要、Work Item binding receipt 和一次 context sync。旧的 `draft-spec`、`sync-spec`、`planning_gate.sh`、`task_workspace.sh activate` 仍可用于历史任务或排障，但不应再串成新 Story 的人工总清单。
 
 统一入口内部承载以下能力，并按风险触发；兼容脚本暂保留，但不增加正常路径的使用者步骤：
 
@@ -99,7 +110,7 @@ bash .harness/scripts/pretty.sh < /tmp/result.json
 
 ## 2. 当前兼容：BMAD Planning
 
-> **过渡期规则**：当前 `agent_start.sh` 之前必须有经 [BMAD Method](https://github.com/bmad-code-org/BMAD-METHOD) 形成的 BMAD Planning 结果和 Planning Gate。L1 使用 Quick Flow，L2/L3 使用相应完整度；不要求低风险任务运行完整 Analysis / Planning / Solutioning 仪式。产出写入产品侧 **`harness-workspace/planning/`**（由 `harness-workspace/project.yaml` 配置，见 [BMAD_Prelude §0.1](./BMAD_Prelude.md#01-bmad-planning-目录配置产品-harness-workspaceprojectyaml)）。目标状态由 `start` 选择深度并机械阻止遗漏。
+> **过渡期规则**：产品仍必须具备与风险匹配的 BMAD Planning 结果，但新任务通过 `harness plan` 一次生成 batch receipt 和 Planning Gate，不再要求手工串接多个 BMAD/Work Item 命令。L1 使用 Quick Flow，L2/L3 使用相应完整度；不要求低风险任务运行完整 Analysis / Planning / Solutioning 仪式。产出写入产品侧 **`harness-workspace/planning/`**（由 `harness-workspace/project.yaml` 配置，见 [BMAD_Prelude §0.1](./BMAD_Prelude.md#01-bmad-planning-目录配置产品-harness-workspaceprojectyaml)）。
 > **BMAD 在产品根执行**；**Harness 脚本在 `harness-engineering/` 执行**。详见 [BMAD_Prelude §0.2](./BMAD_Prelude.md#02-bmad-method-在产品根执行必遵)。
 
 ### 2.0 初始化与路径
@@ -164,7 +175,7 @@ bash .harness/scripts/harness_intake.sh scan
 
 Work Item provider 也属于产品侧配置。长期选择写在 `<product-root>/harness-workspace/project.yaml`，本机 `.env` 只放密钥；`WORK_ITEM_PROVIDER` 仅用于临时覆盖。
 
-BMAD Planning 到 Work Item 的同步遵循 `bmad-work-item-v1`：先用 `draft-spec` 在 Codex 对话中生成待确认任务草稿，确认标题、范围和负责人后，再用 `sync-spec --assignee <provider-user-id>` 创建外部任务。外部任务只保存摘要、负责人、状态、讨论和 Harness Links；完整产品规格、执行计划和任务包以 `harness-workspace/planning/` 为真相源。详见 [BMAD_Work_Item_Contract.md](./BMAD_Work_Item_Contract.md)。
+BMAD Planning 到 Work Item 的同步仍遵循 `bmad-work-item-v1`，但推荐由 `harness plan` 批量完成并生成 binding receipt。外部任务只保存摘要、负责人、状态、讨论和 Harness Links；完整产品规格、执行计划和任务包以 `harness-workspace/planning/` 为真相源。`draft-spec` / `sync-spec` 仅是历史兼容入口。详见 [BMAD_Work_Item_Contract.md](./BMAD_Work_Item_Contract.md)。
 
 | 产品场景 | 产品侧 `project.yaml` | 本机 `.env` / 环境变量 |
 |----------|----------------------|-------------------------|
@@ -316,7 +327,7 @@ bash .harness/scripts/agent_start.sh <work-item-id>
 
 从 `harness-workspace/planning/tasks/` 自动恢复 Planning Gate，并把产品侧 `CONTEXT.md`、`LESSONS.md`、`REFERENCE_SYSTEMS.md` 摘要注入本次任务上下文；工作区在 `harness-workspace/runs/tasks/<id>/`。
 
-L3 Planning Gate 启动 `strict` execution tier；runtime scope 由任务目录及 `03-实施方案.md` 的写入边界组成。重复启动同一 Work Item 只允许单调提升 tier 或扩充 scope，保留原 worktree/Token baseline，且拒绝把既有 task 重新绑定到另一个 Work Item。
+新 batch 的 runtime scope 由任务目录及 `03-实施方案.md` 的写入边界组成，并按实际 diff/risk 选择 execution tier；L3 不再无条件映射为 `strict`，但高风险路径、真实 Provider、生产/安全/迁移变更仍会自动升级。重复启动同一 Work Item 只允许单调提升 tier 或扩充 scope，保留原 worktree/Token baseline，且拒绝把既有 task 重新绑定到另一个 Work Item。新流程写入 `runs/tasks/<id>/`，不覆盖共享 active pointer。
 
 ---
 
@@ -326,7 +337,7 @@ L3 Planning Gate 启动 `strict` execution tier；runtime scope 由任务目录�
 
 | 角色 | 并行方式 | 关键命令 |
 |------|----------|----------|
-| PM | 各开分支，独立 `harness-workspace/planning/tasks/<id>/` | `work_item.sh draft-spec` → 确认 → `work_item.sh sync-spec` → `planning_gate` |
+| PM | 各开分支，独立 `harness-workspace/planning/tasks/<id>/` | `harness plan --level ... --task-dir ...`（旧 provider 命令仅用于兼容） |
 | Dev | 共享 Harness，一任务一分支 | `agent_start <work-item-id>`、`work_item.sh list-mine` |
 | 切换任务 | 一人一时一个 Work Item ID | `agent_start <新work-item-id>` |
 
@@ -686,7 +697,7 @@ Guarded 接入会把 `pre-commit` / `post-commit` / `pre-push` 写入产品 `.gi
 
 首次安装 hooks 时，在暂存接入文件后执行 `harness bootstrap-guarded --task-id <id> --reason '<原因>'`。一次性 receipt 保存在 `.git/harness/`，绑定当前 HEAD、index tree、精确 staged paths 和任务身份；pre-commit 只验证，post-commit 仅在新 commit parent/tree 匹配后消费。已有版本化 hooks 的仓库不能创建 bootstrap receipt，且该机制仍属于可绕过的 `guarded`，不是 `enforced`。
 
-目标公开路径仍以 start/status/finish 为主；30 分钟 Story 另外用 `stage` 记录六个关键阶段（旧结果字段仍显示 `shadow`）：
+目标公开路径是 `plan/start/finish`，`status` 只读；30 分钟 Story 仍用 `stage` 记录六个关键阶段（旧结果字段仍显示 `shadow`）：
 
 ```bash
 bash .harness/scripts/harness start demo-login-task --scope src/auth --work-item <provider-id>

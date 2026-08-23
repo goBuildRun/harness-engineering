@@ -182,9 +182,29 @@ def validate_planning_credential(
 ) -> dict[str, str]:
     if credential.get("decision") != "pass":
         return {"decision": "block", "reason": "CI_PLANNING_CREDENTIAL_DECISION_INVALID"}
+    layout = load_layout(harness, product)
     binding = _committed_task_resolution(harness, product, task_id)
     if binding["status"] != "unique" and work_item_id and work_item_id != task_id:
         binding = _committed_task_resolution(harness, product, work_item_id)
+    if binding["status"] != "unique" and credential.get("source") == "harness-plan-batch":
+        raw_task_dir = str(credential.get("task_dir") or "").strip()
+        candidate = Path(raw_task_dir)
+        if not candidate.is_absolute():
+            candidate = product / candidate
+        try:
+            candidate = candidate.resolve()
+            candidate.relative_to(layout.tasks.resolve())
+        except (OSError, ValueError):
+            candidate = None
+        current_work_item = credential.get("work_item") or {}
+        if candidate is not None and candidate.is_dir() and isinstance(current_work_item, dict) and current_work_item.get("id"):
+            binding = {
+                "status": "unique", "task_dir": str(candidate),
+                "work_item": {
+                    "id": str(current_work_item.get("id")),
+                    "provider": str(current_work_item.get("provider") or "noop"),
+                },
+            }
     if binding["status"] != "unique":
         return {"decision": "block", "reason": "CI_TASK_BINDING_INVALID"}
     credential_task_id = str(
@@ -195,7 +215,6 @@ def validate_planning_credential(
     ):
         return {"decision": "block", "reason": "CI_PLANNING_TASK_ID_MISMATCH"}
 
-    layout = load_layout(harness, product)
     expected_dir = Path(str(binding["task_dir"])).resolve()
     raw_task_dir = str(credential.get("task_dir") or "").strip()
     current_dir = Path(raw_task_dir) if raw_task_dir else Path()

@@ -271,6 +271,11 @@ def active_planning_gate_path(layout: Phase0Layout) -> Path:
         if candidate != expected:
             return layout.runs_root / "ci" / "_invalid" / "planning_gate_pass.json"
         return expected
+    task_id = os.environ.get("HARNESS_TASK_ID", "").strip()
+    if task_id:
+        if not valid_task_id(task_id):
+            return layout.runs_root / "tasks" / "_invalid" / "planning_gate_pass.json"
+        return layout.runs_root / "tasks" / task_id / "planning_gate_pass.json"
     preferred = planning_gate_path(layout)
     return preferred if preferred.is_file() else legacy_phase0_path(layout)
 

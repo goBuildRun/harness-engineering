@@ -168,7 +168,9 @@ def validate_current_qa_evidence(
         )
         if binding["decision"] == "block":
             return {"decision": "block", "reason": binding["reason"]}
-        active = json.loads((layout.runs_root / "active_task.json").read_text(encoding="utf-8"))
+        task_id_path = layout.runs_root / "tasks" / task_id / "active_task.json"
+        active_path = task_id_path if os.environ.get("HARNESS_TASK_ID") else layout.runs_root / "active_task.json"
+        active = json.loads(active_path.read_text(encoding="utf-8"))
         if str(active.get("task_id") or "") != task_id or (
             active.get("work_item_id") and str(active["work_item_id"]) != work_item_id
         ):

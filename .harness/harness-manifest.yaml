@@ -74,6 +74,7 @@ required_files:
   - .harness/scripts/harness_schema.py
   - .harness/scripts/harness_cache.py
   - .harness/scripts/harness_cli.py
+  - .harness/scripts/harness_planning.py
   - .harness/scripts/harness_gates.py
   - .harness/scripts/harness_gate_execution.py
   - .harness/scripts/harness_gate_argv.py

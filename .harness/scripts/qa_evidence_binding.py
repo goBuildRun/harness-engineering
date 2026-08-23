@@ -46,6 +46,9 @@ def _active_id(layout) -> str:
         if isinstance(work_item, dict):
             return str(work_item.get("id") or ci_task_id).strip()
         return ci_task_id
+    task_id = os.environ.get("HARNESS_TASK_ID", "").strip()
+    if task_id:
+        return task_id if valid_task_id(task_id) else ""
     try:
         data = json.loads((layout.runs_root / "active_task.json").read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):

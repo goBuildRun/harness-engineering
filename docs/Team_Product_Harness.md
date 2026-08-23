@@ -19,7 +19,7 @@ Team Product R&D Harness = 已有项目接入 + 产品前导 + 协同真相源 +
 | 产品前导 | 需求、范围、验收、方案就绪 | BMAD Method → `planning/` |
 | 已有项目接入 | 既有代码、文档、测试、技术栈事实扫描 | `harness_intake.sh` → `evidence/intake-reports/` |
 | 协同真相源 | Work Item、负责人、状态、排期 | 产品级 provider：Teambition / 飞书 / Jira / noop |
-| 执行闭环 | DAG、TDD、QA、GC、MR；按 execution tier 编排 | `.harness/scripts/`，目标由 `start/status/finish` 封装 |
+| 执行闭环 | DAG、TDD、QA、GC、MR；按 execution tier 编排 | `.harness/scripts/`，目标由 `plan/start/finish` 封装，`status` 只观察 |
 | 结构守门 | 代码落点、边界、diff 同步 | profile `package-allowlist.yaml` + `structure_guard` |
 | 质量证据 | 测试、审查、签章、合并前总检 | `qa_sign_off` + `subagent-pr-gate` + `check.sh` |
 | 知识沉淀 | 上下文、失败教训、任务摘要、成长报告 | `harness-workspace/knowledge/` + `harness-workspace/evidence/` |
@@ -91,7 +91,7 @@ bash .harness/scripts/harness_growth.sh apply-review
 
 全新项目的入口不同：先通过 BMAD Planning 形成 `planning/product-specs/`、`planning/exec-plans/`、`planning/tasks/`，再由 `harness_knowledge.sh sync-planning` 把产品目标、产品蓝图、架构/方案和任务边界同步到 `CONTEXT.md`。`planning_gate.sh` 通过时会自动执行这一步。
 
-Work Item 系统承载协同真相源，不承载 BMAD 产物本体。产品设计、PM 或架构师先用 `draft-spec` 生成待确认任务草稿，在 Codex 对话中确认标题、范围和负责人后，再用 `sync-spec --assignee <provider-user-id>` 同步摘要、负责人、状态和 Harness Links；完整规格和计划仍以产品仓库 `harness-workspace/planning/` 为准。
+Work Item 系统承载协同真相源，不承载 BMAD 产物本体。推荐使用 `harness plan --level ... --task-dir ...` 一次生成 batch planning receipt、子任务 binding receipt 和共享上下文 digest；默认 offline，不猜测外部容器，明确授权后才调用 configured provider。旧 `draft-spec` / `sync-spec` 仍可用于历史任务诊断。完整规格和计划仍以产品仓库 `harness-workspace/planning/` 为准。
 
 ## 6. 通用接入步骤
 
@@ -123,7 +123,7 @@ bash .harness/scripts/doc-gardening.sh
 ```
 
 5. 只有已有项目首次接入、上游显著升级或事实漂移时运行 `harness_intake.sh scan`，review 后再 `apply-review`；全新项目在规划完成后运行 `sync-planning`。二者都不是每个任务的固定步骤。
-6. 当前 L2/L3 用 `<product-root>/harness-workspace/planning/tasks/<id>/03-实施方案.md` 的任务契约驱动开发；目标状态由 `start/finish` 按 tier 选择最小任务绑定或完整任务包。
+6. 新任务由 `plan` 生成 batch receipt，随后用 `<product-root>/harness-workspace/planning/tasks/<id>/03-实施方案.md` 的任务契约驱动开发；`start/finish` 按实际 diff/risk 选择最小 execution tier。L3 不再无条件映射 strict，高风险路径仍自动升级。
 
 ## 7. 任务契约
 

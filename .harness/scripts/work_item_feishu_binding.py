@@ -68,6 +68,10 @@ class FeishuBindingMixin:
                     parent_item=parent_item,
                 )
                 if ok:
+                    item.raw["_harness_binding_verified"] = {
+                        "tasklist": expected_tasklist,
+                        "parent": None if expected_parent is None else expected_parent,
+                    }
                     return item
                 last_error = RuntimeError(reason)
             except Exception as exc:
@@ -109,6 +113,27 @@ class FeishuBindingMixin:
             return self._verify_pulled_binding(item, expected_tasklist, expected_parent)
         except Exception as exc:
             return False, f"FEISHU_BINDING_VERIFY_FAIL: {exc}"
+
+    def verify_item_binding(
+        self,
+        item: WorkItem,
+        expected_project_id: str | None = None,
+        expected_parent_id: str | None = None,
+    ) -> tuple[bool, str]:
+        marker = (item.raw or {}).get("_harness_binding_verified")
+        expected = {
+            "tasklist": str(expected_project_id or self.tasklist_guid or "").strip(),
+            "parent": None if expected_parent_id is None else str(expected_parent_id).strip(),
+        }
+        if isinstance(marker, dict) and marker.get("tasklist") == expected["tasklist"] \
+                and marker.get("parent") == expected["parent"]:
+            return True, f"FEISHU_BINDING_OK_READBACK: task={item.id}"
+        # A caller may provide a provider-created item without the marker; keep
+        # the old fail-closed verification in that case.
+        return self.verify_binding(
+            item.id, expected_project_id=expected_project_id,
+            expected_parent_id=expected_parent_id,
+        )
 
     def _verify_pulled_binding(
         self,

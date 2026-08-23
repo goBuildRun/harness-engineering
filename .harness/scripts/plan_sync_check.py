@@ -41,6 +41,11 @@ def active_task_baseline(layout) -> tuple[str, Path | None]:
             ci_task_id,
             layout.agent_workspace / "tasks" / ci_task_id / "worktree_baseline.json",
         )
+    task_id = os.environ.get("HARNESS_TASK_ID", "").strip()
+    if task_id:
+        if not valid_task_id(task_id):
+            raise ValueError("TASK_ID_INVALID")
+        return task_id, layout.agent_workspace / "tasks" / task_id / "worktree_baseline.json"
     active_path = layout.agent_workspace / "active_task.json"
     try:
         active = json.loads(active_path.read_text(encoding="utf-8"))
@@ -55,7 +60,7 @@ def active_task_baseline(layout) -> tuple[str, Path | None]:
 
 
 def active_task_planning_dir(layout) -> Path | None:
-    if os.environ.get("HARNESS_CI_TASK_ID", "").strip():
+    if os.environ.get("HARNESS_CI_TASK_ID", "").strip() or os.environ.get("HARNESS_TASK_ID", "").strip():
         gate_path = active_planning_gate_path(layout)
         try:
             gate = json.loads(gate_path.read_text(encoding="utf-8"))

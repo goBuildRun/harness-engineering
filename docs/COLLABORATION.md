@@ -3,7 +3,7 @@
 > **定位**：多 PM 并行设计、多开发并行执行时的协作约定与命令。  
 > **全景上下文**：[Harness_全景手册.md](./Harness_全景手册.md)  
 > **使用说明**：[USAGE.md](./USAGE.md)
-> **精简目标**：多人隔离、角色边界和 provider 协同继续保留；目标使用者只调用 `start/status/finish`，现有 `task_workspace`、provider 和 QA 命令收为内部能力。
+> **精简目标**：多人隔离、角色边界和 provider 协同继续保留；推荐使用者调用 `plan/start/finish`，`status` 只观察，现有 `task_workspace`、provider 和 QA 命令收为内部能力。
 
 ---
 
@@ -130,8 +130,10 @@ git push -u origin pm/kb-health-spec
 git checkout main && git pull
 git checkout -b feature/wi-<work-item-id>
 
-# 自动从 harness-workspace/planning/tasks/ 恢复 Planning Gate（无需手拷）
-bash .harness/scripts/agent_start.sh <work-item-id>
+# 推荐：一次生成 batch receipt，再启动任务（无需手拷或逐项 verify/pull）
+harness --product-root "$PRODUCT_ROOT" plan --level L3 \
+  --task-dir "$PRODUCT_ROOT/harness-workspace/planning/tasks/<task-dir>"
+harness --product-root "$PRODUCT_ROOT" start <work-item-id>
 
 # 查看当前激活任务
 bash .harness/scripts/task_workspace.sh show-active
@@ -142,7 +144,7 @@ bash .harness/scripts/work_item.sh list-mine
 # … Harness Execution：tasks-dag → TDD → 风险匹配验证 → check → MR …
 ```
 
-`agent_start` 会从 `03-实施方案.md` 写入边界生成 runtime scope；L3 自动使用 strict tier。再次启动同一 Work Item 不覆盖原 baseline，只允许增强 tier/scope，并拒绝 Work Item 换绑。
+`start` 会从 batch receipt 和 `03-实施方案.md` 写入边界生成 runtime scope；execution tier 按实际 diff/risk 选择，L3 不再自动等于 strict。再次启动同一 Work Item 不覆盖原 baseline，只允许增强 tier/scope，并拒绝 Work Item 换绑。
 
 **开发注意**：
 
@@ -163,7 +165,7 @@ bash .harness/scripts/work_item.sh list-mine
 
 ```
 harness-workspace/runs/
-├── active_task.json              # 当前激活的 Work Item ID
+├── active_task.json              # 兼容：旧流程的当前激活指针，新流程不写入
 ├── planning_gate_pass.json              # 兼容：当前激活的 phase0 副本
 ├── context.md                    # 兼容：当前 context 副本
 └── tasks/
@@ -194,7 +196,7 @@ Git 权威：`harness-workspace/planning/tasks/<date>-<work-item-id>-简称>/pla
 bash .harness/scripts/agent_start.sh <新work-item-id>
 ```
 
-会自动切换 `active_task.json` 与工作区，**无需**删除旧目录。
+新流程不会切换共享 `active_task.json`；每个任务使用 `runs/tasks/<work-item-id>/`，因此多个任务不会互相覆盖。旧兼容命令仍可写 active pointer，**无需**删除旧目录。
 
 ---
 
@@ -214,8 +216,7 @@ bash .harness/scripts/agent_start.sh <新work-item-id>
 
 ### 场景 C：同一人开两个 Cursor 窗口做两任务 — ⚠️ 不建议
 
-工作区按 Work Item ID 隔离，但 `active_task.json` 只有一个「当前」；后启动的会覆盖。  
-**规则**：一人一时一个 Work Item ID。
+新流程按 Work Item ID 隔离，多个任务可并行；QA 凭证、planning credential 和 context 都写入各自 task scope。只有调用旧兼容命令时才受单一 active pointer 限制。
 
 ### 场景 D：多 MR 并行 — ✅（须遵守）
 

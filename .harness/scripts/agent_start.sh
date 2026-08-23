@@ -24,7 +24,29 @@ WORKSPACE_JSON=$(python3 "$SCRIPT_DIR/workspace_paths.py" --harness-root "$HARNE
 AGENT_WS=$(echo "$WORKSPACE_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['agent_workspace'])")
 TASKS_ROOT=$(echo "$WORKSPACE_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['tasks'])")
 
-ACTIVATE=$(bash "$SCRIPT_DIR/task_workspace.sh" activate "$WORK_ITEM_ID" 2>/dev/null || true)
+# Batch receipts opt into task-scoped state automatically. Legacy planning
+# gates retain the shared-pointer behavior unless explicitly overridden.
+if [[ -z "${HARNESS_TASK_SCOPED:-}" ]]; then
+  HARNESS_TASK_SCOPED=0
+  if python3 - "$SCRIPT_DIR" "$HARNESS_ROOT" "$PRODUCT_ROOT" "$WORK_ITEM_ID" <<'PY'
+import sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from task_workspace import find_planning_child
+from workspace_paths import load_layout
+layout = load_layout(Path(sys.argv[2]).resolve(), Path(sys.argv[3]).resolve())
+raise SystemExit(0 if find_planning_child(layout, sys.argv[4]) else 1)
+PY
+  then
+    HARNESS_TASK_SCOPED=1
+  fi
+fi
+export HARNESS_TASK_SCOPED
+[[ "$HARNESS_TASK_SCOPED" == "1" ]] && export HARNESS_TASK_ID="$WORK_ITEM_ID"
+
+ACTIVATE_ARGS=(activate "$WORK_ITEM_ID")
+[[ "$HARNESS_TASK_SCOPED" == "1" ]] && ACTIVATE_ARGS+=(--task-scoped)
+ACTIVATE=$(bash "$SCRIPT_DIR/task_workspace.sh" "${ACTIVATE_ARGS[@]}" 2>/dev/null || true)
 if ! echo "$ACTIVATE" | python3 -c "import sys,json; d=json.load(sys.stdin); sys.exit(0 if d.get('decision')=='pass' else 1)" 2>/dev/null; then
   if [[ ! -f "$AGENT_WS/planning_gate_pass.json" && ! -f "$AGENT_WS/phase0_pass.json" ]]; then
     harness_print_json "$ACTIVATE"
@@ -32,7 +54,8 @@ if ! echo "$ACTIVATE" | python3 -c "import sys,json; d=json.load(sys.stdin); sys
   fi
 fi
 
-GATE_FILE="$AGENT_WS/planning_gate_pass.json"
+GATE_FILE="$AGENT_WS/tasks/$WORK_ITEM_ID/planning_gate_pass.json"
+[[ -f "$GATE_FILE" ]] || GATE_FILE="$AGENT_WS/planning_gate_pass.json"
 [[ -f "$GATE_FILE" ]] || GATE_FILE="$AGENT_WS/phase0_pass.json"
 VALID=$(python3 - "$GATE_FILE" <<'PY'
 import json, sys
@@ -50,6 +73,8 @@ LEVEL=$(python3 -c "import json; print(json.load(open('$GATE_FILE'))['level'])")
 TASK_DIR=$(python3 -c "import json; d=json.load(open('$GATE_FILE')); print(d.get('task_dir') or 'N/A')")
 BOUND_ID=$(python3 -c "import json; d=json.load(open('$GATE_FILE')); w=d.get('work_item') or {}; print(w.get('id') or '' if isinstance(w, dict) else '')")
 GATE_PROVIDER=$(python3 -c "import json; d=json.load(open('$GATE_FILE')); w=d.get('work_item') or {}; print(w.get('provider') or 'noop' if isinstance(w, dict) else 'noop')")
+GATE_SOURCE=$(python3 -c "import json; d=json.load(open('$GATE_FILE')); print(d.get('source') or '')")
+[[ "$GATE_SOURCE" == "harness-plan-batch" ]] && export HARNESS_LEAN_FLOW=1
 if [[ -z "$BOUND_ID" ]]; then
   python3 "$EMIT" block "NO_WORK_ITEM_IN_PLANNING_GATE: 重新 planning_gate"
   exit 0
@@ -66,7 +91,7 @@ if [[ "$LEVEL" == "L3" ]] && ! echo "$LIFECYCLE_PREFLIGHT" | python3 -c "import 
   exit 0
 fi
 
-if [[ "$LEVEL" == "L2" || "$LEVEL" == "L3" ]]; then
+if [[ "$LEVEL" == "L2" || "$LEVEL" == "L3" ]] && [[ "$GATE_SOURCE" != "harness-plan-batch" ]]; then
   WI_VERIFY=$(bash "$SCRIPT_DIR/work_item.sh" verify --id "$WORK_ITEM_ID" --level "$LEVEL")
   if ! echo "$WI_VERIFY" | python3 -c "import sys,json; d=json.load(sys.stdin); sys.exit(0 if d.get('decision')=='pass' else 1)" 2>/dev/null; then
     harness_print_json "$WI_VERIFY"
@@ -115,6 +140,19 @@ print("\n".join(sorted(paths)))
 PY
 )
 fi
+if [[ "$GATE_SOURCE" == "harness-plan-batch" ]]; then
+  # Planning level and execution risk are orthogonal. Batch receipts use the
+  # changed scope to select the smallest tier that still covers the risk.
+  RUNTIME_TIER=$(python3 - "$SCRIPT_DIR" "${RUNTIME_SCOPE_ARGS[@]}" <<'PY'
+import sys
+sys.path.insert(0, sys.argv[1])
+from harness_tier import classify_tier
+raw = sys.argv[2:]
+paths = [raw[i + 1] for i, value in enumerate(raw[:-1]) if value == "--scope"]
+print(classify_tier(paths, floor="lite"))
+PY
+)
+fi
 RUNTIME_START=$("$SCRIPT_DIR/harness" start "$WORK_ITEM_ID" \
   --work-item "$WORK_ITEM_ID" --tier "$RUNTIME_TIER" "${RUNTIME_SCOPE_ARGS[@]}" || true)
 if ! echo "$RUNTIME_START" | python3 -c "import sys,json; d=json.load(sys.stdin); sys.exit(0 if d.get('decision')=='pass' else 1)" 2>/dev/null; then
@@ -122,8 +160,29 @@ if ! echo "$RUNTIME_START" | python3 -c "import sys,json; d=json.load(sys.stdin)
   exit 0
 fi
 
+if [[ "$GATE_SOURCE" == "harness-plan-batch" ]]; then
+  # A direct start creates the story/takeover span. Close the two planning
+  # stages in one bounded transition so implementation begins in the correct
+  # ledger state without requiring confirm/stage commands from the user.
+  CURRENT_STAGE=$(echo "$RUNTIME_START" | python3 -c "import sys,json; print(((json.load(sys.stdin).get('result') or {}).get('cycle') or {}).get('current_stage') or '')")
+  if [[ "$CURRENT_STAGE" == "takeover" ]]; then
+    "$SCRIPT_DIR/harness" stage "$WORK_ITEM_ID" end takeover --reason BATCH_PREFLIGHT_COMPLETE >/dev/null || true
+    CURRENT_STAGE=""
+  fi
+  if [[ -z "$CURRENT_STAGE" ]]; then
+    PLANNING_STAGE=$("$SCRIPT_DIR/harness" stage "$WORK_ITEM_ID" start planning --reason BATCH_PLANNING_COMPLETE || true)
+    if echo "$PLANNING_STAGE" | python3 -c "import sys,json; sys.exit(0 if json.load(sys.stdin).get('decision')=='pass' else 1)" 2>/dev/null; then
+      "$SCRIPT_DIR/harness" stage "$WORK_ITEM_ID" end planning --reason BATCH_PLANNING_COMPLETE >/dev/null || true
+    fi
+  fi
+fi
+
 if [[ "$LEVEL" == "L3" ]]; then
-  CURRENT_STAGE=$(echo "$RUNTIME_START" | python3 -c "import sys,json; d=json.load(sys.stdin); print(((d.get('result') or {}).get('cycle') or {}).get('current_stage') or '')" 2>/dev/null || echo "")
+  if [[ "$GATE_SOURCE" == "harness-plan-batch" ]]; then
+    CURRENT_STAGE=""
+  else
+    CURRENT_STAGE=$(echo "$RUNTIME_START" | python3 -c "import sys,json; d=json.load(sys.stdin); print(((d.get('result') or {}).get('cycle') or {}).get('current_stage') or '')" 2>/dev/null || echo "")
+  fi
   if [[ -z "$CURRENT_STAGE" ]]; then
     IMPLEMENTATION_STAGE=$("$SCRIPT_DIR/harness" stage "$WORK_ITEM_ID" start implementation_test || true)
     if ! echo "$IMPLEMENTATION_STAGE" | python3 -c "import sys,json; sys.exit(0 if json.load(sys.stdin).get('decision')=='pass' else 1)" 2>/dev/null; then
@@ -152,15 +211,16 @@ gate = json.loads(Path(gate_path).read_text(encoding="utf-8"))
 provider = (gate.get("work_item") or {}).get("provider", "noop")
 title, note = "", ""
 try:
-    out = subprocess.check_output(
-        ["bash", f"{script_dir}/work_item.sh", "pull", "--id", wi_id],
-        text=True,
-    )
-    data = json.loads(out)
-    if data.get("decision") == "pass":
-        w = data.get("work_item") or {}
-        title = w.get("title") or ""
-        note = (w.get("note") or "")[:500]
+    if provider not in {"noop", "local"}:
+        out = subprocess.check_output(
+            ["bash", f"{script_dir}/work_item.sh", "pull", "--id", wi_id],
+            text=True,
+        )
+        data = json.loads(out)
+        if data.get("decision") == "pass":
+            w = data.get("work_item") or {}
+            title = w.get("title") or ""
+            note = (w.get("note") or "")[:500]
 except Exception:
     pass
 

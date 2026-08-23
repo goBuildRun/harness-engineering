@@ -14,6 +14,8 @@ from harness_runtime import load_result, resolve_task_id, result_path
 from harness_migration_commands import cmd_audit, cmd_migrate
 from harness_runtime import TIERS
 from harness_output import decision_exit_code, dump_json, reset_decision
+from harness_planning import plan_batch
+from workspace_paths import load_layout
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -31,6 +33,11 @@ def build_parser() -> argparse.ArgumentParser:
         default="implementation",
     )
     start.add_argument("--reason", default="")
+    plan = sub.add_parser("plan", help="batch BMAD planning and task-scoped receipts")
+    plan.add_argument("--level", choices=("L1", "L2", "L3"), required=True)
+    plan.add_argument("--task-dir", action="append", required=True)
+    plan.add_argument("--batch-id", default="")
+    plan.add_argument("--provider-mode", choices=("offline", "configured"), default="offline")
     confirm = sub.add_parser("confirm")
     confirm.add_argument("task_id")
     confirm.add_argument("--work-item", default="")
@@ -102,6 +109,14 @@ def main() -> int:
         "stage": cmd_stage,
         "ci-check": cmd_ci_check,
     }
+    if args.command == "plan":
+        layout = load_layout(Path(args.harness_root).resolve(), Path(args.product_root).resolve())
+        outcome = plan_batch(
+            layout, level=args.level, task_dirs=args.task_dir,
+            batch_id=args.batch_id, provider_mode=args.provider_mode,
+        )
+        dump_json(outcome)
+        return decision_exit_code()
     if args.command == "bootstrap-guarded":
         outcome = create_bootstrap(Path(args.product_root).resolve(), args.task_id, args.reason)
         dump_json(outcome)

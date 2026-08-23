@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -189,14 +190,54 @@ def upsert_planning_block(text: str, block: str) -> str:
 
 def sync_planning(layout: Phase0Layout) -> dict[str, Any]:
     ensure(layout)
+    cache_file = layout.agent_workspace / "planning" / "context-sync.json"
+    inputs: list[dict[str, str]] = []
+    roots = (layout.product_specs, layout.exec_plans_active, layout.exec_plans_completed, layout.tasks)
+    for root in roots:
+        if root.is_dir():
+            for path in sorted(p for p in root.rglob("*") if p.is_file()):
+                try:
+                    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+                except OSError:
+                    digest = "missing"
+                inputs.append({"path": layout.rel(path), "sha256": digest})
+    input_digest = hashlib.sha256(
+        json.dumps(inputs, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    try:
+        cached = json.loads(cache_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        cached = {}
+    context_digest = ""
+    if layout.context_file.is_file():
+        try:
+            context_digest = hashlib.sha256(layout.context_file.read_bytes()).hexdigest()
+        except OSError:
+            context_digest = ""
+    if (cached.get("input_digest") == input_digest and layout.context_file.is_file()
+            and cached.get("context_digest") == context_digest):
+        return {
+            "context_file": layout.rel(layout.context_file),
+            "planning_root": layout.rel(layout.planning_root),
+            "bmad_output_root": layout.rel(layout.bmad_output_root),
+            "input_digest": input_digest,
+            "cache_hit": True,
+            **(cached.get("counts") or {}),
+        }
     body, counts = build_planning_context_body(layout)
     existing = layout.context_file.read_text(encoding="utf-8") if layout.context_file.is_file() else ""
     layout.context_file.write_text(upsert_planning_block(existing, planning_block(body)), encoding="utf-8")
+    cache_file.parent.mkdir(parents=True, exist_ok=True)
+    context_digest = hashlib.sha256(layout.context_file.read_bytes()).hexdigest()
+    cache_file.write_text(json.dumps({
+        "schema": "harness-knowledge-sync-v1", "input_digest": input_digest,
+        "inputs": inputs, "counts": counts, "context_digest": context_digest,
+    }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return {
         "context_file": layout.rel(layout.context_file),
         "planning_root": layout.rel(layout.planning_root),
         "bmad_output_root": layout.rel(layout.bmad_output_root),
-        **counts,
+        "input_digest": input_digest, "cache_hit": False, **counts,
     }
 
 

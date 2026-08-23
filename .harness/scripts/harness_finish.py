@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import json
+import os
 
 
 def execute_finish(args: argparse.Namespace, *, commands) -> int:
@@ -17,14 +19,38 @@ def execute_finish(args: argparse.Namespace, *, commands) -> int:
     if not path.is_file():
         commands.dump_json({"decision": "block", "reason": "TASK_NOT_FOUND"})
         return 0
-    with (
-        commands.task_operation_lock(commands.active_task_path(product)),
-        commands.task_operation_lock(path),
-    ):
-        return _execute_finish_locked(
-            args, product, harness, task_id, path, started,
-            commands=commands,
-        )
+    try:
+        stored = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        stored = {}
+    task_scoped = bool(isinstance(stored, dict) and stored.get("task_scoped_state"))
+    previous_scope = os.environ.get("HARNESS_TASK_SCOPED")
+    previous_task_id = os.environ.get("HARNESS_TASK_ID")
+    if task_scoped:
+        os.environ["HARNESS_TASK_SCOPED"] = "1"
+        os.environ["HARNESS_TASK_ID"] = task_id
+    lock_path = path if task_scoped else commands.active_task_path(product)
+    try:
+        if lock_path == path:
+            with commands.task_operation_lock(path):
+                return _execute_finish_locked(
+                    args, product, harness, task_id, path, started,
+                    commands=commands,
+                )
+        with commands.task_operation_lock(lock_path), commands.task_operation_lock(path):
+            return _execute_finish_locked(
+                args, product, harness, task_id, path, started,
+                commands=commands,
+            )
+    finally:
+        if previous_scope is None:
+            os.environ.pop("HARNESS_TASK_SCOPED", None)
+        else:
+            os.environ["HARNESS_TASK_SCOPED"] = previous_scope
+        if previous_task_id is None:
+            os.environ.pop("HARNESS_TASK_ID", None)
+        else:
+            os.environ["HARNESS_TASK_ID"] = previous_task_id
 
 
 def _execute_finish_locked(

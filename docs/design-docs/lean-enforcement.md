@@ -20,7 +20,7 @@ Harness 同时满足两个要求：
 
 ### 1.1 能力保留契约
 
-精简升级是执行面的收敛，不是推倒重来。参考项目中已经证明有效的能力继续保留，但由 `start/status/finish` 按 execution tier 自动编排：
+精简升级是执行面的收敛，不是推倒重来。参考项目中已经证明有效的能力继续保留，但由 `plan/start/finish` 按 planning level 与 execution tier 自动编排（`status` 只观察）：
 
 | 来源 | 必须保留的能力 | 目标承载方式 |
 |------|----------------|--------------|
@@ -38,19 +38,21 @@ Harness 同时满足两个要求：
 
 ## 2. 最小操作面
 
-目标状态只向人类和 Agent 暴露三个动作：
+目标状态只向人类和 Agent 暴露三个主动作（`status` 仅观察）：
 
 ```bash
-harness start [<task-id>] [--work-item <provider-id>]
-harness status [<task-id>]
+harness plan --level <L1|L2|L3> --task-dir <dir> [--task-dir <dir>...]
+harness start <work-item-id>
 harness finish [<task-id>]
+harness status [<task-id>]  # 只读观察
 ```
 
-- `start`：无 ID 时生成本地任务 ID，有 ID 时恢复任务；识别产品、绑定可选外部 Work Item、记录基线并给出初始 execution tier。
+- `plan`：一次执行共享前置检查、BMAD/Architecture/Readiness digest、批量 Work Item binding receipt、task-scoped Planning Gate 和 knowledge digest cache。
+- `start`：读取 planning child receipt，执行生命周期 preflight、记录基线并按实际 diff/risk 选择初始 execution tier；不写共享 active pointer。
 - `status`：默认读取当前任务，显示范围、当前有效 execution tier、成本、已通过检查和阻塞项。
 - `finish`：重新判定最终 execution tier，执行或复用必要检查，生成本地合规结果；`pass` 只表示可进入提交/合并验证，不直接关闭外部 Work Item。
 
-任务身份与外部协同 ID 分离：Harness 始终拥有稳定 `task-id`，`standard` / `strict` 另绑定产品 Work Item。历史任务可继续让两者取相同值。任务推断存在歧义时必须 `block` 并列出候选，不能静默选择“最近任务”。
+任务身份与外部协同 ID 分离：Harness 始终拥有稳定 `task-id`，`standard` / `strict` 另绑定产品 Work Item。历史任务可继续让两者取相同值。任务推断存在歧义时必须 `block` 并列出候选，不能静默选择“最近任务”。新 batch receipt 保留每个 child 的独立 ID、owner、scope、依赖和 binding receipt。
 
 CI 可见的任务绑定不能只存在于 gitignored 的 `runs/`：
 
@@ -281,7 +283,7 @@ harness migrate-task <task-id>
 - `lite` 任务不再承担 `strict` 的证据数量和命令链。
 - 相同输入的 gate 不重复运行。
 - 单任务可以区分实现成本与 Harness 固定成本。
-- 接入产品只需学习 `start/status/finish` 和一个结果文件。
+- 接入产品只需学习 `plan/start/finish`、只读 `status` 和一个结果文件。
 - 旧脚本数量可以逐步减少，而不是继续增长。
 - 已接入产品无需全量迁移，活动任务可最小升级，历史审计链保持可读。
 

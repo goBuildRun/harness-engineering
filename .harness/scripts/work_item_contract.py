@@ -309,8 +309,8 @@ def sync_spec_markdown(
             if parent_id
             else provider.create(title=title, note=note)
         )
-        ok, reason = provider.verify_binding(
-            item.id,
+        ok, reason = provider.verify_item_binding(
+            item,
             expected_project_id=expected_project,
             expected_parent_id=expected_parent,
         )

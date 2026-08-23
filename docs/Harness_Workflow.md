@@ -4,7 +4,7 @@
 > **使用说明**：[USAGE.md](./USAGE.md) · **多人协作**：[COLLABORATION.md](./COLLABORATION.md)
 > **Work Item 配置**：[.harness/work-items/README.md](../.harness/work-items/README.md)
 
-> **下一代精简执行目标**：[design-docs/lean-enforcement.md](./design-docs/lean-enforcement.md)。当前脚本链仍是已实现实态；目标状态将 Agent 操作面收敛为 `harness start/status/finish` 和单一 `result.json`，不以新增并行流程落地。
+> **当前推荐路径**：[design-docs/lean-plan-flow.md](./design-docs/lean-plan-flow.md)。公开操作面是 `harness plan → start → finish`，`status` 只观察；旧脚本链保留为兼容诊断，不作为每个 Story 的人工步骤。
 
 ## 建设目的
 
@@ -73,7 +73,7 @@ Team Product R&D Harness **不是** OpenAI 原文的简单复刻，而是通用�
 
 Harness **不绑定**某个协同系统。长期选择写在产品侧 `harness-workspace/project.yaml`；全局默认和 adapter 配置见 `.harness/work-items/config.yaml`。同一套 harness-engineering 可同时服务 Teambition、飞书任务、Jira 或本地 `noop` 产品。
 
-BMAD → Work Item 使用 `bmad-work-item-v1` 契约：先 `draft-spec` 生成待确认任务草稿，在 Codex 对话中确认任务标题、范围和负责人后，再 `sync-spec --assignee <provider-user-id>` 创建外部任务。Work Item 只保存状态、负责人、讨论、摘要和 Harness Links，完整 BMAD 产物继续以产品仓库 `harness-workspace/planning/` 为真相源。详见 [BMAD_Work_Item_Contract.md](./BMAD_Work_Item_Contract.md)。
+BMAD → Work Item 使用 `bmad-work-item-v1` 契约，但新任务由 `harness plan` 批量生成 planning bundle 和 per-child binding receipt。默认 offline，不猜测外部容器；明确授权后才使用 configured provider。Work Item 只保存状态、负责人、讨论、摘要和 Harness Links，完整 BMAD 产物继续以产品仓库 `harness-workspace/planning/` 为真相源。旧 `draft-spec` / `sync-spec` 仅供兼容诊断。详见 [BMAD_Work_Item_Contract.md](./BMAD_Work_Item_Contract.md)。
 
 ---
 
@@ -137,7 +137,7 @@ Intake 完成后再进入 BMAD Planning。不要用未 review 的扫描报告直
 | 步 | 动作 | 产出 / 命令 |
 |----|------|-------------|
 | P1 | 产品规格 | `harness-workspace/planning/product-specs/<功能>.md` |
-| P1b | 草稿确认并推送协同（L2/L3） | `work_item.sh draft-spec` → 人确认 → `work_item.sh sync-spec` → 回写 `#<work-item-id>` |
+| P1b | 批量协同绑定（L2/L3） | `harness plan` 生成每个 child 的 Work Item binding receipt；旧 `draft-spec/sync-spec` 仅兼容 |
 | P2 | 架构/影响对齐 | `harness-workspace/planning/exec-plans/active/`、`02-影响分析.md`（L3） |
 | P3 | 分级 + 建档 | `harness-workspace/planning/tasks/YYYY-MM-DD-<work-item-id>-简称/`，模板 `tasks/_templates/` |
 | P4 | 前导门禁 + 知识沉淀 | `planning_gate.sh` → `planning_gate_pass.json` + `knowledge/CONTEXT.md` 的 `BMAD Planning 规划沉淀` 区块 |
@@ -155,7 +155,7 @@ Intake 完成后再进入 BMAD Planning。不要用未 review 的扫描报告直
 
 | 步 | 角色 | 动作 | 命令/产物 |
 |----|------|------|-----------|
-| 1 | 人类/Lead | 进入主闭环 | `agent_start.sh <work-item-id>`（自动恢复 Planning Gate；注入产品知识摘要；启动时静默 `close --status in_progress`） |
+| 1 | 人类/Lead | 进入主闭环 | `harness plan` → `harness start <work-item-id>`（一次生成 batch receipt；task-scoped 激活；注入知识 digest；不重复 verify/pull/close） |
 | 2 | lead-agent | 拆 DAG | `tasks-dag.md`（对齐 `03-实施方案.md`） |
 | 3 | lead-agent | 计划门禁 + 任务契约 | `feedback_planner.sh` + `task_contract_check.sh` |
 | 4 | backend/frontend | 受控命令 TDD | `run_in_sandbox.sh` + `structure_guard` |

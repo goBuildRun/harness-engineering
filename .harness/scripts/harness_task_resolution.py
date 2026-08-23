@@ -41,7 +41,9 @@ def _work_item_id(result: dict[str, Any]) -> str:
 def bind_active_task(product: Path, task_id: str, work_item_id: str) -> bool:
     if not valid_task_id(task_id) or (work_item_id and not valid_task_id(work_item_id)):
         return False
-    path = product / "harness-workspace" / "runs" / "active_task.json"
+    runs = product / "harness-workspace" / "runs"
+    task_scoped = os.environ.get("HARNESS_TASK_SCOPED", "0") == "1"
+    path = (runs / "tasks" / task_id / "active_task.json") if task_scoped else runs / "active_task.json"
     try:
         active = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
@@ -52,8 +54,8 @@ def bind_active_task(product: Path, task_id: str, work_item_id: str) -> bool:
         return False
     existing_task = str(active.get("task_id") or "").strip()
     existing_work_item = str(active.get("work_item_id") or "").strip()
-    if ((existing_task and existing_task != task_id)
-            or (existing_work_item and existing_work_item != work_item_id)):
+    if (not task_scoped and ((existing_task and existing_task != task_id)
+            or (existing_work_item and existing_work_item != work_item_id))):
         return False
     active["task_id"] = task_id
     if work_item_id:

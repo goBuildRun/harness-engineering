@@ -163,6 +163,23 @@ class WorkItemProvider(ABC):
             return False, f"{self.name.upper()}_BINDING_VERIFY_UNSUPPORTED"
         return self.verify(work_item_id)
 
+    def verify_item_binding(
+        self,
+        item: WorkItem,
+        expected_project_id: str | None = None,
+        expected_parent_id: str | None = None,
+    ) -> tuple[bool, str]:
+        """Validate a create/readback result without forcing another provider pull.
+
+        Adapters that cannot validate an in-memory readback retain the legacy
+        verify_binding behavior; provider adapters with a complete raw payload
+        override this hook.
+        """
+        return self.verify_binding(
+            item.id, expected_project_id=expected_project_id,
+            expected_parent_id=expected_parent_id,
+        )
+
     def terminal_transition_authorized(
         self,
         *,

@@ -54,7 +54,13 @@ def cmd_start(args: argparse.Namespace) -> int:
     if selection["decision"] == "block":
         dump_json(selection)
         return 0
-    with task_operation_lock(active_task_path(product)), task_operation_lock(path):
+    shared_lock = active_task_path(product)
+    if os.environ.get("HARNESS_TASK_SCOPED") == "1":
+        shared_lock = path
+    if shared_lock == path:
+        with task_operation_lock(path):
+            return _cmd_start_locked(args, product, harness, task_id, path, selection)
+    with task_operation_lock(shared_lock), task_operation_lock(path):
         return _cmd_start_locked(args, product, harness, task_id, path, selection)
 
 
@@ -96,6 +102,7 @@ def _cmd_start_locked(
         dump_json({"decision": "block", "reason": "ACTIVE_TASK_BINDING_CONFLICT"})
         return 0
     result = default_result(task_id, initial_tier=initial, work_item=work_item)
+    result["task_scoped_state"] = os.environ.get("HARNESS_TASK_SCOPED") == "1"
     result["lifecycle"] = lifecycle
     baseline = path.parent / "worktree_baseline.json"
     capture_baseline(product, baseline, work_item_id=task_id)

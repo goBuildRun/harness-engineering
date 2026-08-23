@@ -44,6 +44,8 @@ DEFAULT_GATE_TIMEOUT_SECONDS = 120
 
 def checks_for_tier(checks: dict[str, dict[str, Any]], tier: str) -> dict[str, dict[str, Any]]:
     required = {"tier", "scope", "code_health", *TIER_GATES[tier]}
+    if os.environ.get("HARNESS_LEAN_FLOW") == "1":
+        required.discard("growth_release")
     return {name: check for name, check in checks.items() if name in required}
 
 FRONTEND_PARTS = {"frontend", "web", "ui", "app", "pages", "components"}
@@ -165,6 +167,8 @@ def run_gate_plan(harness: Path, product: Path, *, tier: str,
         if remaining_budget_ms is not None else None
     )
     required_gates = list(TIER_GATES[tier])
+    if os.environ.get("HARNESS_LEAN_FLOW") == "1":
+        required_gates = [name for name in required_gates if name != "growth_release"]
     if tier == "standard" and browser_required(changed_files or []):
         required_gates.append("browser_qa")
     if ci_task_id and tier != "lite":
