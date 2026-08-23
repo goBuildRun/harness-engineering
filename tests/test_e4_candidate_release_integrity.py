@@ -663,6 +663,134 @@ class StageEvidenceTest(unittest.TestCase):
 
 
 class ProviderLockTest(unittest.TestCase):
+    def test_authority_required_attempt_rejects_compatibility_preflight_before_runner(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            path = result_path(product, "task-1")
+            path.parent.mkdir(parents=True)
+            path.write_text("{}\n", encoding="utf-8")
+            preflight = product / "preflight.json"
+            preflight.write_text(json.dumps({
+                "schema": "harness-provider-preflight-receipt-v2",
+                "decision": "pass",
+            }))
+            authority = product / "sandbox-authority.json"
+            authority.write_text("{}\n", encoding="utf-8")
+            with (
+                mock.patch.object(provider_attempt, "load_result", return_value={"cycle": {}}),
+                mock.patch.object(provider_attempt, "changed_since_baseline", return_value=[]),
+                mock.patch.object(
+                    provider_attempt, "load_candidate_snapshot", return_value={"snapshot": True},
+                ),
+                mock.patch.object(
+                    provider_attempt, "bound_candidate",
+                    return_value={"decision": "pass", "candidate_digest": "subject"},
+                ),
+                mock.patch.object(provider_attempt, "run_once") as run_once,
+            ):
+                outcome = provider_attempt.attempt_for_task(
+                    product, "task-1", preflight_path=preflight,
+                    expected_subject="subject", provider="mock",
+                    adapter_path=product / "adapter", evidence_ref="evidence.json",
+                    command=["provider"], timeout_seconds=5,
+                    sandbox_authority_path=authority,
+                    sandbox_trust=mock.sentinel.sandbox_trust,
+                    authority_required=True,
+                )
+        self.assertEqual(outcome["reason"], "PROVIDER_PREFLIGHT_RECEIPT_FIELDS_INVALID")
+        run_once.assert_not_called()
+
+    def test_provider_authority_blocks_before_runner_and_confines_binding_output(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            path = result_path(product, "task-1")
+            path.parent.mkdir(parents=True)
+            path.write_text("{}\n", encoding="utf-8")
+            preflight = product / "preflight.json"
+            preflight.write_text("{}\n", encoding="utf-8")
+            authority = product / "sandbox-authority.json"
+            authority.write_text("{}\n", encoding="utf-8")
+            common = (
+                mock.patch.object(provider_attempt, "load_result", return_value={"cycle": {}}),
+                mock.patch.object(provider_attempt, "changed_since_baseline", return_value=[]),
+                mock.patch.object(
+                    provider_attempt, "load_candidate_snapshot", return_value={"snapshot": True},
+                ),
+                mock.patch.object(
+                    provider_attempt, "bound_candidate",
+                    return_value={"decision": "pass", "candidate_digest": "subject"},
+                ),
+                mock.patch.object(provider_attempt, "run_once"),
+            )
+            with common[0], common[1], common[2], common[3], common[4] as run_once:
+                missing = provider_attempt.attempt_for_task(
+                    product, "task-1", preflight_path=preflight,
+                    expected_subject="subject", provider="mock",
+                    adapter_path=product / "adapter", evidence_ref="evidence.json",
+                    command=["provider"], timeout_seconds=5, authority_required=True,
+                )
+            self.assertEqual(missing["reason"], "PROVIDER_SANDBOX_AUTHORITY_REQUIRED")
+            run_once.assert_not_called()
+
+            common = (
+                mock.patch.object(provider_attempt, "load_result", return_value={"cycle": {}}),
+                mock.patch.object(provider_attempt, "changed_since_baseline", return_value=[]),
+                mock.patch.object(
+                    provider_attempt, "load_candidate_snapshot", return_value={"snapshot": True},
+                ),
+                mock.patch.object(
+                    provider_attempt, "bound_candidate",
+                    return_value={"decision": "pass", "candidate_digest": "subject"},
+                ),
+                mock.patch.object(provider_attempt, "run_once"),
+            )
+            with common[0], common[1], common[2], common[3], common[4] as run_once, \
+                    mock.patch.object(provider_attempt, "validate_canonical_preflight", return_value={
+                        "decision": "pass", "reason": "PROVIDER_PREFLIGHT_RECEIPT_OK",
+                    }), \
+                    mock.patch.object(provider_attempt, "validate_sandbox_authority", return_value={
+                        "decision": "block", "reason": "EXECUTION_AUTHORITY_SIGNER_MISMATCH",
+                    }):
+                forged = provider_attempt.attempt_for_task(
+                    product, "task-1", preflight_path=preflight,
+                    expected_subject="subject", provider="mock",
+                    adapter_path=product / "adapter", evidence_ref="evidence.json",
+                    command=["provider"], timeout_seconds=5,
+                    sandbox_authority_path=authority,
+                    sandbox_trust=mock.sentinel.sandbox_trust,
+                    authority_required=True,
+                )
+            self.assertEqual(forged["reason"], "EXECUTION_AUTHORITY_SIGNER_MISMATCH")
+            run_once.assert_not_called()
+
+            common = (
+                mock.patch.object(provider_attempt, "load_result", return_value={"cycle": {}}),
+                mock.patch.object(provider_attempt, "changed_since_baseline", return_value=[]),
+                mock.patch.object(
+                    provider_attempt, "load_candidate_snapshot", return_value={"snapshot": True},
+                ),
+                mock.patch.object(
+                    provider_attempt, "bound_candidate",
+                    return_value={"decision": "pass", "candidate_digest": "subject"},
+                ),
+                mock.patch.object(provider_attempt, "run_once"),
+            )
+            outside = product / "outside-binding.json"
+            with common[0], common[1], common[2], common[3], common[4] as run_once:
+                escaped = provider_attempt.attempt_for_task(
+                    product, "task-1", preflight_path=preflight,
+                    expected_subject="subject", provider="mock",
+                    adapter_path=product / "adapter", evidence_ref="evidence.json",
+                    command=["provider"], timeout_seconds=5,
+                    sandbox_authority_path=authority,
+                    sandbox_trust=mock.sentinel.sandbox_trust,
+                    authority_binding_path=outside,
+                    authority_required=True,
+                )
+            self.assertEqual(escaped["reason"], "PROVIDER_AUTHORITY_BINDING_PATH_INVALID")
+            self.assertFalse(outside.exists())
+            run_once.assert_not_called()
+
     def test_stale_qa_blocks_before_provider_attempt_is_claimed(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product = Path(tmp)

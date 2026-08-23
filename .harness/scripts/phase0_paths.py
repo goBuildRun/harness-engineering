@@ -10,12 +10,13 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from harness_output import dump_json
+from harness_task_resolution import valid_task_id
 from product_context import ProductContextError, resolve_product_context
 from workspace_config import DEFAULT_HARNESS, load_config
 
@@ -246,7 +247,30 @@ def legacy_phase0_path(layout: Phase0Layout) -> Path:
     return layout.runs_root / "phase0_pass.json"
 
 
+def ci_planning_gate_path(layout: Phase0Layout, task_id: str) -> Path:
+    if not valid_task_id(task_id):
+        return layout.runs_root / "ci" / "_invalid" / "planning_gate_pass.json"
+    return layout.runs_root / "ci" / task_id / "planning_gate_pass.json"
+
+
 def active_planning_gate_path(layout: Phase0Layout) -> Path:
+    ci_task_id = os.environ.get("HARNESS_CI_TASK_ID", "").strip()
+    ci_gate = os.environ.get("HARNESS_CI_PLANNING_GATE", "").strip()
+    if ci_task_id or ci_gate:
+        expected = ci_planning_gate_path(layout, ci_task_id).resolve()
+        if not ci_task_id or not ci_gate:
+            return layout.runs_root / "ci" / "_invalid" / "planning_gate_pass.json"
+        candidate = Path(ci_gate)
+        if not candidate.is_absolute():
+            candidate = layout.product_root / candidate
+        try:
+            candidate = candidate.resolve()
+            candidate.relative_to((layout.runs_root / "ci").resolve())
+        except (OSError, ValueError):
+            return layout.runs_root / "ci" / "_invalid" / "planning_gate_pass.json"
+        if candidate != expected:
+            return layout.runs_root / "ci" / "_invalid" / "planning_gate_pass.json"
+        return expected
     preferred = planning_gate_path(layout)
     return preferred if preferred.is_file() else legacy_phase0_path(layout)
 

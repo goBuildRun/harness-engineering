@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import time
 import urllib.error
 import urllib.parse
@@ -12,9 +11,13 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+from acceptance_trust import TerminalAuthorization
 from work_item_feishu_binding import FeishuBindingMixin
 from work_item_feishu_payload import FeishuPayloadMixin
+from work_item_local_binding import local_open_work_item_ids
 from work_item_providers import WorkItem, WorkItemProvider, valid_id
+
+
 class FeishuProvider(FeishuBindingMixin, FeishuPayloadMixin, WorkItemProvider):
     """Feishu/Lark Tasks provider.
 
@@ -210,7 +213,27 @@ class FeishuProvider(FeishuBindingMixin, FeishuPayloadMixin, WorkItemProvider):
             raise RuntimeError(f"FEISHU_CREATE_FAIL: {data}")
         return self._pull_created_with_retry(task_id, "CREATE", tasklist_guid, "")
 
-    def update_status(self, work_item_id: str, status: str, note: str = "") -> tuple[bool, str]:
+    def update_status(
+        self,
+        work_item_id: str,
+        status: str,
+        note: str = "",
+        *,
+        authorization: TerminalAuthorization | None = None,
+    ) -> tuple[bool, str]:
+        stage = self._canonical_status(status)
+        if self.status_update_mode in self.COMPLETED_MODE_ALIASES and stage not in {"done", "open"}:
+            return False, (
+                f"FEISHU_STATUS_UNSUPPORTED: {status}; "
+                "completed mode only supports done/open statuses"
+            )
+        if not self.terminal_transition_authorized(
+            work_item_id=work_item_id,
+            status=status,
+            authorization=authorization,
+            protected=self.status_update_mode in self.COMPLETED_MODE_ALIASES and stage == "done",
+        ):
+            return False, "PROVIDER_TERMINAL_STATUS_FORBIDDEN"
         ok, reason = self.verify(work_item_id)
         if not ok:
             return False, reason
@@ -218,13 +241,10 @@ class FeishuProvider(FeishuBindingMixin, FeishuPayloadMixin, WorkItemProvider):
             return True, f"FEISHU_STATUS_SKIP: status={status}; 飞书状态回写未启用"
         try:
             if self.status_update_mode in self.COMPLETED_MODE_ALIASES:
-                stage = self._canonical_status(status)
                 if stage == "done":
                     completed_at = str(int(time.time() * 1000))
-                elif stage == "open":
-                    completed_at = "0"
                 else:
-                    return False, f"FEISHU_STATUS_UNSUPPORTED: {status}; completed mode only supports done/open statuses"
+                    completed_at = "0"
                 body = {"task": {"completed_at": completed_at}, "update_fields": ["completed_at"]}
                 self._request("PATCH", f"{self.tasks_path}/{urllib.parse.quote(work_item_id, safe='')}", body)
                 readback = self.pull(work_item_id)
@@ -370,25 +390,4 @@ class FeishuProvider(FeishuBindingMixin, FeishuPayloadMixin, WorkItemProvider):
         return items
 
     def _local_open_work_item_ids(self) -> list[str]:
-        if not self.product_root or not self.product_root.is_dir():
-            return []
-        spec_dir = self.product_root / "harness-workspace/planning/product-specs"
-        if not spec_dir.is_dir():
-            return []
-        ids: list[str] = []
-        seen: set[str] = set()
-        for spec in sorted(spec_dir.glob("*.md")):
-            try:
-                lines = spec.read_text(encoding="utf-8", errors="ignore").splitlines()
-            except OSError:
-                continue
-            for line in lines:
-                if not line.startswith("- [ ]"):
-                    continue
-                for match in re.finditer(r"#([A-Za-z0-9][A-Za-z0-9._:-]{1,127})\b", line):
-                    task_id = match.group(1)
-                    if task_id in seen or not valid_id(task_id, self.id_pattern):
-                        continue
-                    ids.append(task_id)
-                    seen.add(task_id)
-        return ids
+        return local_open_work_item_ids(self.product_root, self.id_pattern)

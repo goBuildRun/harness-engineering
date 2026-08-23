@@ -488,6 +488,18 @@ class HarnessRuntimeTest(unittest.TestCase):
             active.write_text(json.dumps({"task_id": "../escape"}))
             self.assertEqual(resolve_task_id(product, None), ("", ["TASK_ID_INVALID"]))
 
+    def test_ci_task_environment_is_authoritative_and_fail_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            with mock.patch.dict(os.environ, {"HARNESS_CI_TASK_ID": "ci-task-1"}, clear=True):
+                self.assertEqual(resolve_task_id(product, None), ("ci-task-1", []))
+                self.assertEqual(
+                    resolve_task_id(product, "other-task"),
+                    ("", ["CI_TASK_ID_MISMATCH"]),
+                )
+            with mock.patch.dict(os.environ, {"HARNESS_CI_TASK_ID": "../escape"}, clear=True):
+                self.assertEqual(resolve_task_id(product, None), ("", ["TASK_ID_INVALID"]))
+
     def test_migration_preserves_committed_work_item_identity(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product = Path(tmp)

@@ -13,20 +13,29 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from acceptance_closure import canonical_receipt, validate_closure_order
+from acceptance_trust import TrustPolicy, verify_pinned_signature
 from harness_attestation import verify_attestation
 from harness_output import dump_json
 
-TERMINAL_STATUSES = {"done", "closed", "complete", "completed", "已完成", "完成"}
+TERMINAL_STATUSES = {
+    "done",
+    "closed",
+    "complete",
+    "completed",
+    "implemented",
+    "released",
+    "mr_merged",
+    "已完成",
+    "已实现",
+    "已发布",
+    "完成",
+}
 AUTHORITIES = {"git-receive", "release-gate"}
 SIGNATURE_NAMESPACE = "harness-acceptance"
 ACCEPTANCE_POLICY_SCHEMA = "harness-acceptance-policy-v1"
 ACCEPTANCE_POLICY_NAMESPACE = "harness-acceptance-policy"
 FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
-
-
-def canonical_receipt(receipt: dict[str, Any]) -> str:
-    payload = {key: value for key, value in receipt.items() if key != "signature"}
-    return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
 
 
 def sign_receipt(receipt: dict[str, Any], signing_key: Path) -> dict[str, Any]:
@@ -66,7 +75,8 @@ def canonical_policy(policy: dict[str, Any]) -> str:
 
 
 def load_acceptance_policy(policy_path: Path, *, allowed_signers: Path,
-                           repo_id: str) -> tuple[dict[str, Any], str]:
+                           repo_id: str, trust_policy: TrustPolicy | None = None,
+                           ) -> tuple[dict[str, Any], str]:
     try:
         policy = json.loads(policy_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -112,24 +122,47 @@ def load_acceptance_policy(policy_path: Path, *, allowed_signers: Path,
         raise ValueError("ACCEPTANCE_POLICY_INVALID") from None
     if expires_at <= datetime.now(timezone.utc):
         raise ValueError("ACCEPTANCE_POLICY_EXPIRED")
-    if not allowed_signers.is_file():
-        raise ValueError("ACCEPTANCE_POLICY_TRUST_ROOT_MISSING")
-    with tempfile.TemporaryDirectory() as tmp:
-        signature = Path(tmp) / "policy.sig"
-        signature.write_text(signature_text, encoding="utf-8")
-        try:
-            completed = subprocess.run(
-                ["ssh-keygen", "-Y", "verify", "-f", str(allowed_signers),
-                 "-I", "harness-policy", "-n", ACCEPTANCE_POLICY_NAMESPACE,
-                 "-s", str(signature)], input=canonical_policy(policy), text=True,
-                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            )
-        except FileNotFoundError as exc:
-            raise ValueError("ACCEPTANCE_POLICY_SIGNATURE_TOOL_MISSING") from exc
-    if completed.returncode != 0:
-        raise ValueError("ACCEPTANCE_POLICY_SIGNATURE_INVALID")
+    if trust_policy is None:
+        # Receipt issuance runs inside the configured acceptance authority. Terminal
+        # consumption must always provide supervisor-pinned anchors below.
+        if not allowed_signers.is_file():
+            raise ValueError("ACCEPTANCE_POLICY_TRUST_ROOT_MISSING")
+        with tempfile.TemporaryDirectory() as tmp:
+            signature = Path(tmp) / "policy.sig"
+            signature.write_text(signature_text, encoding="utf-8")
+            try:
+                completed = subprocess.run(
+                    ["ssh-keygen", "-Y", "verify", "-f", str(allowed_signers),
+                     "-I", "harness-policy", "-n", ACCEPTANCE_POLICY_NAMESPACE,
+                     "-s", str(signature)], input=canonical_policy(policy), text=True,
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                )
+            except FileNotFoundError as exc:
+                raise ValueError("ACCEPTANCE_POLICY_SIGNATURE_TOOL_MISSING") from exc
+        if completed.returncode != 0:
+            raise ValueError("ACCEPTANCE_POLICY_SIGNATURE_INVALID")
+    else:
+        trust_policy.validate()
+        verify_pinned_signature(
+            message=canonical_policy(policy),
+            signature_text=signature_text,
+            allowed_signers=allowed_signers,
+            principal="harness-policy",
+            namespace=ACCEPTANCE_POLICY_NAMESPACE,
+            fingerprint=trust_policy.policy_signer_fingerprint,
+            missing_reason="ACCEPTANCE_POLICY_TRUST_ROOT_MISSING",
+            mismatch_reason="ACCEPTANCE_POLICY_SIGNER_MISMATCH",
+            invalid_reason="ACCEPTANCE_POLICY_SIGNATURE_INVALID",
+            tool_reason="ACCEPTANCE_POLICY_SIGNATURE_TOOL_MISSING",
+        )
     canonical = json.dumps(policy, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
-    return policy, hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    if trust_policy is not None and (
+        policy["policy_id"] != trust_policy.acceptance_policy_id
+        or digest != trust_policy.acceptance_policy_digest
+    ):
+        raise ValueError("ACCEPTANCE_POLICY_TRUST_MISMATCH")
+    return policy, digest
 
 
 def _validate_policy_binding(policy: dict[str, Any], *, task_id: str,
@@ -179,6 +212,8 @@ def build_receipt(repo: Path, *, commit: str, work_item_id: str, provider: str,
         attested_work_item_id=result_work_item["id"], authority=authority,
         accepted_ref=accepted_ref, work_item_id=work_item_id, provider=provider,
     )
+    closure_index = policy["closure_order"].index(work_item_id)
+    predecessors = policy["closure_order"][:closure_index]
     accepted_at = datetime.now(timezone.utc)
     receipt = {
         "schema": "harness-acceptance-receipt-v1",
@@ -195,6 +230,8 @@ def build_receipt(repo: Path, *, commit: str, work_item_id: str, provider: str,
         "attested_work_item_provider": result_work_item["provider"],
         "acceptance_policy_id": policy["policy_id"],
         "acceptance_policy_digest": policy_digest,
+        "closure_index": closure_index,
+        "predecessor_work_item_ids": predecessors,
         "accepted_at": accepted_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "expires_at": (accepted_at + timedelta(seconds=validity_seconds)).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
@@ -206,7 +243,8 @@ def build_receipt(repo: Path, *, commit: str, work_item_id: str, provider: str,
 def validate_receipt(receipt: Any, *, work_item_id: str, expected_ref: str,
                      expected_commit: str, configured_provider: str, repo: Path,
                      allowed_signers: Path, acceptance_policy: Path,
-                     policy_allowed_signers: Path, repo_id: str) -> tuple[bool, str]:
+                     policy_allowed_signers: Path, repo_id: str,
+                     trust_policy: TrustPolicy) -> tuple[bool, str]:
     if not isinstance(receipt, dict) or receipt.get("schema") != "harness-acceptance-receipt-v1":
         return False, "ACCEPTANCE_RECEIPT_REQUIRED"
     if receipt.get("authority") not in AUTHORITIES:
@@ -237,8 +275,10 @@ def validate_receipt(receipt: Any, *, work_item_id: str, expected_ref: str,
         return False, "ACCEPTANCE_RECEIPT_INVALID"
     if expires_at <= datetime.now(timezone.utc):
         return False, "ACCEPTANCE_RECEIPT_EXPIRED"
-    if not allowed_signers.is_file():
-        return False, "ACCEPTANCE_TRUST_ROOT_MISSING"
+    try:
+        trust_policy.validate()
+    except ValueError as exc:
+        return False, str(exc)
     verified = verify_attestation(repo, commit=str(receipt["commit_sha"]))
     if verified.get("decision") != "pass" or verified.get("object") != receipt["attestation_object"]:
         return False, "ACCEPTANCE_ATTESTATION_INVALID"
@@ -256,6 +296,7 @@ def validate_receipt(receipt: Any, *, work_item_id: str, expected_ref: str,
     try:
         acceptance_policy, acceptance_policy_digest = load_acceptance_policy(
             acceptance_policy, allowed_signers=policy_allowed_signers, repo_id=repo_id,
+            trust_policy=trust_policy,
         )
         _validate_policy_binding(
             acceptance_policy, task_id=str(receipt["task_id"]),
@@ -263,25 +304,36 @@ def validate_receipt(receipt: Any, *, work_item_id: str, expected_ref: str,
             authority=str(receipt["authority"]), accepted_ref=str(receipt["accepted_ref"]),
             work_item_id=work_item_id, provider=str(receipt["provider"]),
         )
+        closure_index, predecessors = validate_closure_order(
+            acceptance_policy,
+            work_item_id=work_item_id,
+            predecessor_receipts=trust_policy.predecessor_receipts,
+            target_receipt=receipt,
+            allowed_signers=allowed_signers,
+            signer_fingerprint=trust_policy.receipt_signer_fingerprint,
+        )
     except ValueError as exc:
         return False, str(exc)
     if (receipt.get("acceptance_policy_id") != acceptance_policy["policy_id"]
-            or receipt.get("acceptance_policy_digest") != acceptance_policy_digest):
+            or receipt.get("acceptance_policy_digest") != acceptance_policy_digest
+            or receipt.get("closure_index") != closure_index
+            or receipt.get("predecessor_work_item_ids") != predecessors):
         return False, "ACCEPTANCE_POLICY_MISMATCH"
-    with tempfile.TemporaryDirectory() as tmp:
-        signature = Path(tmp) / "receipt.sig"
-        signature.write_text(str(receipt["signature"]), encoding="utf-8")
-        try:
-            completed = subprocess.run(
-                ["ssh-keygen", "-Y", "verify", "-f", str(allowed_signers), "-I", "harness",
-                 "-n", SIGNATURE_NAMESPACE, "-s", str(signature)],
-                input=canonical_receipt(receipt), text=True, stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-        except FileNotFoundError:
-            return False, "ACCEPTANCE_SIGNATURE_TOOL_MISSING"
-    if completed.returncode != 0:
-        return False, "ACCEPTANCE_SIGNATURE_INVALID"
+    try:
+        verify_pinned_signature(
+            message=canonical_receipt(receipt),
+            signature_text=str(receipt["signature"]),
+            allowed_signers=allowed_signers,
+            principal="harness",
+            namespace=SIGNATURE_NAMESPACE,
+            fingerprint=trust_policy.receipt_signer_fingerprint,
+            missing_reason="ACCEPTANCE_TRUST_ROOT_MISSING",
+            mismatch_reason="ACCEPTANCE_SIGNER_MISMATCH",
+            invalid_reason="ACCEPTANCE_SIGNATURE_INVALID",
+            tool_reason="ACCEPTANCE_SIGNATURE_TOOL_MISSING",
+        )
+    except ValueError as exc:
+        return False, str(exc)
     try:
         ref_tip = subprocess.check_output(
             ["git", "rev-parse", "--verify", f"{receipt['accepted_ref']}^{{commit}}"],
@@ -292,29 +344,6 @@ def validate_receipt(receipt: Any, *, work_item_id: str, expected_ref: str,
     if ref_tip != receipt["commit_sha"]:
         return False, "ACCEPTANCE_COMMIT_NOT_REF_TIP"
     return True, "ACCEPTANCE_RECEIPT_VALID"
-
-
-def validate_terminal_receipt(receipt: Any, *, work_item_id: str, expected_ref: str,
-                              expected_commit: str, configured_provider: str,
-                              repo: Path) -> tuple[bool, str]:
-    try:
-        repo_id = subprocess.check_output(
-            ["git", "remote", "get-url", "origin"], cwd=repo, text=True,
-            stderr=subprocess.DEVNULL,
-        ).strip()
-    except (FileNotFoundError, subprocess.CalledProcessError):
-        return False, "ACCEPTANCE_REPO_ID_MISSING"
-    allowed = os.environ.get("HARNESS_ACCEPTANCE_ALLOWED_SIGNERS", "")
-    policy_path = os.environ.get("HARNESS_ACCEPTANCE_POLICY", "")
-    policy_allowed = os.environ.get("HARNESS_ACCEPTANCE_POLICY_ALLOWED_SIGNERS", "")
-    return validate_receipt(
-        receipt, work_item_id=work_item_id, expected_ref=expected_ref,
-        expected_commit=expected_commit, configured_provider=configured_provider, repo=repo,
-        allowed_signers=Path(allowed) if allowed else Path("/nonexistent"),
-        acceptance_policy=Path(policy_path) if policy_path else Path("/nonexistent"),
-        policy_allowed_signers=Path(policy_allowed) if policy_allowed else Path("/nonexistent"),
-        repo_id=repo_id,
-    )
 
 
 def main() -> int:

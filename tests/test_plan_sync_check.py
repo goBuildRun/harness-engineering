@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,6 +23,8 @@ from plan_sync_check import (  # noqa: E402
     task_changed,
 )
 from business_paths import find_business_paths, load_business_roots  # noqa: E402
+from harness_gate_work_items import prepare_ci_task  # noqa: E402
+from harness_runtime import canonical_digest, git_changed  # noqa: E402
 from workspace_paths import load_layout  # noqa: E402
 
 
@@ -107,6 +110,72 @@ workspace:
                 find_business_paths("`deer-flow` and `deer-flowing`", ("deer-flow/",)),
                 ["deer-flow"],
             )
+
+    def test_ci_plan_and_baseline_resolve_without_shared_active_task(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product, task_dir, _legacy_baseline = self._product(Path(tmp))
+            runs = product / "harness-workspace/runs"
+            (runs / "active_task.json").unlink()
+            baseline = runs / "tasks/task-1/worktree_baseline.json"
+            baseline.parent.mkdir(parents=True)
+            credential = runs / "ci/task-1/planning_gate_pass.json"
+            credential.parent.mkdir(parents=True)
+            credential.write_text(json.dumps({
+                "schema": "harness-ci-planning-environment-v1",
+                "decision": "pass", "ci_task_id": "task-1",
+                "task_dir": str(task_dir),
+                "work_item": {"id": "wi-demo", "provider": "jira"},
+            }))
+            layout = load_layout(ROOT, product)
+            with mock.patch.dict(os.environ, {
+                "HARNESS_CI_TASK_ID": "task-1",
+                "HARNESS_CI_PLANNING_GATE": str(credential),
+            }, clear=True):
+                active_id, active_baseline = active_task_baseline(layout)
+                self.assertEqual(active_id, "task-1")
+                self.assertEqual(active_baseline, baseline.resolve())
+                self.assertEqual(active_task_planning_dir(layout), task_dir.resolve())
+
+    def test_clean_ci_checkout_checks_commit_paths_from_task_credential(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product, task_dir, _baseline = self._product(Path(tmp))
+            (task_dir / "planning_gate_pass.json").write_text(json.dumps({
+                "decision": "pass",
+                "work_item": {"id": "wi-demo", "provider": "jira"},
+            }))
+            unplanned = product / "services/gateway/unplanned.py"
+            unplanned.write_text("committed but outside plan\n", encoding="utf-8")
+            subprocess.run(["git", "add", "."], cwd=product, check=True)
+            subprocess.run(["git", "commit", "-qm", "target commit"], cwd=product, check=True)
+            self.assertEqual(
+                subprocess.check_output(["git", "status", "--porcelain"], cwd=product, text=True),
+                "",
+            )
+            changed = git_changed(product, "HEAD")
+            self.assertIn("services/gateway/unplanned.py", changed)
+            self.assertTrue(prepare_ci_task(ROOT, product, "wi-demo", changed_files=changed))
+            credential = product / "harness-workspace/runs/ci/wi-demo/planning_gate_pass.json"
+            env = {
+                **os.environ,
+                "HARNESS_PRODUCT_ROOT": str(product),
+                "HARNESS_CI_TASK_ID": "wi-demo",
+                "HARNESS_CI_PLANNING_GATE": str(credential),
+                "HARNESS_CI_CHANGED_FILES_DIGEST": canonical_digest(changed),
+            }
+            output = subprocess.check_output(
+                [
+                    sys.executable, str(SCRIPT_DIR / "plan_sync_check.py"),
+                    "--harness-root", str(ROOT), "--product-root", str(product),
+                    "--task-dir", str(task_dir),
+                ],
+                cwd=ROOT,
+                env=env,
+                text=True,
+            )
+
+            result = json.loads(output)
+            self.assertEqual(result["decision"], "block", result)
+            self.assertIn("services/gateway/unplanned.py", result["reason"])
 
     def test_lean_task_id_selects_active_plan_over_stale_gate(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

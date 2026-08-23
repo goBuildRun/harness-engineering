@@ -10,6 +10,8 @@ from typing import Any
 
 from harness_provider_preflight import validate_receipt as validate_provider_preflight
 from provider_attempt import validate_receipt as validate_provider_attempt
+from harness_execution_authority import trust_from_installation
+from harness_provider_authority import validate_binding as validate_provider_authorities
 
 
 COMPONENT_SCHEMA = "harness-strict-evidence-component-v1"
@@ -143,6 +145,29 @@ def validate(
         )
         if not provider_valid:
             return {"decision": "block", "reason": "STRICT_REAL_PROVIDER_EVIDENCE_REQUIRED"}
+        try:
+            harness = Path(__file__).resolve().parents[2]
+            sandbox_trust = trust_from_installation(
+                harness, "network-sandbox", "harness-network-sandbox",
+            )
+            provider_trust = trust_from_installation(
+                harness, "provider-response", "harness-provider-response",
+            )
+        except ValueError:
+            return {"decision": "block", "reason": "STRICT_PROVIDER_AUTHORITY_REQUIRED"}
+        authority_status = validate_provider_authorities(
+            receipt.get("provider_authorities"),
+            preflight=provider_preflight,
+            attempt=attempt_receipt,
+            sandbox_trust=sandbox_trust,
+            provider_trust=provider_trust,
+        )
+        if authority_status["decision"] != "pass":
+            return {
+                "decision": "block",
+                "reason": "STRICT_PROVIDER_AUTHORITY_REQUIRED",
+                "authority_reason": authority_status["reason"],
+            }
     return {
         "decision": "pass" if base_valid else "block",
         "reason": "STRICT_EVIDENCE_OK" if base_valid else "STRICT_EVIDENCE_REQUIRED",

@@ -9,6 +9,8 @@ import sys
 import tempfile
 import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -23,11 +25,33 @@ from harness_gates import (  # noqa: E402
 )
 from harness_gate_work_items import validate_ci_planning_credential  # noqa: E402
 from harness_provider_preflight import execute_preflight  # noqa: E402
+from harness_execution_authority import AuthorityTrust, build_receipt, sign_receipt  # noqa: E402
+from harness_provider_authority import (  # noqa: E402
+    SANDBOX_CLAIMS, build_binding as build_provider_authority_binding,
+    provider_input_digest, sandbox_input_digest,
+)
 from harness_strict_gate import COMPONENT_SCHEMA  # noqa: E402
 from provider_attempt import EVIDENCE_SCHEMA, run_once as run_provider_once  # noqa: E402
+from workspace_paths import active_planning_gate_path, load_layout  # noqa: E402
 
 
 class HarnessGatesTest(unittest.TestCase):
+    def authority(self, root: Path, principal: str) -> tuple[Path, AuthorityTrust]:
+        root.mkdir(parents=True, exist_ok=True)
+        key = root / "key"
+        subprocess.run(
+            ["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(key)],
+            check=True,
+        )
+        public = key.with_suffix(".pub").read_text(encoding="utf-8")
+        allowed = root / "allowed_signers"
+        allowed.write_text(f"{principal} {public}", encoding="utf-8")
+        fingerprint = subprocess.check_output(
+            ["ssh-keygen", "-lf", str(key.with_suffix(".pub")), "-E", "sha256"],
+            text=True,
+        ).split()[1]
+        return key, AuthorityTrust(allowed, fingerprint, principal)
+
     def strict_components(self, product: Path, subject: str) -> dict:
         components = {}
         for name, authority in {
@@ -234,14 +258,34 @@ class HarnessGatesTest(unittest.TestCase):
             }))
             self.assertTrue(prepare_ci_task(ROOT, product, "task-1"))
             materialized = json.loads((
-                product / "harness-workspace" / "runs" / "planning_gate_pass.json"
+                product / "harness-workspace/runs/ci/task-1/planning_gate_pass.json"
             ).read_text())
+            self.assertEqual(materialized["schema"], "harness-ci-planning-environment-v1")
             self.assertEqual(materialized["task_dir"], str(task.resolve()))
             self.assertEqual(materialized["ci_task_id"], "task-1")
             self.assertEqual(materialized["work_item"], {"id": "WI-1", "provider": "jira"})
             self.assertEqual(
+                materialized["committed_source_ref"],
+                "harness-workspace/planning/tasks/task-1/planning_gate_pass.json",
+            )
+            self.assertEqual(
+                materialized["committed_source_digest"],
+                hashlib.sha256((task / "planning_gate_pass.json").read_bytes()).hexdigest(),
+            )
+            self.assertFalse((product / "harness-workspace/runs/planning_gate_pass.json").exists())
+            self.assertFalse((product / "harness-workspace/runs/active_task.json").exists())
+            self.assertEqual(
                 validate_ci_planning_credential(ROOT, product, "task-1", materialized)["decision"],
                 "pass",
+            )
+
+            (task / "planning_gate_pass.json").write_text(json.dumps({
+                "decision": "pass", "work_item": {"id": "WI-1", "provider": "jira"},
+                "changed": True,
+            }))
+            self.assertEqual(
+                validate_ci_planning_credential(ROOT, product, "task-1", materialized)["reason"],
+                "CI_PLANNING_SOURCE_DIGEST_MISMATCH",
             )
 
     def test_ci_task_resolves_slug_directory_by_work_item_identity(self) -> None:
@@ -255,10 +299,68 @@ class HarnessGatesTest(unittest.TestCase):
 
             self.assertTrue(prepare_ci_task(ROOT, product, "WI-42"))
             materialized = json.loads((
-                product / "harness-workspace/runs/planning_gate_pass.json"
+                product / "harness-workspace/runs/ci/WI-42/planning_gate_pass.json"
             ).read_text())
             self.assertEqual(materialized["task_dir"], str(task.resolve()))
             self.assertEqual(materialized["ci_task_id"], "WI-42")
+
+    def test_two_ci_tasks_prepare_concurrently_without_shared_state(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            tasks = product / "harness-workspace/planning/tasks"
+            for task_id in ("task-a", "task-b"):
+                task = tasks / task_id
+                task.mkdir(parents=True)
+                (task / "planning_gate_pass.json").write_text(json.dumps({
+                    "decision": "pass",
+                    "work_item": {"id": f"WI-{task_id[-1].upper()}", "provider": "jira"},
+                }))
+
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                outcomes = list(pool.map(
+                    lambda task_id: prepare_ci_task(ROOT, product, task_id),
+                    ("task-a", "task-b"),
+                ))
+
+            self.assertEqual(outcomes, [True, True])
+            runs = product / "harness-workspace/runs"
+            self.assertFalse((runs / "active_task.json").exists())
+            self.assertFalse((runs / "planning_gate_pass.json").exists())
+            for task_id in ("task-a", "task-b"):
+                credential = runs / "ci" / task_id / "planning_gate_pass.json"
+                self.assertTrue(credential.is_file())
+                with mock.patch.dict(os.environ, {
+                    "HARNESS_CI_TASK_ID": task_id,
+                    "HARNESS_CI_PLANNING_GATE": str(credential),
+                }, clear=True):
+                    self.assertEqual(
+                        active_planning_gate_path(load_layout(ROOT, product)), credential.resolve(),
+                    )
+
+            with mock.patch.dict(os.environ, {
+                "HARNESS_CI_TASK_ID": "task-a",
+                "HARNESS_CI_PLANNING_GATE": str(runs / "planning_gate_pass.json"),
+            }, clear=True):
+                selected = active_planning_gate_path(load_layout(ROOT, product))
+                self.assertIn("/runs/ci/_invalid/", str(selected))
+
+    def test_ci_preparation_rejects_symlinked_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            product = root / "product"
+            task = product / "harness-workspace/planning/tasks/task-1"
+            task.mkdir(parents=True)
+            (task / "planning_gate_pass.json").write_text(json.dumps({
+                "decision": "pass", "work_item": {"id": "WI-1", "provider": "jira"},
+            }))
+            runs = product / "harness-workspace/runs"
+            runs.mkdir(parents=True)
+            outside = root / "outside"
+            outside.mkdir()
+            (runs / "ci").symlink_to(outside, target_is_directory=True)
+
+            self.assertFalse(prepare_ci_task(ROOT, product, "task-1"))
+            self.assertFalse((outside / "task-1/planning_gate_pass.json").exists())
 
     def test_ci_credential_binding_mismatches_block_before_execution(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -271,10 +373,13 @@ class HarnessGatesTest(unittest.TestCase):
             (task / "task.json").write_text(json.dumps({
                 "task_id": "task-1", "work_item": {"id": "WI-1", "provider": "jira"},
             }))
-            base = {
-                "decision": "pass", "ci_task_id": "task-1", "task_dir": str(task.resolve()),
-                "work_item": {"id": "WI-1", "provider": "jira"},
-            }
+            (task / "planning_gate_pass.json").write_text(json.dumps({
+                "decision": "pass", "work_item": {"id": "WI-1", "provider": "jira"},
+            }))
+            self.assertTrue(prepare_ci_task(ROOT, product, "task-1"))
+            base = json.loads((
+                product / "harness-workspace/runs/ci/task-1/planning_gate_pass.json"
+            ).read_text())
             variants = {
                 "CI_PLANNING_TASK_ID_MISMATCH": {**base, "ci_task_id": "other-task"},
                 "CI_PLANNING_TASK_DIR_MISMATCH": {**base, "task_dir": str(other.resolve())},
@@ -285,21 +390,45 @@ class HarnessGatesTest(unittest.TestCase):
                     **base, "work_item": {"id": "WI-1", "provider": "feishu"},
                 },
             }
+            credential_path = (
+                product / "harness-workspace/runs/ci/task-1/planning_gate_pass.json"
+            )
             for expected_reason, payload in variants.items():
                 with self.subTest(reason=expected_reason):
-                    credential = mock.Mock()
-                    credential.read_text.return_value = json.dumps(payload)
+                    credential_path.write_text(json.dumps(payload))
                     runner = mock.Mock()
                     with mock.patch("harness_gates.prepare_ci_task", return_value=True), \
-                            mock.patch(
-                                "harness_gates.active_planning_gate_path", return_value=credential,
-                            ), mock.patch("harness_gates.run_process_group", runner):
+                            mock.patch("harness_gates.run_process_group", runner):
                         result = run_gate_plan(
                             ROOT, product, tier="standard", subject_digest="subject",
                             policy_digest="policy", ci_task_id="task-1",
                         )
                     runner.assert_not_called()
                     self.assertEqual(result["reason"], expected_reason)
+
+    def test_ci_gate_plan_propagates_task_specific_environment(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            task = product / "harness-workspace/planning/tasks/task-1"
+            task.mkdir(parents=True)
+            (task / "planning_gate_pass.json").write_text(json.dumps({
+                "decision": "pass", "work_item": {"id": "WI-1", "provider": "jira"},
+            }))
+            completed = mock.Mock(returncode=0, stdout='{"decision":"pass","reason":"OK"}')
+            with mock.patch("harness_gates.run_process_group", return_value=completed) as runner:
+                result = run_gate_plan(
+                    ROOT, product, tier="standard", subject_digest="subject",
+                    policy_digest="policy", ci_task_id="task-1",
+                )
+
+            self.assertEqual(result["decision"], "pass")
+            expected = str((
+                product / "harness-workspace/runs/ci/task-1/planning_gate_pass.json"
+            ).resolve())
+            self.assertTrue(runner.call_args_list)
+            for call in runner.call_args_list:
+                self.assertEqual(call.kwargs["env"]["HARNESS_CI_TASK_ID"], "task-1")
+                self.assertEqual(call.kwargs["env"]["HARNESS_CI_PLANNING_GATE"], expected)
 
     def test_local_finish_task_rejects_stale_planning_credential(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -556,13 +685,62 @@ class HarnessGatesTest(unittest.TestCase):
                     "attempt_verifier_digest": attempt_receipt["attempt_verifier_digest"],
                 })
                 receipt.write_text(json.dumps(forged))
-                real = run_gate_plan(
+                unsigned_real = run_gate_plan(
                     ROOT, product, tier="strict", subject_digest="subject-a", policy_digest="policy",
                 )
-                provider_evidence.write_text('{"decision":"pass","tampered":true}')
-                tampered = run_gate_plan(
-                    ROOT, product, tier="strict", subject_digest="subject-a", policy_digest="policy",
+                sandbox_key, sandbox_trust = self.authority(
+                    product / "sandbox-authority", "harness-network-sandbox",
                 )
+                provider_key, provider_trust = self.authority(
+                    product / "provider-authority", "harness-provider-response",
+                )
+                issued = datetime.now(timezone.utc)
+                sandbox_authority = sign_receipt(build_receipt(
+                    authority="network-sandbox", action="provider-preflight",
+                    subject_digest="subject-a", provider="mock",
+                    input_digest=sandbox_input_digest(forged["provider_preflight"]),
+                    output_digest=forged["provider_preflight"]["trace_digest"],
+                    claims=SANDBOX_CLAIMS, issued_at=issued,
+                    expires_at=issued + timedelta(minutes=5),
+                ), sandbox_key)
+                provider_authority = sign_receipt(build_receipt(
+                    authority="provider-response", action="provider-execution",
+                    subject_digest="subject-a", provider="mock",
+                    input_digest=provider_input_digest(
+                        forged["provider_preflight"], attempt_receipt,
+                    ),
+                    output_digest=attempt_receipt["evidence_digest"],
+                    claims={
+                        "evidence_ref": attempt_receipt["evidence_ref"],
+                        "evidence_schema": attempt_receipt["evidence_schema"],
+                        "response_authoritative": True,
+                    },
+                    issued_at=issued, expires_at=issued + timedelta(minutes=5),
+                ), provider_key)
+                forged["provider_authorities"] = build_provider_authority_binding(
+                    preflight=forged["provider_preflight"], attempt=attempt_receipt,
+                    sandbox_authority=sandbox_authority,
+                    provider_authority=provider_authority,
+                    sandbox_trust=sandbox_trust, provider_trust=provider_trust,
+                )
+                receipt.write_text(json.dumps(forged))
+                authority_trust = {
+                    "network-sandbox": sandbox_trust,
+                    "provider-response": provider_trust,
+                }
+                with mock.patch(
+                    "harness_strict_gate.trust_from_installation",
+                    side_effect=lambda _root, authority, _principal: authority_trust[authority],
+                ):
+                    real = run_gate_plan(
+                        ROOT, product, tier="strict", subject_digest="subject-a",
+                        policy_digest="policy",
+                    )
+                    provider_evidence.write_text('{"decision":"pass","tampered":true}')
+                    tampered = run_gate_plan(
+                        ROOT, product, tier="strict", subject_digest="subject-a",
+                        policy_digest="policy",
+                    )
 
             self.assertEqual(
                 synthetic["checks"]["strict_evidence"]["reason"],
@@ -572,6 +750,10 @@ class HarnessGatesTest(unittest.TestCase):
             self.assertEqual(
                 forged_result["checks"]["strict_evidence"]["reason"],
                 "STRICT_PROVIDER_PREFLIGHT_REQUIRED",
+            )
+            self.assertEqual(
+                unsigned_real["checks"]["strict_evidence"]["reason"],
+                "STRICT_PROVIDER_AUTHORITY_REQUIRED",
             )
             self.assertEqual(real["checks"]["strict_evidence"]["decision"], "pass")
             self.assertEqual(tampered["checks"]["strict_evidence"]["decision"], "block")

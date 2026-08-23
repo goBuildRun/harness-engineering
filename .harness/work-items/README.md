@@ -123,8 +123,8 @@ bash .harness/scripts/work_item.sh sync-spec "$PRODUCT_ROOT/harness-workspace/pl
 bash .harness/scripts/work_item.sh verify --id <work-item-id> --level L2
 bash .harness/scripts/work_item.sh pull --id <work-item-id>
 bash .harness/scripts/work_item.sh list-mine
-# 仅供 adapter 开发、兼容流程或合并/发布自动化；普通本地任务不要直接写 done
-bash .harness/scripts/work_item.sh close --id <work-item-id> --status done
+# 普通调用只允许推进到待发布；本地 done 会固定阻断
+bash .harness/scripts/work_item.sh close --id <work-item-id> --status ready_to_release
 ```
 
 ## Teambition / 钉钉
@@ -261,7 +261,7 @@ FEISHU_USER_ACCESS_TOKEN=
 - `sync-spec --assignee <id>`：创建任务、设置负责人、回读校验容器并回写 `#<task_guid>`
 - `sync-spec --parent-id <parent_guid>`：创建子任务并精确回读父级；也可在 Product Spec front matter 写 `work_item_parent_id`。飞书 L3 Spec 还须声明 `work_item_type: story|epic|task`；Story 必须有父级，Epic 禁止有父级
 - `list-mine`：默认用 `tasklist_guid` 调用 `/open-apis/task/v2/tasklists/{tasklist_guid}/tasks`，也可用 `list_query` / `list_tasks_path` 适配租户差异，并在本地按负责人过滤
-- `close`：默认只本地返回 pass，不改飞书状态；产品侧配置 `status_update_mode: completed` 后，`close --status done` 会 PATCH 任务 `completed_at=<当前毫秒时间戳>`，`close --status in_progress` / `todo` / `ready_to_release` 会清为 `"0"`。写入后会重新拉取任务并核对 canonical `done/open` 状态；飞书把这些非终态都表示为未完成时，结果会同时报告 requested status、真实 provider status 和 canonical status，不把 provider 的 `todo` 冒充为精确的 Harness 阶段。
+- `close`：普通 CLI 只允许非终态；`close --status done` 固定返回 `ACCEPTANCE_AUTHORITY_SERVICE_REQUIRED`，不会调用 provider。受控 release-gate 服务验证固定 `TrustPolicy`、receipt、exact ref tip 和关闭顺序后，才可调用 Feishu provider 的终态更新；Jira/Teambition 终态写入未纳入该受控路径。产品侧配置 `status_update_mode: completed` 时，非终态 `in_progress/todo/ready_to_release` 会清除 `completed_at` 为 `"0"`；飞书把这些状态都表示为未完成，Harness 不会把 provider 的 `todo` 冒充成精确阶段。
 
 创建任务或子任务后，Provider 会在有限次数内回读并校验 task GUID、产品清单和父级。读回耗尽时错误会保留 `created_id` 供人工恢复，避免重复创建；多验收项同步会在每次创建成功后立即回写对应 ID，后续项失败不会丢失已创建项的本地绑定。
 

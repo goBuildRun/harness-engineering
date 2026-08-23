@@ -8,7 +8,7 @@ PRODUCT_ROOT="$(bash "$SCRIPT_DIR/product_root.sh")"
 
 if [[ $# -eq 0 ]]; then
   python3 "$SCRIPT_DIR/emit_json.py" block "ERROR: 必须传入要在沙箱中执行的命令"
-  exit 0
+  exit 1
 fi
 
 exec python3 "$SCRIPT_DIR/sandbox_exec.py" \

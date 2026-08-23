@@ -77,6 +77,13 @@ def bind_active_task(product: Path, task_id: str, work_item_id: str) -> bool:
 
 
 def resolve_task_id(product: Path, requested: str | None) -> tuple[str, list[str]]:
+    ci_task_id = os.environ.get("HARNESS_CI_TASK_ID", "").strip()
+    if ci_task_id:
+        if not valid_task_id(ci_task_id):
+            return "", ["TASK_ID_INVALID"]
+        if requested and requested != ci_task_id:
+            return "", ["CI_TASK_ID_MISMATCH"]
+        return ci_task_id, []
     if requested:
         return (requested, []) if valid_task_id(requested) else ("", ["TASK_ID_INVALID"])
     runs = product / "harness-workspace" / "runs"

@@ -13,12 +13,14 @@ from typing import Any, Callable
 from harness_runtime import canonical_digest, now
 from harness_output import dump_json
 from process_control import run_process_group
-from workspace_paths import active_planning_gate_path, load_layout
+from workspace_paths import active_planning_gate_path, ci_planning_gate_path, load_layout
 from harness_gate_execution import (
     CandidateManifest, GateInputError, build_spec, execute_specs, gate_input_digest,
 )
 from harness_gate_work_items import (
-    committed_work_item, committed_work_item_resolution, prepare_ci_task,
+    committed_work_item,  # noqa: F401 - compatibility re-export
+    committed_work_item_resolution,  # noqa: F401 - compatibility re-export
+    prepare_ci_task,
     validate_planning_credential,
 )
 from harness_strict_gate import validate as _strict_evidence
@@ -166,13 +168,18 @@ def run_gate_plan(harness: Path, product: Path, *, tier: str,
     if tier == "standard" and browser_required(changed_files or []):
         required_gates.append("browser_qa")
     if ci_task_id and tier != "lite":
-        if not prepare_ci_task(harness, product, ci_task_id):
+        if not prepare_ci_task(
+            harness, product, ci_task_id, changed_files=changed_files or [],
+        ):
             return _blocked_gate_plan(
                 required_gates, subject_digest, policy_digest,
                 "CI_PLANNING_CREDENTIAL_INVALID", plan_started, clock,
             )
     layout = load_layout(harness, product)
-    planning_gate = active_planning_gate_path(layout)
+    planning_gate = (
+        ci_planning_gate_path(layout, ci_task_id)
+        if ci_task_id else active_planning_gate_path(layout)
+    )
     try:
         planning_credential = json.loads(planning_gate.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
@@ -183,6 +190,7 @@ def run_gate_plan(harness: Path, product: Path, *, tier: str,
             harness, product, bound_task_id, planning_credential,
             work_item_id=work_item_id, provider=work_item_provider,
             require_ci_task_id=bool(ci_task_id),
+            changed_files=changed_files if ci_task_id else None,
         )
         if credential_binding["decision"] == "block":
             return _blocked_gate_plan(
@@ -196,6 +204,12 @@ def run_gate_plan(harness: Path, product: Path, *, tier: str,
             for item in commands["growth_release"]
         ]
     env = {**os.environ, "HARNESS_PRODUCT_ROOT": str(product)}
+    if ci_task_id:
+        env.update({
+            "HARNESS_CI_TASK_ID": ci_task_id,
+            "HARNESS_CI_PLANNING_GATE": str(planning_gate),
+            "HARNESS_CI_CHANGED_FILES_DIGEST": canonical_digest(changed_files or []),
+        })
     if read_only:
         env.update({"CI": "true", "HARNESS_GATE_READ_ONLY": "1"})
     timeout = _gate_timeout_seconds()

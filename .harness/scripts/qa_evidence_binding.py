@@ -3,19 +3,24 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import hashlib
 import json
 import os
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import Any, Callable
 
 from harness_gate_execution import gate_input_digest
 from harness_output import dump_json
-from harness_runtime import canonical_digest, now, policy_for, subject_for
+from harness_runtime import canonical_digest, load_result, now, policy_for, subject_for
 from harness_task_resolution import valid_task_id
-from qa_evidence_check import first_existing, report_candidates
-from workspace_paths import load_active_planning_gate, load_layout
+from qa_evidence_check import (
+    first_existing, implementer_session_from_result, report_candidates,
+    validate_reviewer_identity,
+)
+from workspace_paths import active_planning_gate_path, load_active_planning_gate, load_layout
 from worktree_baseline import changed_since_baseline
 from process_control import run_process_group
 
@@ -32,6 +37,15 @@ def _sha(path: Path | None) -> str:
 
 
 def _active_id(layout) -> str:
+    ci_task_id = os.environ.get("HARNESS_CI_TASK_ID", "").strip()
+    if ci_task_id:
+        if not valid_task_id(ci_task_id):
+            return ""
+        gate = load_active_planning_gate(layout) or {}
+        work_item = gate.get("work_item") or {}
+        if isinstance(work_item, dict):
+            return str(work_item.get("id") or ci_task_id).strip()
+        return ci_task_id
     try:
         data = json.loads((layout.runs_root / "active_task.json").read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
@@ -54,20 +68,14 @@ def current_binding(harness: Path, product: Path, work_item_id: str, paths: list
         raise ValueError("QA_PATHS_STALE")
     result_path = task_root / "result.json"
     try:
-        result = json.loads(result_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        result = {}
-    implementer_session = str(
-        ((result.get("cost") or {}).get("story_usage_baseline") or {}).get("session_id") or "unknown"
-    )
+        result = load_result(result_path)
+    except (AttributeError, OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise ValueError("QA_RESULT_INVALID") from exc
+    if result.get("task_id") != work_item_id:
+        raise ValueError("QA_RESULT_TASK_MISMATCH")
+    implementer_session = implementer_session_from_result(result)
     gate = load_active_planning_gate(layout) or {}
-    planning_gate = next(
-        (path for path in (
-            layout.runs_root / "planning_gate_pass.json",
-            layout.runs_root / "phase0_pass.json",
-        ) if path.is_file()),
-        layout.runs_root / "planning_gate_pass.json",
-    )
+    planning_gate = active_planning_gate_path(layout)
     scripts = harness / ".harness/scripts"
     mechanical_inputs = {
         name: gate_input_digest(
@@ -122,6 +130,33 @@ def load_valid_bundle(layout, binding: dict[str, Any]) -> tuple[Path | None, dic
     return (path if existing == expected else None), expected
 
 
+def host_reviewer_identity(work_item_id: str, task_id: str) -> dict[str, Any]:
+    path = Path(os.environ.get("HARNESS_QA_REVIEWER_IDENTITY_RECEIPT", "").strip())
+    if str(path) == "." or not path.is_file():
+        raise ValueError("QA_HOST_REVIEWER_IDENTITY_MISSING")
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError("QA_HOST_REVIEWER_IDENTITY_INVALID") from exc
+    if not isinstance(payload, dict):
+        raise ValueError("QA_HOST_REVIEWER_IDENTITY_INVALID")
+    return payload
+
+
+def _write_bundle(path: Path, payload: dict[str, Any]) -> None:
+    descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            json.dump(payload, stream, ensure_ascii=False, indent=2)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
 def _run_mechanical_gates(harness: Path, product: Path) -> dict[str, Any]:
     scripts = harness / ".harness/scripts"
     env = {**os.environ, "HARNESS_PRODUCT_ROOT": str(product), "HARNESS_GATE_READ_ONLY": "1"}
@@ -144,19 +179,38 @@ def prepare_bundle(
     gate_runner: Callable[[Path, Path], dict[str, Any]] = _run_mechanical_gates,
 ) -> dict[str, Any]:
     layout = load_layout(harness, product)
-    binding = current_binding(harness, product, work_item_id, paths)
-    existing, payload = load_valid_bundle(layout, binding)
-    path = existing or bundle_path(layout, work_item_id, payload["bundle_digest"])
-    if existing is None:
+    if not valid_task_id(work_item_id):
+        raise ValueError("QA_ACTIVE_TASK_MISMATCH")
+    task_root = layout.runs_root / "tasks" / work_item_id
+    task_root.mkdir(parents=True, exist_ok=True)
+    lock_path = task_root / "qa-bundle.lock"
+    with lock_path.open("a+", encoding="utf-8") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        binding = current_binding(harness, product, work_item_id, paths)
+        existing, payload = load_valid_bundle(layout, binding)
+        if existing is not None:
+            return {
+                "decision": "pass", "reason": "QA_BUNDLE_REUSED",
+                "bundle_ref": layout.rel(existing), "bundle": payload,
+            }
         gate_result = gate_runner(harness, product)
         if gate_result.get("decision") != "pass":
             return gate_result
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    return {
-        "decision": "pass", "reason": "QA_BUNDLE_REUSED" if existing else "QA_BUNDLE_PREPARED",
-        "bundle_ref": layout.rel(path), "bundle": payload,
-    }
+        current = current_binding(harness, product, work_item_id, paths)
+        existing, current_payload = load_valid_bundle(layout, current)
+        if existing is not None:
+            return {
+                "decision": "pass", "reason": "QA_BUNDLE_REUSED",
+                "bundle_ref": layout.rel(existing), "bundle": current_payload,
+            }
+        if current_payload != payload:
+            return {"decision": "block", "reason": "QA_BUNDLE_INPUT_CHANGED"}
+        path = bundle_path(layout, work_item_id, payload["bundle_digest"])
+        _write_bundle(path, payload)
+        return {
+            "decision": "pass", "reason": "QA_BUNDLE_PREPARED",
+            "bundle_ref": layout.rel(path), "bundle": payload,
+        }
 
 
 def bundle_status(harness: Path, product: Path, work_item_id: str, paths: list[str]) -> dict[str, Any]:
@@ -173,16 +227,25 @@ def bundle_status(harness: Path, product: Path, work_item_id: str, paths: list[s
 
 def receipt_binding(
     harness: Path, product: Path, work_item_id: str, task_id: str,
-    reviewer_session_id: str, paths: list[str],
+    paths: list[str], reviewer_identity: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if not valid_task_id(task_id):
         return {"decision": "block", "reason": "QA_TASK_ID_INVALID"}
     layout = load_layout(harness, product)
     binding = current_binding(harness, product, work_item_id, paths)
+    try:
+        reviewer_identity = reviewer_identity or host_reviewer_identity(work_item_id, task_id)
+    except ValueError as exc:
+        return {"decision": "block", "reason": str(exc)}
+    reviewer_session_id, identity_issue = validate_reviewer_identity(
+        reviewer_identity, work_item_id=work_item_id, task_id=task_id,
+        harness_root=harness,
+    )
+    if identity_issue:
+        return {"decision": "block", "reason": identity_issue}
     bundle, expected = load_valid_bundle(layout, binding)
     if bundle is None:
         return {"decision": "block", "reason": "QA_BUNDLE_REQUIRED"}
-    reviewer_session_id = reviewer_session_id.strip() or "unknown"
     implementer = binding["implementer_session_id"]
     independent = (
         reviewer_session_id != "unknown"
@@ -214,6 +277,7 @@ def receipt_binding(
             "bundle_ref": layout.rel(bundle),
             "bundle_digest": expected["bundle_digest"],
             "reviewer_session_id": reviewer_session_id,
+            "reviewer_identity_receipt": reviewer_identity,
             "implementer_session_id": implementer,
             "independent": True,
             "test_ref": layout.rel(test),
@@ -243,7 +307,6 @@ def main() -> int:
     parser.add_argument("--work-item", required=True)
     parser.add_argument("--task-id", default="")
     parser.add_argument("--paths-json", required=True)
-    parser.add_argument("--reviewer-session", default=os.environ.get("HARNESS_QA_REVIEWER_SESSION_ID", ""))
     args = parser.parse_args()
     try:
         paths = _paths(args.paths_json)
@@ -255,7 +318,7 @@ def main() -> int:
         else:
             result = receipt_binding(
                 common[0], common[1], common[2], args.task_id,
-                args.reviewer_session, common[3],
+                common[3],
             )
     except (OSError, ValueError) as exc:
         result = {"decision": "block", "reason": str(exc)}

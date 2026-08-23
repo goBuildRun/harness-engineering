@@ -64,6 +64,11 @@ required_files:
   - .harness/scripts/harness_receive.py
   - .harness/scripts/harness_enforced.py
   - .harness/scripts/harness_assurance.py
+  - .harness/scripts/acceptance_authority.py
+  - .harness/scripts/acceptance_trust.py
+  - .harness/scripts/acceptance_closure.py
+  - .harness/scripts/harness_execution_authority.py
+  - .harness/scripts/harness_provider_authority.py
   - .harness/scripts/harness_scope.py
   - .harness/scripts/harness_state.py
   - .harness/scripts/harness_schema.py
@@ -100,6 +105,8 @@ required_files:
   - .harness/scripts/harness_provider_preflight.py
   - .harness/scripts/provider_verifier_preflight.py
   - .harness/scripts/provider_attempt.py
+  - .harness/scripts/provider_attempt_cli.py
+  - .harness/scripts/provider_attempt_evidence.py
   - .harness/scripts/harness_provider_postcondition.py
   - .harness/scripts/capability_contract.py
   - .harness/scripts/harness_telemetry.py
@@ -112,6 +119,8 @@ required_files:
   - .harness/scripts/provider_lifecycle.py
   - .harness/scripts/production_evidence_policy.py
   - .harness/scripts/work_item_contract.py
+  - .harness/scripts/work_item_local_binding.py
+  - .harness/scripts/work_item_provider_config.py
   - .harness/scripts/work_item_feishu.py
   - .harness/scripts/work_item_feishu_payload.py
   - .harness/scripts/work_item_jira.py
@@ -200,6 +209,8 @@ required_files:
   - tests/test_harness_enforced.py
   - tests/test_git_native_contract.py
   - tests/test_harness_assurance.py
+  - tests/test_execution_authority.py
+  - tests/test_harness_strict_evidence.py
   - tests/test_harness_schema.py
   - tests/test_harness_cache.py
   - tests/test_harness_gates.py

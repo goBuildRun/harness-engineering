@@ -2,19 +2,16 @@
 """One-shot, budget-bound Provider execution after offline preflight."""
 from __future__ import annotations
 
-import argparse
 import hashlib
 import json
 import os
 import subprocess
-import tempfile
 import time
 from pathlib import Path
 from typing import Any, Callable
 
 from harness_candidate import bound_candidate
 from harness_cycle_stage_commands import load_candidate_snapshot, validate_current_release_evidence
-from harness_output import dump_json
 from harness_runtime import (
     canonical_digest, load_result, now, result_path, task_operation_lock,
 )
@@ -24,18 +21,35 @@ from harness_provider_preflight import (
     RECEIPT_SCHEMA as PREFLIGHT_SCHEMA,
     argv_digest,
     execution_environment_digest,
-    validate_receipt as validate_harness_preflight,
+    validate_receipt as validate_canonical_preflight,
 )
 from harness_gate_inputs import execution_dependency_digest
+from harness_execution_authority import AuthorityTrust
+from harness_provider_authority import (
+    binding_target as authority_binding_target,
+    build_binding as build_authority_binding,
+    load_json as load_authority_receipt,
+    validate_provider_authority,
+    validate_sandbox_authority,
+    wait_for_receipt,
+)
 from harness_provider_postcondition import (
     authorization_digest, provider_readiness as _provider_readiness,
-    remaining_provider_seconds as _remaining_provider_seconds,
+    remaining_provider_seconds as _remaining_provider_seconds,  # noqa: F401 - compatibility export
     validate as validate_postcondition, validate_task_precondition,
+)
+from provider_attempt_evidence import (
+    EVIDENCE_SCHEMA,
+    evidence_reason as _evidence_reason,
+    load_evidence as _load_evidence,
+    replace_state as _replace_state,
+    sha256_file as _sha256,
+    validate_preflight as _validate_preflight,
+    write_claim as _write_claim,
 )
 from worktree_baseline import changed_since_baseline
 
 SCHEMA = "harness-provider-attempt-v3"
-EVIDENCE_SCHEMA = "harness-provider-evidence-v1"
 FIELDS = {
     "schema", "decision", "reason", "subject_digest", "provider", "mode",
     "provider_process_attempts", "preflight_receipt_digest", "contract_digest",
@@ -44,73 +58,6 @@ FIELDS = {
     "evidence_schema", "evidence_digest", "attempt_verifier_digest",
     "duration_ms", "completed_at", "receipt_digest",
 }
-
-def _sha256(path: Path) -> str:
-    try:
-        return hashlib.sha256(path.read_bytes()).hexdigest()
-    except OSError:
-        return "absent"
-
-def _load_evidence(path: Path) -> tuple[str, dict[str, Any]]:
-    try:
-        raw = path.read_bytes()
-        value = json.loads(raw.decode("utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-        return "absent" if not path.is_file() else _sha256(path), {}
-    return hashlib.sha256(raw).hexdigest(), value if isinstance(value, dict) else {}
-
-def _evidence_reason(payload: dict[str, Any], subject: str, provider: str) -> str:
-    if payload.get("schema") != EVIDENCE_SCHEMA:
-        return "PROVIDER_EVIDENCE_SCHEMA_INVALID"
-    if payload.get("decision") != "pass":
-        return "PROVIDER_EVIDENCE_DECISION_INVALID"
-    if payload.get("subject_digest") != subject:
-        return "PROVIDER_EVIDENCE_SUBJECT_MISMATCH"
-    if payload.get("provider") != provider:
-        return "PROVIDER_EVIDENCE_PROVIDER_MISMATCH"
-    return "PROVIDER_EVIDENCE_OK"
-
-def _validate_preflight(
-    receipt: dict[str, Any], expected_subject: str, expected_provider: str,
-) -> dict[str, str]:
-    primary = validate_harness_preflight(receipt, expected_subject, expected_provider)
-    if primary["decision"] == "pass" or receipt.get("schema") == PREFLIGHT_SCHEMA:
-        return primary
-    try:
-        from provider_verifier_preflight import validate_receipt as validate_compatibility
-
-        compatibility = validate_compatibility(
-            receipt, expected_subject, expected_provider,
-        )
-    except (ImportError, TypeError, ValueError):
-        return primary
-    return compatibility if compatibility.get("decision") == "pass" else primary
-
-def _write_claim(path: Path, payload: dict[str, Any]) -> bool:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    except FileExistsError:
-        return False
-    with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-        json.dump(payload, stream, ensure_ascii=False, sort_keys=True)
-        stream.write("\n")
-        stream.flush()
-        os.fsync(stream.fileno())
-    return True
-
-def _replace_state(path: Path, payload: dict[str, Any]) -> None:
-    descriptor, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-            json.dump(payload, stream, ensure_ascii=False, indent=2, sort_keys=True)
-            stream.write("\n")
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(temp_name, path)
-    finally:
-        if os.path.exists(temp_name):
-            os.unlink(temp_name)
 
 def run_once(
     state_path: Path, preflight: dict[str, Any], expected_subject: str, provider: str,
@@ -321,6 +268,12 @@ def attempt_for_task(
     product: Path, task_id: str, *, preflight_path: Path, expected_subject: str,
     provider: str, adapter_path: Path, evidence_ref: str, command: list[str],
     timeout_seconds: float, runner: Callable[..., Any] = run_process_group,
+    sandbox_authority_path: Path | None = None,
+    provider_authority_path: Path | None = None,
+    authority_binding_path: Path | None = None,
+    sandbox_trust: AuthorityTrust | None = None,
+    provider_trust: AuthorityTrust | None = None,
+    authority_required: bool = False,
 ) -> dict[str, Any]:
     product = product.resolve()
     if not valid_task_id(task_id):
@@ -328,6 +281,9 @@ def attempt_for_task(
     task_path = result_path(product, task_id)
     if not task_path.is_file():
         return {"decision": "block", "reason": "TASK_NOT_FOUND"}
+    authority_target = authority_binding_target(product, task_path, authority_binding_path)
+    if authority_required and authority_target is None:
+        return {"decision": "block", "reason": "PROVIDER_AUTHORITY_BINDING_PATH_INVALID"}
     try:
         with task_operation_lock(task_path):
             result = load_result(task_path)
@@ -344,6 +300,21 @@ def attempt_for_task(
             if subject != expected_subject:
                 return {"decision": "block", "reason": "PROVIDER_ATTEMPT_SUBJECT_MISMATCH"}
             preflight = json.loads(preflight_path.read_text(encoding="utf-8"))
+            sandbox_authority: dict[str, Any] = {}
+            if authority_required:
+                if sandbox_authority_path is None or sandbox_trust is None:
+                    return {"decision": "block", "reason": "PROVIDER_SANDBOX_AUTHORITY_REQUIRED"}
+                canonical_status = validate_canonical_preflight(
+                    preflight, subject, provider.strip().lower(),
+                )
+                if canonical_status["decision"] != "pass":
+                    return canonical_status
+                sandbox_authority = load_authority_receipt(sandbox_authority_path)
+                sandbox_status = validate_sandbox_authority(
+                    sandbox_authority, preflight, sandbox_trust,
+                )
+                if sandbox_status["decision"] != "pass":
+                    return sandbox_status
             evidence = (product / evidence_ref).resolve()
             evidence.relative_to(product)
             result_digest = authorization_digest(result)
@@ -357,7 +328,8 @@ def attempt_for_task(
             if readiness["decision"] == "block":
                 return readiness
 
-            return run_once(
+            authority_deadline = time.monotonic() + remaining
+            attempt = run_once(
                 task_path.parent / "provider-attempt.json", preflight, subject, provider,
                 evidence, evidence_ref, command, remaining, runner,
                 adapter_path=adapter_path,
@@ -369,31 +341,42 @@ def attempt_for_task(
                     expected_result_digest=result_digest,
                 ),
             )
+            if not authority_required or attempt.get("decision") != "pass":
+                return attempt
+            if provider_authority_path is None or provider_trust is None:
+                return {"decision": "block", "reason": "PROVIDER_RESPONSE_AUTHORITY_REQUIRED"}
+            provider_authority = wait_for_receipt(
+                provider_authority_path, deadline=authority_deadline,
+                validator=lambda receipt: validate_provider_authority(
+                    receipt, preflight, attempt, provider_trust,
+                ).get("decision") == "pass",
+            )
+            binding = build_authority_binding(
+                preflight=preflight,
+                attempt=attempt,
+                sandbox_authority=sandbox_authority,
+                provider_authority=provider_authority,
+                sandbox_trust=sandbox_trust,
+                provider_trust=provider_trust,
+            )
+            if binding.get("decision") != "pass":
+                return binding
+            if authority_target is None:
+                return {"decision": "block", "reason": "PROVIDER_AUTHORITY_BINDING_PATH_INVALID"}
+            _replace_state(authority_target, binding)
+            return {
+                "decision": "pass",
+                "reason": "PROVIDER_ATTEMPT_AUTHORIZED",
+                "attempt": attempt,
+                "authority_binding": binding,
+            }
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         return {"decision": "block", "reason": str(exc) or "PROVIDER_ATTEMPT_INVALID"}
 
 def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--product-root", required=True)
-    parser.add_argument("--task-id", required=True)
-    parser.add_argument("--preflight", required=True)
-    parser.add_argument("--expected-subject", required=True)
-    parser.add_argument("--provider", required=True)
-    parser.add_argument("--adapter", required=True)
-    parser.add_argument("--evidence-ref", required=True)
-    parser.add_argument("--timeout-seconds", type=float, default=300)
-    parser.add_argument("command", nargs=argparse.REMAINDER)
-    args = parser.parse_args()
-    command = args.command[1:] if args.command[:1] == ["--"] else args.command
-    product = Path(args.product_root).resolve()
-    outcome = attempt_for_task(
-        product, args.task_id, preflight_path=Path(args.preflight),
-        expected_subject=args.expected_subject, provider=args.provider,
-        adapter_path=Path(args.adapter), evidence_ref=args.evidence_ref,
-        command=command, timeout_seconds=args.timeout_seconds,
-    )
-    dump_json(outcome)
-    return 0 if outcome.get("decision") == "pass" else 1
+    from provider_attempt_cli import run_cli
+
+    return run_cli(attempt_for_task)
 
 if __name__ == "__main__":
     raise SystemExit(main())

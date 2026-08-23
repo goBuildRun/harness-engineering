@@ -191,7 +191,7 @@ Agent 的通用代码放置规则始终先解析产品 `project.yaml` 和 active
 3. **状态层**：输入变化会使旧验证结果失效；确定性 gate 只在 fingerprint 相同时复用。
 4. **接受层**：Git hooks、受控 remote `pre-receive` 或发布入口调用同一 commit verifier。
 
-任务验证深度使用 `lite|standard|strict`，接受保障使用 `local|guarded|enforced`。只有受控 Git remote 的 `pre-receive` 或发布入口强制运行 verifier，且 provider 终态只消费对应 acceptance receipt 时，才能标记 `enforced`；`local` 与 `guarded` 在旧 schema 中仍映射为 `shadow`，不能宣称流程不可绕过。
+任务验证深度使用 `lite|standard|strict`，接受保障使用 `local|guarded|enforced`。只有受控 Git remote 的 `pre-receive` 或发布入口强制运行 verifier，且 provider 终态由 authority service 使用固定 TrustPolicy、对应 acceptance receipt 与机械关闭顺序执行时，才能标记 `enforced`；普通本地 close 永远不能进入终态。`local` 与 `guarded` 在旧 schema 中仍映射为 `shadow`，不能宣称流程不可绕过。
 
 ## 11. 历史数据升级
 

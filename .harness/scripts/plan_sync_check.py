@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
-import sys
 from pathlib import Path
 
 from business_paths import find_business_paths, is_business_path, load_business_roots
 from harness_output import dump_json
+from harness_runtime import canonical_digest
 from harness_scope import paths_within_scope
 from harness_task_resolution import valid_task_id
 from worktree_baseline import capture_baseline, changed_since_baseline
@@ -32,6 +33,14 @@ def git_changed(repo: Path) -> list[str]:
 
 
 def active_task_baseline(layout) -> tuple[str, Path | None]:
+    ci_task_id = os.environ.get("HARNESS_CI_TASK_ID", "").strip()
+    if ci_task_id:
+        if not valid_task_id(ci_task_id):
+            raise ValueError("TASK_ID_INVALID")
+        return (
+            ci_task_id,
+            layout.agent_workspace / "tasks" / ci_task_id / "worktree_baseline.json",
+        )
     active_path = layout.agent_workspace / "active_task.json"
     try:
         active = json.loads(active_path.read_text(encoding="utf-8"))
@@ -46,6 +55,19 @@ def active_task_baseline(layout) -> tuple[str, Path | None]:
 
 
 def active_task_planning_dir(layout) -> Path | None:
+    if os.environ.get("HARNESS_CI_TASK_ID", "").strip():
+        gate_path = active_planning_gate_path(layout)
+        try:
+            gate = json.loads(gate_path.read_text(encoding="utf-8"))
+            raw = str(gate.get("task_dir") or "").strip()
+            candidate = Path(raw)
+            if not candidate.is_absolute():
+                candidate = layout.product_root / candidate
+            candidate = candidate.resolve()
+            candidate.relative_to(layout.tasks.resolve())
+        except (AttributeError, json.JSONDecodeError, OSError, ValueError):
+            return None
+        return candidate if candidate.is_dir() else None
     work_item_id, _ = active_task_baseline(layout)
     if not work_item_id or not layout.tasks.is_dir():
         return None
@@ -57,6 +79,26 @@ def active_task_planning_dir(layout) -> Path | None:
 
 
 def task_changed(layout) -> list[str]:
+    if os.environ.get("HARNESS_CI_TASK_ID", "").strip():
+        try:
+            credential = json.loads(
+                active_planning_gate_path(layout).read_text(encoding="utf-8")
+            )
+        except (json.JSONDecodeError, OSError) as exc:
+            raise ValueError("CI_CHANGED_FILES_BINDING_INVALID") from exc
+        changed = credential.get("changed_files")
+        expected_digest = os.environ.get("HARNESS_CI_CHANGED_FILES_DIGEST", "").strip()
+        if (
+            credential.get("schema") != "harness-ci-planning-environment-v1"
+            or not isinstance(changed, list)
+            or not all(isinstance(path, str) for path in changed)
+            or len(changed) != len(set(changed))
+            or not expected_digest
+            or credential.get("changed_files_digest") != canonical_digest(changed)
+            or credential.get("changed_files_digest") != expected_digest
+        ):
+            raise ValueError("CI_CHANGED_FILES_BINDING_INVALID")
+        return changed
     _, baseline = active_task_baseline(layout)
     if baseline is not None and baseline.is_file():
         return changed_since_baseline(layout.product_root, baseline)

@@ -2,15 +2,65 @@
 """Work-item resolution helpers used by Harness gate planning."""
 from __future__ import annotations
 
+import hashlib
 import json
+import os
+import tempfile
 from pathlib import Path
 from typing import Any
 
+from harness_runtime import canonical_digest
 from harness_task_resolution import valid_task_id
 from workspace_paths import load_layout
 
 
-def prepare_ci_task(harness: Path, product: Path, task_id: str) -> bool:
+CI_PLANNING_SCHEMA = "harness-ci-planning-environment-v1"
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            json.dump(payload, stream, ensure_ascii=False, indent=2)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def _ci_credential_target(layout, task_id: str) -> Path | None:
+    runs_root = layout.runs_root.resolve()
+    try:
+        runs_root.relative_to(layout.product_root.resolve())
+    except (OSError, ValueError):
+        return None
+    current = runs_root
+    for component in ("ci", task_id):
+        current = current / component
+        if current.is_symlink():
+            return None
+    target = current / "planning_gate_pass.json"
+    try:
+        target.parent.resolve(strict=False).relative_to(runs_root)
+    except (OSError, ValueError):
+        return None
+    return target
+
+
+def prepare_ci_task(
+    harness: Path, product: Path, task_id: str, *, changed_files: list[str] | None = None,
+) -> bool:
+    if changed_files is not None and not all(isinstance(path, str) for path in changed_files):
+        return False
+    changed = list(dict.fromkeys(changed_files or []))
     binding = _committed_task_resolution(harness, product, task_id)
     if binding["status"] != "unique":
         return False
@@ -36,14 +86,25 @@ def prepare_ci_task(harness: Path, product: Path, task_id: str) -> bool:
     credential["ci_task_id"] = task_id
     credential["task_dir"] = str(task_dir.resolve())
     credential["work_item"] = {**source_work_item, **resolved_work_item}
-    target = layout.runs_root / "planning_gate_pass.json"
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(json.dumps(credential, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    work_item = str((credential.get("work_item") or {}).get("id") or "")
-    (layout.runs_root / "active_task.json").write_text(
-        json.dumps({"work_item_id": work_item, "task_id": task_id}, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    try:
+        source_ref = str(source.resolve().relative_to(product.resolve())).replace("\\", "/")
+        source_digest = _sha256(source)
+    except (OSError, ValueError):
+        return False
+    credential.update({
+        "schema": CI_PLANNING_SCHEMA,
+        "committed_source_ref": source_ref,
+        "committed_source_digest": source_digest,
+        "changed_files": changed,
+        "changed_files_digest": canonical_digest(changed),
+    })
+    target = _ci_credential_target(layout, task_id)
+    if target is None:
+        return False
+    try:
+        _write_json_atomic(target, credential)
+    except OSError:
+        return False
     return True
 
 
@@ -117,6 +178,7 @@ def committed_task_binding(harness: Path, product: Path, task_id: str) -> dict[s
 def validate_planning_credential(
     harness: Path, product: Path, task_id: str, credential: dict[str, Any], *,
     work_item_id: str = "", provider: str = "", require_ci_task_id: bool = False,
+    changed_files: list[str] | None = None,
 ) -> dict[str, str]:
     if credential.get("decision") != "pass":
         return {"decision": "block", "reason": "CI_PLANNING_CREDENTIAL_DECISION_INVALID"}
@@ -162,6 +224,36 @@ def validate_planning_credential(
         or str(expected_work_item.get("provider") or "") != expected_provider
     ):
         return {"decision": "block", "reason": "CI_PLANNING_PROVIDER_MISMATCH"}
+    if require_ci_task_id:
+        if credential.get("schema") != CI_PLANNING_SCHEMA:
+            return {"decision": "block", "reason": "CI_PLANNING_SCHEMA_INVALID"}
+        bound_changed = credential.get("changed_files")
+        if (
+            not isinstance(bound_changed, list)
+            or not all(isinstance(path, str) for path in bound_changed)
+            or len(bound_changed) != len(set(bound_changed))
+            or credential.get("changed_files_digest") != canonical_digest(bound_changed)
+        ):
+            return {"decision": "block", "reason": "CI_CHANGED_FILES_BINDING_INVALID"}
+        if changed_files is not None and bound_changed != list(dict.fromkeys(changed_files)):
+            return {"decision": "block", "reason": "CI_CHANGED_FILES_MISMATCH"}
+        source = next(
+            (path for path in (
+                expected_dir / "planning_gate_pass.json", expected_dir / "phase0_pass.json",
+            ) if path.is_file()),
+            None,
+        )
+        if source is None:
+            return {"decision": "block", "reason": "CI_PLANNING_SOURCE_MISSING"}
+        try:
+            expected_ref = str(source.resolve().relative_to(product.resolve())).replace("\\", "/")
+            expected_digest = _sha256(source)
+        except (OSError, ValueError):
+            return {"decision": "block", "reason": "CI_PLANNING_SOURCE_INVALID"}
+        if credential.get("committed_source_ref") != expected_ref:
+            return {"decision": "block", "reason": "CI_PLANNING_SOURCE_REF_MISMATCH"}
+        if credential.get("committed_source_digest") != expected_digest:
+            return {"decision": "block", "reason": "CI_PLANNING_SOURCE_DIGEST_MISMATCH"}
     return {"decision": "pass", "reason": "CI_PLANNING_CREDENTIAL_BOUND"}
 
 

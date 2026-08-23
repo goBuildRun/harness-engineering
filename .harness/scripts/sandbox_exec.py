@@ -167,17 +167,17 @@ def main() -> int:
     argv, error = parse_argv(raw_command)
     if error:
         emit("block", error)
-        return 0
+        return 1
 
     violation = reject(argv)
     if violation:
         emit("block", violation)
-        return 0
+        return 1
 
     cwd = Path(args.cwd).resolve()
     if not cwd.is_dir():
         emit("block", f"SANDBOX_CWD_NOT_FOUND: {cwd}")
-        return 0
+        return 1
     timeout = int(os.environ.get("HARNESS_SANDBOX_TIMEOUT_SECONDS") or "600")
     if args.backend == "docker":
         ok, reason = run_docker(argv, cwd, timeout)
@@ -186,7 +186,7 @@ def main() -> int:
     else:
         ok, reason = run_controlled(argv, cwd, timeout)
     emit("pass" if ok else "block", reason, backend=args.backend, cwd=str(cwd), argv=argv)
-    return 0
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":

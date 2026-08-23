@@ -9,11 +9,17 @@ import re
 from pathlib import Path
 from typing import Any
 
+from harness_execution_authority import (
+    FIELDS as AUTHORITY_FIELDS,
+    SCHEMA as AUTHORITY_SCHEMA,
+    trust_from_installation,
+    validate_receipt as validate_authority_receipt,
+)
 from harness_output import dump_json
 from harness_task_resolution import valid_task_id
 from task_contract_check import parse_task_rows
 from workspace_paths import Phase0Layout, load_active_planning_gate, load_layout
-from harness_runtime import canonical_digest, policy_for, subject_for
+from harness_runtime import canonical_digest, load_result, policy_for, subject_for
 from worktree_baseline import changed_since_baseline
 
 
@@ -74,17 +80,111 @@ def _bound_path(layout: Phase0Layout, ref: str) -> Path | None:
     return path
 
 
+REVIEWER_IDENTITY_SCHEMA = AUTHORITY_SCHEMA
+REVIEWER_IDENTITY_FIELDS = AUTHORITY_FIELDS
+
+
+def validate_reviewer_identity(
+    receipt: Any, *, work_item_id: str, task_id: str,
+    harness_root: Path | None = None,
+) -> tuple[str, str]:
+    if not isinstance(receipt, dict) or set(receipt) != REVIEWER_IDENTITY_FIELDS:
+        return "", "QA_REVIEWER_IDENTITY_RECEIPT_INVALID"
+    claims = receipt.get("claims")
+    if not isinstance(claims, dict) or set(claims) != {
+        "issued_by", "reviewer_role", "session_id", "work_item_id", "task_id",
+    }:
+        return "", "QA_REVIEWER_IDENTITY_RECEIPT_INVALID"
+    session_id = str(claims.get("session_id") or "").strip()
+    if (
+        claims.get("issued_by") != "codex-host"
+        or claims.get("reviewer_role") != "qa-evaluator"
+        or session_id in {"", "unknown"}
+        or claims.get("work_item_id") != work_item_id
+        or claims.get("task_id") != task_id
+    ):
+        return "", "QA_REVIEWER_IDENTITY_RECEIPT_INVALID"
+    try:
+        trust = trust_from_installation(
+            harness_root or Path(__file__).resolve().parents[2],
+            "qa-reviewer-identity", "harness-qa-reviewer",
+        )
+    except ValueError:
+        return "", "QA_REVIEWER_IDENTITY_TRUST_REQUIRED"
+    binding = {"work_item_id": work_item_id, "task_id": task_id}
+    authority = validate_authority_receipt(
+        receipt,
+        trust=trust,
+        authority="qa-reviewer-identity",
+        action="qa-signoff",
+        subject_digest=canonical_digest(binding),
+        provider="codex-host",
+        input_digest=canonical_digest({**binding, "reviewer_role": "qa-evaluator"}),
+        output_digest=canonical_digest({"session_id": session_id}),
+        claims=claims,
+    )
+    return (
+        (session_id, "")
+        if authority["decision"] == "pass"
+        else ("", "QA_REVIEWER_IDENTITY_RECEIPT_INVALID")
+    )
+
+
+def implementer_session_from_result(data: Any) -> str:
+    if not isinstance(data, dict):
+        return "unknown"
+    cost = data.get("cost")
+    if not isinstance(cost, dict):
+        return "unknown"
+    baseline = cost.get("story_usage_baseline")
+    if not isinstance(baseline, dict):
+        return "unknown"
+    session_id = baseline.get("session_id")
+    if not isinstance(session_id, str):
+        return "unknown"
+    return session_id.strip() or "unknown"
+
+
+def _current_task_identity(layout: Phase0Layout, wid: str) -> tuple[bool, str, list[str]]:
+    path = layout.runs_root / "tasks" / wid / "result.json"
+    if not path.is_file():
+        return False, "unknown", []
+    try:
+        data = load_result(path)
+    except (AttributeError, OSError, TypeError, ValueError, json.JSONDecodeError):
+        return True, "unknown", [f"QA_RESULT_INVALID:{path}"]
+    issues = []
+    if data.get("task_id") != wid:
+        issues.append(f"QA_RESULT_TASK_MISMATCH:{path}")
+    tier = data.get("tier") or {}
+    current_tier = str(tier.get("effective") or tier.get("initial") or "")
+    governed = current_tier in {"standard", "strict"}
+    return governed, implementer_session_from_result(data), issues
+
+
 def _validate_v2_binding(
     data: dict[str, Any], path: Path, layout: Phase0Layout, wid: str,
 ) -> list[str]:
-    issues: list[str] = []
+    governed, current_implementer, issues = _current_task_identity(layout, wid)
     if data.get("schema") != "harness-qa-receipt-v2":
+        if governed:
+            issues.append(f"QA_V2_RECEIPT_REQUIRED:{path}")
         return issues
-    reviewer_session = str(data.get("reviewer_session_id") or "")
-    implementer_session = str(data.get("implementer_session_id") or "")
+    reviewer_session, identity_issue = validate_reviewer_identity(
+        data.get("reviewer_identity_receipt"), work_item_id=wid,
+        task_id=str(data.get("task_id") or ""),
+        harness_root=layout.harness_root,
+    )
+    if identity_issue:
+        issues.append(f"{identity_issue}:{path}")
+    if current_implementer == "unknown":
+        issues.append(f"QA_IMPLEMENTER_IDENTITY_UNPROVEN:{path}")
+    if data.get("implementer_session_id") != current_implementer:
+        issues.append(f"QA_IMPLEMENTER_SESSION_MISMATCH:{path}")
+    if data.get("reviewer_session_id") != reviewer_session:
+        issues.append(f"QA_REVIEWER_SESSION_MISMATCH:{path}")
     if (data.get("independent") is not True or not reviewer_session
-            or reviewer_session == "unknown"
-            or (implementer_session != "unknown" and reviewer_session == implementer_session)):
+            or reviewer_session == current_implementer):
         issues.append(f"QA_INDEPENDENCE_UNPROVEN:{path}")
     baseline = layout.runs_root / "tasks" / wid / "worktree_baseline.json"
     try:

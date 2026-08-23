@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / ".harness" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
+from acceptance_trust import TrustPolicy  # noqa: E402
 from harness_attestation import create_attestation  # noqa: E402
 from harness_gc_context import build_gc_context  # noqa: E402
 from harness_gc_receipt import build_receipt, store_receipt  # noqa: E402
@@ -72,6 +73,24 @@ class HarnessReceiveTest(unittest.TestCase):
         sign_policy(policy, key)
         target.write_text(json.dumps(policy, indent=2) + "\n", encoding="utf-8")
         return target
+
+    def trust(self, policy: Path, key: Path) -> TrustPolicy:
+        payload = json.loads(policy.read_text(encoding="utf-8"))
+        canonical = json.dumps(
+            payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        ) + "\n"
+        fingerprint = subprocess.check_output(
+            ["ssh-keygen", "-lf", str(key.with_suffix(".pub")), "-E", "sha256"],
+            text=True,
+        ).split()[1]
+        return TrustPolicy(
+            acceptance_policy_id=payload["policy_id"],
+            acceptance_policy_digest=__import__("hashlib").sha256(
+                canonical.encode("utf-8")
+            ).hexdigest(),
+            receipt_signer_fingerprint=fingerprint,
+            policy_signer_fingerprint=fingerprint,
+        )
 
     def test_commit_range_excludes_old_and_handles_delete(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -347,6 +366,7 @@ class HarnessReceiveTest(unittest.TestCase):
                 expected_commit=new, configured_provider="jira", repo=repo,
                 allowed_signers=allowed, acceptance_policy=policy,
                 policy_allowed_signers=allowed, repo_id="test-repo",
+                trust_policy=self.trust(policy, key),
             ), (True, "ACCEPTANCE_RECEIPT_VALID"))
 
     def test_acceptance_does_not_sign_unbound_or_unverified_commit(self) -> None:

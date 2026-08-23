@@ -2,29 +2,29 @@
 """work_item_providers.py — pluggable Work Item adapters."""
 from __future__ import annotations
 
-import base64
-import hashlib
-import hmac
-import json
 import os
 import re
-import time
-import urllib.error
-import urllib.parse
-import urllib.request
 import uuid
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from product_context import ProductContextError, resolve_product_context
+from acceptance_trust import TerminalAuthorization, terminal_authorization_matches
+from harness_execution_authority import trust_from_installation
+from work_item_provider_config import (
+    DEFAULT_HARNESS_NAME as DEFAULT_HARNESS_NAME,
+    GENERIC_ID_PATTERN as GENERIC_ID_PATTERN,
+    active_product_root as active_product_root,
+    deep_merge as deep_merge,
+    load_config as load_config,
+    load_dotenv as load_dotenv,
+    load_harness_name as load_harness_name,
+    load_product_work_item_config as load_product_work_item_config,
+    normalize_product_work_item_config as normalize_product_work_item_config,
+    yaml as yaml,
+)
 from workspace_paths import load_layout
-
-try:
-    import yaml
-except ImportError:
-    yaml = None  # type: ignore
 
 
 @dataclass
@@ -43,120 +43,10 @@ class WorkItem:
         return d
 
 
-def load_dotenv(harness_root: Path) -> None:
-    """加载 harness 根目录 .env（不覆盖已有环境变量）。"""
-    env_path = harness_root / ".env"
-    if not env_path.is_file():
-        return
-    for line in env_path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, _, val = line.partition("=")
-        key, val = key.strip(), val.strip()
-        if key and key not in os.environ:
-            os.environ[key] = val
-
-
-PRODUCT_CONFIG_CANDIDATES = (
-    "harness-workspace/project.yaml",
-    "harness-workspace/config.yaml",
-    ".harness-engineering.yaml",
-)
-
-DEFAULT_HARNESS_NAME = "Team Product R&D Harness"
-GENERIC_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._:-]{1,127}$"
 ACCEPTANCE_ITEM_RE = re.compile(
     r"^- \[ \] (?!.*#[A-Za-z0-9][A-Za-z0-9._:-]{1,127}\b)(.+)$",
     re.MULTILINE,
 )
-
-
-def deep_merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
-    result = dict(base)
-    for key, value in overlay.items():
-        if isinstance(value, dict) and isinstance(result.get(key), dict):
-            result[key] = deep_merge(result[key], value)
-        else:
-            result[key] = value
-    return result
-
-
-def _load_yaml(path: Path) -> dict[str, Any]:
-    if yaml is None or not path.is_file():
-        return {}
-    try:
-        return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    except OSError:
-        return {}
-
-
-def active_product_root(harness_root: Path) -> Path | None:
-    try:
-        return resolve_product_context(harness_root, include_legacy=False).root
-    except ProductContextError:
-        explicit_vars = (
-            "HARNESS_PRODUCT_ROOT",
-            "HARNESS_PRODUCT_ID",
-            "HARNESS_PRODUCT_ROOT",
-        )
-        if any(os.environ.get(var) for var in explicit_vars):
-            raise
-        return None
-
-
-def load_product_work_item_config(harness_root: Path) -> dict[str, Any]:
-    root = active_product_root(harness_root)
-    if root is None:
-        return {}
-    for rel in PRODUCT_CONFIG_CANDIDATES:
-        data = _load_yaml(root / rel)
-        work_item = data.get("work_item") or data.get("workItem") or {}
-        if work_item:
-            return work_item
-    return {}
-
-
-def normalize_product_work_item_config(work_item: dict[str, Any]) -> dict[str, Any]:
-    normalized: dict[str, Any] = {}
-    for key in ("provider", "id_pattern", "requirements"):
-        if key in work_item:
-            normalized[key] = work_item[key]
-    providers = dict(work_item.get("providers") or {})
-    for name in ("noop", "teambition", "feishu", "jira"):
-        if isinstance(work_item.get(name), dict):
-            providers[name] = deep_merge(providers.get(name) or {}, work_item[name])
-    if providers:
-        normalized["providers"] = providers
-    return normalized
-
-
-def load_config(harness_root: Path) -> dict[str, Any]:
-    load_dotenv(harness_root)
-    cfg_path = harness_root / ".harness/work-items/config.yaml"
-    cfg: dict[str, Any] = _load_yaml(cfg_path)
-    product_cfg = normalize_product_work_item_config(load_product_work_item_config(harness_root))
-    if product_cfg:
-        cfg = deep_merge(cfg, product_cfg)
-    provider = os.environ.get("WORK_ITEM_PROVIDER", cfg.get("provider", "noop"))
-    cfg["provider"] = provider
-    cfg.setdefault("id_pattern", GENERIC_ID_PATTERN)
-    cfg.setdefault("requirements", {"L1": False, "L2": True, "L3": True})
-    return cfg
-
-
-def load_harness_name(harness_root: Path) -> str:
-    product_root = active_product_root(harness_root)
-    if product_root is not None:
-        for rel in PRODUCT_CONFIG_CANDIDATES:
-            data = _load_yaml(product_root / rel)
-            harness = data.get("harness") or {}
-            name = str(harness.get("name") or "").strip()
-            if name:
-                return name
-    data = _load_yaml(harness_root / ".harness/config.yaml")
-    harness = data.get("harness") or {}
-    return str(harness.get("name") or DEFAULT_HARNESS_NAME).strip() or DEFAULT_HARNESS_NAME
 
 
 def valid_id(work_item_id: str, pattern: str) -> bool:
@@ -243,7 +133,14 @@ class WorkItemProvider(ABC):
         ...
 
     @abstractmethod
-    def update_status(self, work_item_id: str, status: str, note: str = "") -> tuple[bool, str]:
+    def update_status(
+        self,
+        work_item_id: str,
+        status: str,
+        note: str = "",
+        *,
+        authorization: TerminalAuthorization | None = None,
+    ) -> tuple[bool, str]:
         ...
 
     def update_description(self, work_item_id: str, description: str) -> tuple[bool, str]:
@@ -265,6 +162,29 @@ class WorkItemProvider(ABC):
         if expected_project_id or expected_parent_id is not None:
             return False, f"{self.name.upper()}_BINDING_VERIFY_UNSUPPORTED"
         return self.verify(work_item_id)
+
+    def terminal_transition_authorized(
+        self,
+        *,
+        work_item_id: str,
+        status: str,
+        authorization: TerminalAuthorization | None,
+        protected: bool,
+    ) -> bool:
+        if not protected:
+            return True
+        try:
+            trust = trust_from_installation(
+                Path(__file__).resolve().parents[2],
+                "terminal-acceptance", "harness",
+            )
+        except ValueError:
+            return False
+        return terminal_authorization_matches(
+            authorization, work_item_id=work_item_id, provider=self.name,
+            status=status, allowed_signers=trust.allowed_signers,
+            signer_fingerprint=trust.signer_fingerprint,
+        )
 
 
 def provider_expected_project_id(provider: WorkItemProvider) -> str | None:
@@ -335,7 +255,14 @@ class NoopProvider(WorkItemProvider):
             f"parent={parent}; assurance=guarded; 未调用外部 API"
         )
 
-    def update_status(self, work_item_id: str, status: str, note: str = "") -> tuple[bool, str]:
+    def update_status(
+        self,
+        work_item_id: str,
+        status: str,
+        note: str = "",
+        *,
+        authorization: TerminalAuthorization | None = None,
+    ) -> tuple[bool, str]:
         ok, _ = self.verify(work_item_id)
         if not ok:
             return False, "NOOP_INVALID_ID"
@@ -379,16 +306,16 @@ def get_provider(harness_root: Path) -> WorkItemProvider:
 
 
 from work_item_contract import (  # noqa: E402
-    apply_assignee,
-    build_work_item_note,
-    first_heading,
-    gate_check,
-    level_requires_work_item,
-    parse_front_matter,
-    product_root_for,
-    rel_to_product,
-    section_bullets,
-    section_text,
-    sync_spec_markdown,
-    work_item_drafts_from_spec,
+    apply_assignee as apply_assignee,
+    build_work_item_note as build_work_item_note,
+    first_heading as first_heading,
+    gate_check as gate_check,
+    level_requires_work_item as level_requires_work_item,
+    parse_front_matter as parse_front_matter,
+    product_root_for as product_root_for,
+    rel_to_product as rel_to_product,
+    section_bullets as section_bullets,
+    section_text as section_text,
+    sync_spec_markdown as sync_spec_markdown,
+    work_item_drafts_from_spec as work_item_drafts_from_spec,
 )

@@ -6,6 +6,9 @@ import os
 import sys
 import tempfile
 import unittest
+import subprocess
+from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -13,6 +16,9 @@ from unittest.mock import patch
 SCRIPT_DIR = Path(__file__).resolve().parents[1] / ".harness" / "scripts"
 sys.path.insert(0, str(SCRIPT_DIR))
 
+from acceptance_trust import TerminalAuthorization  # noqa: E402
+from harness_execution_authority import AuthorityTrust  # noqa: E402
+from provider_lifecycle import sign_receipt  # noqa: E402
 from work_item_providers import FeishuProvider  # noqa: E402
 
 
@@ -60,6 +66,34 @@ def provider(cfg: dict | None = None) -> FeishuProvider:
         },
         ID_PATTERN,
     )
+
+
+@contextmanager
+def authorization(_status: str):  # type: ignore[no-untyped-def]
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        key = root / "key"
+        subprocess.run(
+            ["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(key)],
+            check=True,
+        )
+        public = key.with_suffix(".pub").read_text(encoding="utf-8")
+        allowed = root / "allowed_signers"
+        allowed.write_text(f"harness {public}", encoding="utf-8")
+        fingerprint = subprocess.check_output(
+            ["ssh-keygen", "-lf", str(key.with_suffix(".pub")), "-E", "sha256"],
+            text=True,
+        ).split()[1]
+        issued = datetime.now(timezone.utc)
+        receipt = sign_receipt({
+            "schema": "harness-acceptance-receipt-v1",
+            "authority": "release-gate",
+            "work_item_id": "task_guid_123",
+            "provider": "feishu",
+            "accepted_at": issued.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "expires_at": (issued + timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        }, key)
+        yield TerminalAuthorization(receipt), AuthorityTrust(allowed, fingerprint, "harness")
 
 
 class FeishuProviderTest(unittest.TestCase):
@@ -359,10 +393,15 @@ class FeishuProviderTest(unittest.TestCase):
                 },
             ]
         )
-        with patch.dict(os.environ, {"FEISHU_APP_ID": "app-id", "FEISHU_APP_SECRET": "app-secret"}, clear=True):
+        with authorization("done") as (terminal, trust), patch.dict(os.environ, {"FEISHU_APP_ID": "app-id", "FEISHU_APP_SECRET": "app-secret"}, clear=True):
             p = provider({"status_update_mode": "completed"})
-            with patch("urllib.request.urlopen", fake), patch("time.time", return_value=1782803000):
-                ok, reason = p.update_status("task_guid_123", "done", "Harness complete")
+            with patch("urllib.request.urlopen", fake), patch("time.time", return_value=1782803000), patch("work_item_providers.trust_from_installation", return_value=trust):
+                ok, reason = p.update_status(
+                    "task_guid_123",
+                    "done",
+                    "Harness complete",
+                    authorization=terminal,
+                )
 
         self.assertTrue(ok)
         self.assertIn("FEISHU_UPDATED", reason)
@@ -443,10 +482,12 @@ class FeishuProviderTest(unittest.TestCase):
                 },
             ]
         )
-        with patch.dict(os.environ, {"FEISHU_APP_ID": "app-id", "FEISHU_APP_SECRET": "app-secret"}, clear=True):
+        with authorization("done") as (terminal, trust), patch.dict(os.environ, {"FEISHU_APP_ID": "app-id", "FEISHU_APP_SECRET": "app-secret"}, clear=True):
             p = provider({"status_update_mode": "completed"})
-            with patch("urllib.request.urlopen", fake), patch("time.time", return_value=1782803000):
-                ok, reason = p.update_status("task_guid_123", "done")
+            with patch("urllib.request.urlopen", fake), patch("time.time", return_value=1782803000), patch("work_item_providers.trust_from_installation", return_value=trust):
+                ok, reason = p.update_status(
+                    "task_guid_123", "done", authorization=terminal
+                )
 
         self.assertFalse(ok)
         self.assertIn("FEISHU_UPDATE_VERIFY_FAIL", reason)
@@ -499,7 +540,18 @@ class FeishuProviderTest(unittest.TestCase):
 
         self.assertFalse(ok)
         self.assertIn("FEISHU_STATUS_UNSUPPORTED", reason)
-        self.assertEqual([call.get_method() for call in fake.calls], ["POST", "GET"])
+        self.assertEqual(fake.calls, [])
+
+    def test_update_status_completed_mode_blocks_done_without_authority_or_network(self) -> None:
+        env = {"FEISHU_APP_ID": "app-id", "FEISHU_APP_SECRET": "app-secret"}
+        with patch.dict(os.environ, env, clear=True):
+            p = provider({"status_update_mode": "completed"})
+            with patch("urllib.request.urlopen") as urlopen:
+                ok, reason = p.update_status("task_guid_123", "done")
+
+        self.assertFalse(ok)
+        self.assertEqual(reason, "PROVIDER_TERMINAL_STATUS_FORBIDDEN")
+        urlopen.assert_not_called()
 
     def test_update_description_verifies_and_patches_only_description(self) -> None:
         fake = UrlopenRecorder(
