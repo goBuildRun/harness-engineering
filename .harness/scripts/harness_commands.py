@@ -103,6 +103,12 @@ def _cmd_start_locked(
         return 0
     result = default_result(task_id, initial_tier=initial, work_item=work_item)
     result["task_scoped_state"] = os.environ.get("HARNESS_TASK_SCOPED") == "1"
+    result["flow_policy"] = {
+        "lean": os.environ.get("HARNESS_LEAN_FLOW") == "1",
+        "source": "harness-plan-batch" if os.environ.get("HARNESS_LEAN_FLOW") == "1" else "legacy-start",
+        "growth_release": os.environ.get("HARNESS_LEAN_FLOW") != "1",
+        "persisted_at": now(),
+    }
     result["lifecycle"] = lifecycle
     baseline = path.parent / "worktree_baseline.json"
     capture_baseline(product, baseline, work_item_id=task_id)
@@ -115,6 +121,15 @@ def _cmd_start_locked(
         "confirmation": "implicit-direct-start",
     }
     result["binding_digest"] = canonical_digest(binding)
+    result["tier_selection"] = {
+        "initial": initial,
+        "floor": initial,
+        "scope_paths": list(args.scope),
+        "scope_digest": canonical_digest(sorted(set(args.scope))),
+        "actual_diff_at_start": [],
+        "actual_diff_status": "empty_baseline_before_implementation",
+        "recomputed_at_finish": True,
+    }
     result["invariants"]["task_identity"] = "pass"
     result["task"] = binding
     capture_usage_baseline(result, automatic_receipt(

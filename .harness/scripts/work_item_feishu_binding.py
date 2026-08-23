@@ -110,7 +110,15 @@ class FeishuBindingMixin:
         expected_parent = None if expected_parent_id is None else str(expected_parent_id).strip()
         try:
             item = self.pull(work_item_id)
-            return self._verify_pulled_binding(item, expected_tasklist, expected_parent)
+            result = self._verify_pulled_binding(item, expected_tasklist, expected_parent)
+            self._last_binding_readback = {
+                "work_item_id": item.id,
+                "actual_project_id": sorted(self._tasklist_guids(item.raw or {})),
+                "actual_tasklists": sorted(self._tasklist_guids(item.raw or {})),
+                "actual_parent_id": str((item.raw or {}).get("parent_task_guid") or "unknown"),
+                "decision": "pass" if result[0] else "block",
+            }
+            return result
         except Exception as exc:
             return False, f"FEISHU_BINDING_VERIFY_FAIL: {exc}"
 

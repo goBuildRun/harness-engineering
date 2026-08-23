@@ -164,7 +164,7 @@ Implementation note: `harness_metrics.py` 只读汇总 canonical result，输出
 
 ## Epic 4: Story Cycle Efficiency
 
-目标：在不降低 L0/L1、独立 QA、生产真实性和 Git-native acceptance 约束的前提下，把 strict/L3 同等级 Story 从用户确认到 `ready_to_release` 的默认墙钟预算压缩到 30 分钟以内，并对超时、等待、重试和未知量做可审计归因。
+目标：在不降低 L0/L1、独立 QA、生产真实性和 Git-native acceptance 约束的前提下，把 strict/L3 同等级 Story 从用户确认到 `ready_to_release` 的最大墙钟预算压缩到 30 分钟以内；30 分钟是止损上限，实际 P50/P95 应继续低于并逐步压缩该上限，同时对超时、等待、重试和未知量做可审计归因。
 
 ### E4-S1 30-minute strict story cycle
 
@@ -183,7 +183,7 @@ Ownership:
 Acceptance criteria:
 
 - 以无消息正文、密钥或生产参数的结构化事件重建 Story wall-clock，并区分墙钟、可证明工具等待和 `unknown` Agent active。
-- 默认总预算不超过 30 分钟；每阶段有预算、重试上限、超时归因和停止无界循环的结构化结果。
+- 默认最大预算不超过 30 分钟；每阶段有预算、重试上限、超时归因和停止无界循环的结构化结果，实际运行目标应低于上限。
 - `finish` 验证期间不自动写 planning、Growth 或其他 subject 输入；聚合动作退出关键路径。
 - 确定性 gate 以真实依赖 fingerprint 精确失效；QA、GC Agent、浏览器、部署、Provider、回滚不得跨 subject 缓存。
 - 无共享写状态的 gate 可并行；有真实依赖、写副作用或未声明并行安全的产品质量命令保持串行。

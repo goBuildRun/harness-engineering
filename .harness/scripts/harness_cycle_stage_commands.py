@@ -180,20 +180,23 @@ def validate_current_qa_evidence(
         if not task_dir or not Path(task_dir).is_dir():
             return {"decision": "block", "reason": "QA_EVIDENCE_TASK_DIR_REQUIRED"}
         command = [
-            "bash", str(harness / ".harness/scripts/qa_evidence_check.sh"),
+            "python3", str(harness / ".harness/scripts/qa_fanout.py"),
+            "--harness-root", str(harness), "--product-root", str(product),
             "--task-dir", task_dir,
         ]
         completed = subprocess.run(
             command,
             cwd=harness, env=environment, text=True, stdout=subprocess.PIPE,
             stderr=subprocess.PIPE, check=False,
+            timeout=float(os.environ.get("HARNESS_QA_TIMEOUT_SECONDS", "120")) + 5,
         )
         payload = json.loads(completed.stdout)
+    except subprocess.TimeoutExpired:
+        return {"decision": "block", "reason": "QA_EVIDENCE_TIMEOUT"}
     except (OSError, RuntimeError, ValueError, json.JSONDecodeError):
         return {"decision": "block", "reason": "QA_EVIDENCE_CHECK_FAILED"}
     if (
-        completed.returncode != 0
-        or not isinstance(payload, dict)
+        not isinstance(payload, dict)
         or payload.get("decision") not in {"pass", "block"}
     ):
         return {"decision": "block", "reason": "QA_EVIDENCE_CHECK_FAILED"}

@@ -161,7 +161,14 @@ class WorkItemProvider(ABC):
         """Verify provider placement when the adapter exposes container semantics."""
         if expected_project_id or expected_parent_id is not None:
             return False, f"{self.name.upper()}_BINDING_VERIFY_UNSUPPORTED"
-        return self.verify(work_item_id)
+        ok, reason = self.verify(work_item_id)
+        self._last_binding_readback = {
+            "work_item_id": work_item_id,
+            "decision": "pass" if ok else "block",
+            "actual_project_id": "unknown",
+            "actual_parent_id": "unknown",
+        }
+        return ok, reason
 
     def verify_item_binding(
         self,

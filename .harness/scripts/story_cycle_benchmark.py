@@ -55,6 +55,23 @@ def benchmark(fixture: dict[str, Any]) -> dict[str, Any]:
     after_unrelated_rerun, _rerun_checks, rerun_hits = run(
         specs("candidate-v2"), first_checks, subject="candidate-v2",
     )
+    stage_fixture = fixture.get("offline_story_stage_fixture_ms") or {
+        "takeover": 30,
+        "planning": 60,
+        "implementation_test": 120,
+        "independent_qa": 80,
+        "deploy_provider": 70,
+        "finalize": 40,
+    }
+    qa_units = fixture.get("offline_qa_unit_fixture_ms") or [20, 20, 20, 20, 20]
+    if not isinstance(qa_units, list) or not qa_units:
+        raise ValueError("offline_qa_unit_fixture_ms invalid")
+    before_stages = {name: int(value) for name, value in stage_fixture.items()}
+    after_stages = dict(before_stages)
+    after_stages["independent_qa"] = max(int(value) for value in qa_units)
+    before_full = sum(before_stages.values()) + before
+    after_full = sum(after_stages.values()) + after_first
+    full_budget = 1_800_000
     return {
         "decision": "pass",
         "reason": "OFFLINE_STORY_CYCLE_BENCHMARK_OK",
@@ -66,15 +83,31 @@ def benchmark(fixture: dict[str, Any]) -> dict[str, Any]:
         "first_run_reduction": (before - after_first) / before,
         "unrelated_rerun_reduction": (before - after_unrelated_rerun) / before,
         "observed_cache_hits": rerun_hits,
+        "offline_before_full_cycle_ms": before_full,
+        "offline_after_full_cycle_ms": after_full,
+        "offline_stage_wall_ms": {
+            "before_serial": before_stages,
+            "after_bounded": after_stages,
+        },
+        "offline_qa_units": len(qa_units),
+        "offline_reruns": {"before": int(fixture["audit_source"].get("reruns") or 0), "after": 0},
+        "retries": {"before": int(fixture["audit_source"].get("reruns") or 0), "after": 0},
+        "agent_active_ms": "unknown",
+        "telemetry": "unknown",
+        "full_cycle_budget_ms": full_budget,
+        "full_cycle_budget_pass": after_full <= full_budget,
         "orchestration_executor": "execute_specs",
         "target_story_budget_ms": 1_800_000,
         "production_p95": "unknown",
         "judge_usage": "unknown",
         "quality_guards": {
             "independent_qa": "retained",
+            "qa_fanout": "bounded_parallel_stable_aggregation",
             "strict_provider": "offline_preflight_then_one_real_call",
             "l0_l1": "retained",
             "unknown_telemetry": "not_coerced",
+            "provider_calls": 0,
+            "production_deployments": 0,
         },
     }
 

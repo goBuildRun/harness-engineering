@@ -3,54 +3,11 @@
 from __future__ import annotations
 
 import argparse
-import json
-import os
+from harness_finish_support import execute_finish as _execute_finish
 
 
 def execute_finish(args: argparse.Namespace, *, commands) -> int:
-    started = commands.time.monotonic()
-    product, harness = commands.Path(args.product_root).resolve(), commands.Path(args.harness_root).resolve()
-    task_id, candidates = commands.resolve_task_id(product, args.task_id)
-    if not task_id:
-        reason = "TASK_ID_INVALID" if candidates == ["TASK_ID_INVALID"] else "TASK_INFERENCE_AMBIGUOUS"
-        commands.dump_json({"decision": "block", "reason": reason, "candidates": candidates})
-        return 0
-    path = commands.result_path(product, task_id)
-    if not path.is_file():
-        commands.dump_json({"decision": "block", "reason": "TASK_NOT_FOUND"})
-        return 0
-    try:
-        stored = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        stored = {}
-    task_scoped = bool(isinstance(stored, dict) and stored.get("task_scoped_state"))
-    previous_scope = os.environ.get("HARNESS_TASK_SCOPED")
-    previous_task_id = os.environ.get("HARNESS_TASK_ID")
-    if task_scoped:
-        os.environ["HARNESS_TASK_SCOPED"] = "1"
-        os.environ["HARNESS_TASK_ID"] = task_id
-    lock_path = path if task_scoped else commands.active_task_path(product)
-    try:
-        if lock_path == path:
-            with commands.task_operation_lock(path):
-                return _execute_finish_locked(
-                    args, product, harness, task_id, path, started,
-                    commands=commands,
-                )
-        with commands.task_operation_lock(lock_path), commands.task_operation_lock(path):
-            return _execute_finish_locked(
-                args, product, harness, task_id, path, started,
-                commands=commands,
-            )
-    finally:
-        if previous_scope is None:
-            os.environ.pop("HARNESS_TASK_SCOPED", None)
-        else:
-            os.environ["HARNESS_TASK_SCOPED"] = previous_scope
-        if previous_task_id is None:
-            os.environ.pop("HARNESS_TASK_ID", None)
-        else:
-            os.environ["HARNESS_TASK_ID"] = previous_task_id
+    return _execute_finish(args, commands=commands, finish_locked=_execute_finish_locked)
 
 
 def _execute_finish_locked(
@@ -171,6 +128,13 @@ def _execute_finish_locked(
             completed_at=commands.now(), effective_tier=effective,
         )
     result["tier"]["effective"] = effective
+    selection = result.setdefault("tier_selection", {})
+    selection.update({
+        "actual_diff_at_finish": list(effective_changed),
+        "actual_diff_digest": commands.canonical_digest(effective_changed),
+        "effective": effective,
+        "recomputed_at": commands.now(),
+    })
     result["checks"]["tier"] = tier_check
     declared = set(result.get("task", {}).get("scope") or [])
     result["invariants"]["task_identity"] = "pass" if result.get("task_id") else "block"

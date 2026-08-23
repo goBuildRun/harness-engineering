@@ -32,7 +32,9 @@ harness --product-root "$PRODUCT_ROOT" start <work-item-id> --scope <path>
 harness --product-root "$PRODUCT_ROOT" finish <task-id>
 ```
 
-`harness plan` 一次生成 batch planning receipt 和每个子任务的 task-scoped 凭证；它内部完成共享前置检查、规划摘要、Work Item binding receipt 和一次 context sync。旧的 `draft-spec`、`sync-spec`、`planning_gate.sh`、`task_workspace.sh activate` 仍可用于历史任务或排障，但不应再串成新 Story 的人工总清单。
+`harness plan` 一次生成 batch planning receipt 和每个子任务的 task-scoped 凭证；它内部完成共享前置检查、BMAD/Architecture/Readiness digest、Work Item create/readback/binding receipt 和一次 context sync。默认 offline 只写确定性的本地 `task.json`，不猜测外部 Epic/Tasklist；只有显式 `--provider-mode configured` 才允许已确认的 provider 创建或绑定任务。相同 batch 输入命中 bundle/child digest cache，无关任务不会触发全量重跑。旧的 `draft-spec`、`sync-spec`、`planning_gate.sh`、`task_workspace.sh activate` 仍可用于历史任务或排障，但不应再串成新 Story 的人工总清单。
+
+batch `start` 会把 `flow_policy` 持久化到 `runs/tasks/<task-id>/result.json`。后续在新 shell 中单独执行 `finish` 会恢复 lean 策略；strict/standard 的独立 QA 使用 bounded fan-out 并行验证任务包中的 T1-T5（或等价 QA 单元），然后再做一次稳定聚合和当前 subject 绑定。
 
 统一入口内部承载以下能力，并按风险触发；兼容脚本暂保留，但不增加正常路径的使用者步骤：
 
@@ -697,7 +699,7 @@ Guarded 接入会把 `pre-commit` / `post-commit` / `pre-push` 写入产品 `.gi
 
 首次安装 hooks 时，在暂存接入文件后执行 `harness bootstrap-guarded --task-id <id> --reason '<原因>'`。一次性 receipt 保存在 `.git/harness/`，绑定当前 HEAD、index tree、精确 staged paths 和任务身份；pre-commit 只验证，post-commit 仅在新 commit parent/tree 匹配后消费。已有版本化 hooks 的仓库不能创建 bootstrap receipt，且该机制仍属于可绕过的 `guarded`，不是 `enforced`。
 
-目标公开路径是 `plan/start/finish`，`status` 只读；30 分钟 Story 仍用 `stage` 记录六个关键阶段（旧结果字段仍显示 `shadow`）：
+目标公开路径是 `plan/start/finish`，`status` 只读；30 分钟是 Story 的最大预算而非理想耗时，`stage` 记录六个关键阶段（旧结果字段仍显示 `shadow`）：
 
 ```bash
 bash .harness/scripts/harness start demo-login-task --scope src/auth --work-item <provider-id>

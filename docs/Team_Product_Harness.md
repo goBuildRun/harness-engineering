@@ -91,7 +91,7 @@ bash .harness/scripts/harness_growth.sh apply-review
 
 全新项目的入口不同：先通过 BMAD Planning 形成 `planning/product-specs/`、`planning/exec-plans/`、`planning/tasks/`，再由 `harness_knowledge.sh sync-planning` 把产品目标、产品蓝图、架构/方案和任务边界同步到 `CONTEXT.md`。`planning_gate.sh` 通过时会自动执行这一步。
 
-Work Item 系统承载协同真相源，不承载 BMAD 产物本体。推荐使用 `harness plan --level ... --task-dir ...` 一次生成 batch planning receipt、子任务 binding receipt 和共享上下文 digest；默认 offline，不猜测外部容器，明确授权后才调用 configured provider。旧 `draft-spec` / `sync-spec` 仍可用于历史任务诊断。完整规格和计划仍以产品仓库 `harness-workspace/planning/` 为准。
+Work Item 系统承载协同真相源，不承载 BMAD 产物本体。推荐使用 `harness plan --level ... --task-dir ...` 一次生成 BMAD/Architecture/Readiness digest、batch planning receipt、子任务 create/readback/binding receipt 和共享上下文 digest；默认 offline，不猜测外部容器，明确授权后才调用 configured provider。`start` 将 lean policy 持久化，`finish` 对任务包中的 QA 单元 bounded fan-out 并稳定聚合。旧 `draft-spec` / `sync-spec` 仍可用于历史任务诊断。完整规格和计划仍以产品仓库 `harness-workspace/planning/` 为准。
 
 ## 6. 通用接入步骤
 

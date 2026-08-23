@@ -282,11 +282,38 @@ def validate_report(path: Path | None, kind: str, candidates: list[Path]) -> lis
     return []
 
 
+def validate_task_entry(
+    layout: Phase0Layout, task_dir: Path, wid: str, row: dict[str, str],
+) -> tuple[list[str], dict[str, str] | None]:
+    """Validate one QA unit without rereading or mutating shared state."""
+    task_id = row.get("id", "").strip("` ")
+    if not valid_task_id(task_id):
+        return [f"QA_TASK_ID_INVALID:{task_id}"], None
+    issues: list[str] = []
+    qa_path = first_existing(qa_candidates(layout, wid, task_id))
+    if not qa_path:
+        return [f"QA_SIGNOFF_MISSING:{task_id}"], None
+    issues.extend(validate_qa_json(qa_path, task_id, wid, layout))
+    test_candidates = report_candidates(layout.test_reports_dir, wid, task_dir, task_id, "TEST")
+    review_candidates = report_candidates(layout.review_reports_dir, wid, task_dir, task_id, "REVIEW")
+    test_path = first_existing(test_candidates)
+    review_path = first_existing(review_candidates)
+    issues.extend(validate_report(test_path, "TEST", test_candidates))
+    issues.extend(validate_report(review_path, "REVIEW", review_candidates))
+    return issues, {
+        "task_id": task_id,
+        "qa": layout.rel(qa_path),
+        "test": layout.rel(test_path) if test_path else "",
+        "review": layout.rel(review_path) if review_path else "",
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--harness-root", default=".")
     parser.add_argument("--product-root", default="")
     parser.add_argument("--task-dir", default="")
+    parser.add_argument("--only-task-id", default="")
     args = parser.parse_args()
 
     layout = load_layout(
@@ -312,6 +339,11 @@ def main() -> int:
         return 0
 
     rows, table_issues = parse_task_rows(plan.read_text(encoding="utf-8", errors="ignore"))
+    if args.only_task_id:
+        rows = [row for row in rows if row.get("id", "").strip("` ") == args.only_task_id]
+        if not rows:
+            emit("block", f"QA_TASK_ID_NOT_IN_PLAN:{args.only_task_id}", task_count=0)
+            return 0
     if table_issues or not rows:
         emit("block", "QA_EVIDENCE_NO_TASK_CONTRACT: " + "; ".join(table_issues), task_count=len(rows))
         return 0
@@ -323,30 +355,10 @@ def main() -> int:
         return 0
     checked: list[dict[str, str]] = []
     for row in rows:
-        task_id = row.get("id", "").strip("` ")
-        if not valid_task_id(task_id):
-            issues.append(f"QA_TASK_ID_INVALID:{task_id}")
-            continue
-        qa_path = first_existing(qa_candidates(layout, wid, task_id))
-        if not qa_path:
-            issues.append(f"QA_SIGNOFF_MISSING:{task_id}")
-            continue
-        issues.extend(validate_qa_json(qa_path, task_id, wid, layout))
-
-        test_candidates = report_candidates(layout.test_reports_dir, wid, task_dir, task_id, "TEST")
-        review_candidates = report_candidates(layout.review_reports_dir, wid, task_dir, task_id, "REVIEW")
-        test_path = first_existing(test_candidates)
-        review_path = first_existing(review_candidates)
-        issues.extend(validate_report(test_path, "TEST", test_candidates))
-        issues.extend(validate_report(review_path, "REVIEW", review_candidates))
-        checked.append(
-            {
-                "task_id": task_id,
-                "qa": layout.rel(qa_path),
-                "test": layout.rel(test_path) if test_path else "",
-                "review": layout.rel(review_path) if review_path else "",
-            }
-        )
+        row_issues, row_checked = validate_task_entry(layout, task_dir, wid, row)
+        issues.extend(row_issues)
+        if row_checked:
+            checked.append(row_checked)
 
     if issues:
         emit("block", "QA_EVIDENCE_INVALID: " + "; ".join(issues), checked=checked, task_count=len(rows))

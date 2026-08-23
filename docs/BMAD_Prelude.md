@@ -131,7 +131,7 @@ harness --product-root "$PRODUCT_ROOT" start <work-item-id>
 harness --product-root "$PRODUCT_ROOT" finish <task-id>
 ```
 
-旧 `draft-spec` / `sync-spec` / `planning_gate.sh` 仍是兼容诊断入口；只有在历史任务或明确 provider 操作时才单独使用。`harness plan --provider-mode configured` 才允许走已确认的外部 provider；默认只建立本地任务包，不猜测 Harness 外部 Epic/Tasklist。完整 BMAD 产物仍以产品仓库 `harness-workspace/planning/` 为真相源。详见 [BMAD_Work_Item_Contract.md](./BMAD_Work_Item_Contract.md)。
+旧 `draft-spec` / `sync-spec` / `planning_gate.sh` 仍是兼容诊断入口；只有在历史任务或明确 provider 操作时才单独使用。`harness plan --provider-mode configured` 才允许走已确认的外部 provider，并将 create response、readback、项目/Tasklist 和父级 binding 写入同一 receipt；默认 offline 只建立确定性的本地任务包，不猜测 Harness 外部 Epic/Tasklist。完整 BMAD 产物仍以产品仓库 `harness-workspace/planning/` 为真相源。详见 [BMAD_Work_Item_Contract.md](./BMAD_Work_Item_Contract.md)。
 
 Planning Gate 通过后会自动运行 `harness_knowledge.sh sync-planning`，把 BMAD Planning 形成的产品规格、产品蓝图、架构/执行计划和任务边界写入产品侧 `harness-workspace/knowledge/CONTEXT.md` 的受管区块。全新项目的首批长期上下文应来自这里，而不是依赖聊天记忆。
 

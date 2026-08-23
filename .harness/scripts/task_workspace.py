@@ -61,11 +61,20 @@ def find_planning_child(layout: Phase0Layout, work_item_id: str) -> dict | None:
     root = layout.agent_workspace / "planning"
     if not root.is_dir():
         return None
-    for path in sorted(root.glob("*/children/*.json"), reverse=True):
+    candidates: list[tuple[str, int, Path, dict]] = []
+    for path in root.glob("*/children/*.json"):
         data = load_json(path)
         if data and str(data.get("work_item_id") or "") == work_item_id:
-            return data
-    return None
+            bundle = load_json(path.parent.parent / "planning-bundle.json") or {}
+            stamp = str(bundle.get("finished_at") or data.get("created_at") or "")
+            try:
+                mtime = path.stat().st_mtime_ns
+            except OSError:
+                mtime = 0
+            candidates.append((stamp, mtime, path, data))
+    if not candidates:
+        return None
+    return max(candidates, key=lambda item: (item[0], item[1], str(item[2])))[3]
 
 
 def task_workspace_dir(layout: Phase0Layout, work_item_id: str) -> Path:

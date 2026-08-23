@@ -96,7 +96,7 @@ The dominant cause is Agent iteration/context growth/evidence orchestration, not
 | offline deploy preflight + deploy + one real Provider | 5m | no real call before all local checks pass |
 | GC / finish / Token / commit / lifecycle readback | 3m | parallel read-only gates; max two same-input finish attempts |
 
-Total `30m`. A phase overrun does not borrow without an explicit revised budget receipt; it stops before another gate or Provider side effect and returns `stage`, `attempt`, `elapsed_ms`, `budget_ms`, `input_digest` and remediation.
+Total ceiling `30m`, not an ideal target. A phase overrun does not borrow without an explicit revised budget receipt; it stops before another gate or Provider side effect and returns `stage`, `attempt`, `elapsed_ms`, `budget_ms`, `input_digest` and remediation.
 
 ## Implemented Harness Changes
 
@@ -132,7 +132,7 @@ The fixture runs ten real 40ms offline gate runners through `GateSpec`, `execute
 | unrelated evidence rerun | 477ms / 0 hits | 139ms observed with 4 real precise hits |
 | reduction | - | 71.28% first run; 70.86% unrelated rerun |
 
-This is executable offline orchestration evidence, not production P95 or a measured 30m Story. Scheduler noise means exact milliseconds vary. The historical baseline remains `34,476,120ms`; the target budget is `1,800,000ms`. The next comparable live strict Story remains the required end-to-end trial.
+This is executable offline orchestration evidence, not production P95 or a measured 30m Story. Scheduler noise means exact milliseconds vary. The historical baseline remains `34,476,120ms`; `1,800,000ms` is the maximum budget, while the next comparable live strict Story must measure a lower operating target. The next comparable live strict Story remains the required end-to-end trial.
 
 The iCloud-backed Harness worktree was also sampled with three read-only `git status --untracked-files=no` runs: `0.01s`, `0.05s`, and `0.00s`. The previously observed 30–90s Git waits were not reproduced, so their historical contribution remains `unknown` and is not assigned to Story 43.5.
 

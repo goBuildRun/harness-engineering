@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -23,6 +22,13 @@ from harness_gate_work_items import (
     prepare_ci_task,
     validate_planning_credential,
 )
+from harness_gates_support import (
+    blocked_gate_plan,
+    gate_timeout_seconds,
+    not_executed_check,
+    run_gate_command as _run_gate_command_impl,
+)
+from process_control import run_process_group
 from harness_strict_gate import validate as _strict_evidence
 
 
@@ -40,6 +46,14 @@ TIER_GATES = {
     ),
 }
 DEFAULT_GATE_TIMEOUT_SECONDS = 120
+
+
+def _run_gate_command(command: list[str], *, gate: str, cwd: Path,
+                      env: dict[str, str], timeout: float) -> tuple[dict[str, Any], int]:
+    return _run_gate_command_impl(
+        command, gate=gate, cwd=cwd, env=env, timeout=timeout,
+        process_runner=run_process_group,
+    )
 
 
 def checks_for_tier(checks: dict[str, dict[str, Any]], tier: str) -> dict[str, dict[str, Any]]:
@@ -71,7 +85,11 @@ def _commands(harness: Path) -> dict[str, list[str]]:
         ],
         "plan_sync": ["bash", str(scripts / "plan_sync_check.sh")],
         "dag_sync": ["bash", str(scripts / "dag_sync_check.sh")],
-        "qa_evidence": ["bash", str(scripts / "qa_evidence_check.sh")],
+        "qa_evidence": [
+            "python3", str(scripts / "qa_fanout.py"),
+            "--harness-root", str(harness), "--product-root", "__PRODUCT_ROOT__",
+            "--compatibility-source", str(scripts / "qa_evidence_check.sh"),
+        ],
         "knowledge": ["bash", str(scripts / "harness_knowledge.sh"), "check-planning"],
         "growth_review": ["bash", str(scripts / "harness_growth.sh"), "review-status"],
         "growth_freshness": ["bash", str(scripts / "harness_growth.sh"), "freshness"],
@@ -82,73 +100,6 @@ def _commands(harness: Path) -> dict[str, list[str]]:
         "quality_lint": ["bash", str(scripts / "quality_commands.sh"), "lint"],
         "quality_test": ["bash", str(scripts / "quality_commands.sh"), "test"],
     }
-
-
-def _payload(output: str, returncode: int) -> dict[str, Any]:
-    try:
-        value = json.loads(output)
-    except json.JSONDecodeError:
-        return {"decision": "block", "reason": "GATE_OUTPUT_INVALID"}
-    if not isinstance(value, dict) or value.get("decision") not in {"pass", "block"}:
-        return {"decision": "block", "reason": "GATE_OUTPUT_INVALID"}
-    if returncode != 0:
-        value["decision"] = "block"
-        value["reason"] = f"GATE_EXIT_{returncode}: {value.get('reason', '')}"
-    return value
-
-
-def _gate_timeout_seconds() -> int:
-    raw = os.environ.get("HARNESS_GATE_TIMEOUT_SECONDS", "")
-    try:
-        return max(1, int(raw or DEFAULT_GATE_TIMEOUT_SECONDS))
-    except ValueError:
-        return DEFAULT_GATE_TIMEOUT_SECONDS
-
-
-def _not_executed_check(
-    name: str, subject_digest: str, policy_digest: str, reason: str, timeout_kind: str,
-) -> dict[str, Any]:
-    input_digest = canonical_digest({"gate": name, "not_executed": reason})
-    return {
-        "decision": "block", "source": "not_executed",
-        "subject_digest": subject_digest, "policy_digest": policy_digest,
-        "input_digest": input_digest,
-        "fingerprint": canonical_digest({"gate": name, "input": input_digest}),
-        "started_at": now(), "completed_at": now(),
-        "duration_ms": 0, "tool_wait_ms": 0, "attempt": 0,
-        "retry_limit": 1, "budget_ms": 0,
-        "timeout_kind": timeout_kind, "reason": reason,
-    }
-
-
-def _blocked_gate_plan(
-    required_gates: list[str], subject_digest: str, policy_digest: str,
-    reason: str, plan_started: float, clock: Callable[[], float],
-) -> dict[str, Any]:
-    checks = {
-        name: _not_executed_check(name, subject_digest, policy_digest, reason, "input")
-        for name in required_gates
-    }
-    return {
-        "decision": "block", "checks": checks, "missing": [], "cache_hits": 0,
-        "wall_duration_ms": int((clock() - plan_started) * 1000), "reason": reason,
-    }
-
-
-def _run_gate_command(command: list[str], *, gate: str, cwd: Path,
-                      env: dict[str, str], timeout: float) -> tuple[dict[str, Any], int]:
-    try:
-        completed = run_process_group(command, cwd=cwd, env=env, timeout=timeout)
-    except subprocess.TimeoutExpired as exc:
-        output = exc.stdout or ""
-        if isinstance(output, bytes):
-            output = output.decode("utf-8", errors="replace")
-        log = " ".join(str(output).splitlines()[-25:])[:2000]
-        reason = f"GATE_TIMEOUT: gate={gate}; timeout={timeout}s"
-        if log:
-            reason += f"; log={log}"
-        return {"decision": "block", "reason": reason}, 124
-    return _payload(completed.stdout, completed.returncode), completed.returncode
 
 
 def run_gate_plan(harness: Path, product: Path, *, tier: str,
@@ -175,7 +126,7 @@ def run_gate_plan(harness: Path, product: Path, *, tier: str,
         if not prepare_ci_task(
             harness, product, ci_task_id, changed_files=changed_files or [],
         ):
-            return _blocked_gate_plan(
+            return blocked_gate_plan(
                 required_gates, subject_digest, policy_digest,
                 "CI_PLANNING_CREDENTIAL_INVALID", plan_started, clock,
             )
@@ -188,6 +139,15 @@ def run_gate_plan(harness: Path, product: Path, *, tier: str,
         planning_credential = json.loads(planning_gate.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         planning_credential = {}
+    if not isinstance(planning_credential, dict):
+        planning_credential = {}
+    flow_policy = planning_credential.get("flow_policy") if isinstance(planning_credential, dict) else {}
+    if (
+        os.environ.get("HARNESS_LEAN_FLOW") == "1"
+        or planning_credential.get("source") == "harness-plan-batch"
+        or (isinstance(flow_policy, dict) and flow_policy.get("lean") is True)
+    ):
+        required_gates = [name for name in required_gates if name != "growth_release"]
     bound_task_id = ci_task_id or task_id
     if bound_task_id and tier != "lite":
         credential_binding = validate_planning_credential(
@@ -197,7 +157,7 @@ def run_gate_plan(harness: Path, product: Path, *, tier: str,
             changed_files=changed_files if ci_task_id else None,
         )
         if credential_binding["decision"] == "block":
-            return _blocked_gate_plan(
+            return blocked_gate_plan(
                 required_gates, subject_digest, policy_digest,
                 credential_binding["reason"], plan_started, clock,
             )
@@ -206,6 +166,11 @@ def run_gate_plan(harness: Path, product: Path, *, tier: str,
         commands["growth_release"] = [
             str(product) if item == "__PRODUCT_ROOT__" else item
             for item in commands["growth_release"]
+        ]
+    if "qa_evidence" in commands:
+        commands["qa_evidence"] = [
+            str(product) if item == "__PRODUCT_ROOT__" else item
+            for item in commands["qa_evidence"]
         ]
     env = {**os.environ, "HARNESS_PRODUCT_ROOT": str(product)}
     if ci_task_id:
@@ -216,10 +181,10 @@ def run_gate_plan(harness: Path, product: Path, *, tier: str,
         })
     if read_only:
         env.update({"CI": "true", "HARNESS_GATE_READ_ONLY": "1"})
-    timeout = _gate_timeout_seconds()
+    timeout = gate_timeout_seconds(DEFAULT_GATE_TIMEOUT_SECONDS)
     if deadline is not None and clock() >= deadline:
         checks = {
-            name: _not_executed_check(
+            name: not_executed_check(
                 name, subject_digest, policy_digest, "STORY_BUDGET_EXCEEDED", "story",
             ) for name in required_gates
         }
@@ -295,7 +260,7 @@ def run_gate_plan(harness: Path, product: Path, *, tier: str,
         checks = {
             name: (
                 planning_check if name == "planning" and planning_check is not None
-                else _not_executed_check(
+                else not_executed_check(
                     name, subject_digest, policy_digest, exc.reason, timeout_kind,
                 )
             ) for name in required_gates
@@ -333,7 +298,7 @@ def run_gate_plan(harness: Path, product: Path, *, tier: str,
         )
         strict_started = clock()
         if deadline is not None and strict_started >= deadline:
-            available["strict_evidence"] = _not_executed_check(
+            available["strict_evidence"] = not_executed_check(
                 "strict_evidence", subject_digest, policy_digest,
                 "STAGE_BUDGET_EXCEEDED", "stage",
             )

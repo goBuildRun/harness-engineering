@@ -1,6 +1,6 @@
 ---
 title: Story Cycle Efficiency Under 30 Minutes
-status: implementation-complete
+status: implementation-complete-offline
 updated: 2026-08-23
 owner: harness-engineering
 baseline_commit: 2ea2c8e3148e767718aa66c7a8f0ae850a5201cc
@@ -29,7 +29,7 @@ Audit and benchmark: [Story 43.5 efficiency audit](./story-43-5-efficiency-audit
 
 ## Goal
 
-把 strict/L3 同等级 Story 从用户确认到 `ready_to_release` 的默认墙钟预算压到 30 分钟以内，同时保留 L0/L1、独立 QA、真实 Provider、Git-native acceptance、隐私和隔离约束。超时必须停止自动循环并输出可审计归因；未知量不得补零或猜测。
+把 strict/L3 同等级 Story 从用户确认到 `ready_to_release` 的默认墙钟预算压到 30 分钟以内。30 分钟是硬上限和止损线，不是理想目标；实测 P50/P95 应持续低于上限并逐步压缩，同时保留 L0/L1、独立 QA、真实 Provider、Git-native acceptance、隐私和隔离约束。超时必须停止自动循环并输出可审计归因；未知量不得补零或猜测。
 
 ## Readiness
 
@@ -63,7 +63,7 @@ Audit and benchmark: [Story 43.5 efficiency audit](./story-43-5-efficiency-audit
 | deploy preflight + deploy + one Provider acceptance | 5m | local gates + QA |
 | GC / finish / Token / commit / lifecycle readback | 3m | production evidence |
 
-Total: `30m`. Agent active time remains `unknown` until the host supplies explicit spans; wall-clock and tool wait do not impersonate it.
+Total ceiling: `30m`; the operating target is lower and must be revised downward from measurements. Agent active time remains `unknown` until the host supplies explicit spans; wall-clock and tool wait do not impersonate it.
 
 ## Implementation DAG
 
@@ -93,8 +93,9 @@ Total: `30m`. Agent active time remains `unknown` until the host supplies explic
 - Independent QA: `PASS`, with no P0/P1/P2 remaining; focused suites passed `93/93`, E4 hardening/integrity passed `37/37`, and the full suite passed `573/573` across non-overlapping batches.
 - A separate single-process full-suite run reported one host `EPERM` during timed-out process-group cleanup (`572/573`); the exact test immediately passed `1/1`, consistent with the independent full-suite result.
 - Manifest and smoke validation: `HARNESS_VALID`; Python compile, Bash syntax, module-boundary and `git diff --check` checks passed.
-- Offline benchmark: `477ms -> 137ms` first validation and `139ms` unrelated-evidence rerun with `4` cache hits (`71.28%` and `70.86%` reductions).
+- Offline benchmark: gate validation `431ms -> 136ms` and unrelated-evidence rerun `133ms` with `4` precise cache hits (`68.45%` and `69.14%` reductions in this run); complete six-stage fixture `831ms -> 476ms`, with QA fan-out reducing the QA stage from `80ms` serial to `20ms` bounded parallel. This is an offline orchestration benchmark, not production P95.
 - Production P95, Judge usage and the next live strict/L3 Story result remain `unknown`/`pending`.
+- Provider calls and deployments in the offline benchmark are `0`; real Provider/Judge and lifecycle readback remain pending until the next explicitly authorized strict/L3 trial.
 
 ## Suggested Review Order
 

@@ -1,6 +1,10 @@
-# Team Product R&D Harness
+# Agent Engineering Lifecycle
 
-面向软件产品研发团队的独立式 AI engineering harness。它把产品意图、任务身份、Agent 执行、风险匹配验证和知识沉淀连接成可审计闭环，并由一套 harness-engineering 服务多个产品仓库。
+> BAEP 子产品：**BuildRun Agent Engineering Lifecycle**<br>
+> 中文：**BuildRun Agent 产品工程生命周期**<br>
+> 当前物理路径：`harness-engineering/`；历史/兼容 CLI 名称：`harness`。
+
+面向软件产品研发团队的独立式 Agent Engineering Lifecycle。它把产品意图、任务身份、实现执行、风险匹配验证和知识沉淀连接成可审计闭环，并由一套生命周期工具服务多个产品仓库。它管理 Agent 产品如何变化，不是 Agent runtime Harness 本身。
 
 > 当前可执行命令以 [docs/USAGE.md](./docs/USAGE.md) 为准。`harness start/status/finish`、单一 `result.json` 和 `lite/standard/strict` 已进入可执行阶段；旧脚本只保留作兼容和诊断入口，不与统一门面形成第二套完成态。
 
