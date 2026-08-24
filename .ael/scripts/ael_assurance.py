@@ -1,0 +1,387 @@
+#!/usr/bin/env python3
+"""Assurance snapshots and versioned Git guards for product repositories."""
+from __future__ import annotations
+
+import os
+import argparse
+import json
+import stat
+import subprocess
+from pathlib import Path
+from typing import Any
+
+from ael_release_candidate import check as check_release_candidate
+from ael_release_candidate import create as _create_release_candidate
+
+
+ASSURANCE_LEVELS = {"local", "guarded", "enforced"}
+HOOK_PATHS = (".githooks/post-commit", ".githooks/pre-commit", ".githooks/pre-push")
+
+
+def _git(product: Path, *args: str, input_text: str | None = None) -> str:
+    return subprocess.check_output(
+        ["git", *args], cwd=product, text=True, input=input_text,
+        stderr=subprocess.DEVNULL,
+    ).strip()
+
+
+def bootstrap_path(product: Path) -> Path:
+    path = Path(_git(product, "rev-parse", "--git-path", "harness/guarded-bootstrap.json"))
+    return path if path.is_absolute() else product.resolve() / path
+
+
+def create_bootstrap(product: Path, task_id: str, reason: str) -> dict[str, Any]:
+    reason = reason.strip()
+    staged = sorted(line for line in _git(product, "diff", "--cached", "--name-only").splitlines() if line)
+    tracked_hooks = _git(product, "ls-tree", "-r", "--name-only", "HEAD", "--", ".githooks").splitlines()
+    if not task_id.strip() or not reason:
+        return {"decision": "block", "reason": "GUARDED_BOOTSTRAP_IDENTITY_REQUIRED"}
+    if tracked_hooks:
+        return {"decision": "block", "reason": "GUARDED_BOOTSTRAP_ALREADY_INSTALLED"}
+    if not set(HOOK_PATHS).issubset(staged):
+        return {"decision": "block", "reason": "GUARDED_BOOTSTRAP_HOOKS_NOT_STAGED"}
+    receipt = {
+        "schema": "harness-guarded-bootstrap-v1", "task_id": task_id.strip(),
+        "reason": reason, "parent": _git(product, "rev-parse", "HEAD"),
+        "tree": _git(product, "write-tree"), "paths": staged,
+    }
+    path = bootstrap_path(product)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(receipt, ensure_ascii=False, indent=2) + "\n")
+    path.chmod(0o600)
+    return {"decision": "pass", "reason": "GUARDED_BOOTSTRAP_CREATED", "receipt": receipt}
+
+
+def check_bootstrap(product: Path, *, consume: bool = False) -> dict[str, Any]:
+    path = bootstrap_path(product)
+    try:
+        receipt = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return {"decision": "block", "reason": "GUARDED_BOOTSTRAP_MISSING"}
+    if receipt.get("schema") != "harness-guarded-bootstrap-v1":
+        return {"decision": "block", "reason": "GUARDED_BOOTSTRAP_INVALID"}
+    if consume:
+        valid = (_git(product, "rev-parse", "HEAD^1") == receipt.get("parent")
+                 and _git(product, "rev-parse", "HEAD^{tree}") == receipt.get("tree"))
+    else:
+        staged = sorted(line for line in _git(product, "diff", "--cached", "--name-only").splitlines() if line)
+        valid = (_git(product, "rev-parse", "HEAD") == receipt.get("parent")
+                 and _git(product, "write-tree") == receipt.get("tree") and staged == receipt.get("paths"))
+    if not valid:
+        return {"decision": "block", "reason": "GUARDED_BOOTSTRAP_BINDING_MISMATCH"}
+    if consume:
+        path.unlink()
+    return {"decision": "pass", "reason": "GUARDED_BOOTSTRAP_CONSUMED" if consume else "GUARDED_BOOTSTRAP_VALID"}
+
+
+def snapshot(level: str = "local", *, blockers: list[str] | None = None) -> dict[str, Any]:
+    if level not in ASSURANCE_LEVELS:
+        level = "local"
+    authorities = {
+        "local": "worktree",
+        "guarded": "git-hooks",
+        "enforced": "git-receive",
+    }
+    return {
+        "level": level,
+        "task_execution": "incomplete",
+        "acceptance_authority": authorities[level],
+        "bypassable": level != "enforced",
+        "verified_at": "",
+        "blockers": list(blockers or []),
+    }
+
+
+def guard_prelude() -> str:
+    return """#!/usr/bin/env bash
+set -euo pipefail
+PRODUCT_ROOT="$(git rev-parse --show-toplevel)"
+CONFIGURED_ROOT="$(git config --local --get ael.engineeringRoot || git config --local --get harness.engineeringRoot || true)"
+AEL_RUNTIME_ROOT="${AEL_ENGINEERING_ROOT:-$CONFIGURED_ROOT}"
+AEL_BIN="$AEL_RUNTIME_ROOT/.ael/scripts/ael"
+if [[ ! -x "$AEL_BIN" ]]; then
+  AEL_BIN="$(command -v ael || command -v harness || true)"
+  if [[ -n "$AEL_BIN" && -x "$AEL_BIN" ]]; then
+    AEL_RUNTIME_ROOT="$(cd "$(dirname "$AEL_BIN")/../.." && pwd)"
+  fi
+fi
+if [[ -z "$AEL_BIN" || ! -x "$AEL_BIN" || ! -d "$AEL_RUNTIME_ROOT/.ael/scripts" ]]; then
+  echo 'AEL_GUARD_RUNTIME_MISSING: set AEL_ENGINEERING_ROOT or install ael on PATH' >&2
+  exit 1
+fi
+"""
+
+
+def active_task_resolver() -> str:
+    return """\
+resolve_active_task_id() {
+  local output
+  output="$("$AEL_BIN" --product-root "$PRODUCT_ROOT" status 2>/dev/null)" || return 1
+  python3 -c 'import json,sys; data=json.loads(sys.argv[1]); result=data.get("result") or {}; value=str(result.get("task_id") or "").strip(); ok=data.get("decision")=="pass" and value; print(value) if ok else sys.exit(1)' "$output"
+}
+"""
+
+
+def pre_commit_script() -> str:
+    return guard_prelude() + """\
+OUTPUT="$("$AEL_BIN" --product-root "$PRODUCT_ROOT" status 2>&1)" || true
+python3 -c 'import json,sys; d=json.loads(sys.argv[1]); r=d.get("result",{}); ok=d.get("decision")=="pass" and r.get("decision")=="pass" and r.get("state")=="validated"; raise SystemExit(0 if ok else 1)' "$OUTPUT" || {
+  if python3 "$AEL_RUNTIME_ROOT/.ael/scripts/ael_assurance.py" release-candidate-check --repo "$PRODUCT_ROOT" >/dev/null; then
+    echo 'AEL_RELEASE_CANDIDATE_PASS' >&2
+    exit 0
+  fi
+  python3 "$AEL_RUNTIME_ROOT/.ael/scripts/ael_assurance.py" bootstrap-check --repo "$PRODUCT_ROOT" >/dev/null || {
+    echo 'AEL_GUARD_BLOCKED' >&2
+    exit 1
+  }
+  echo 'AEL_GUARDED_BOOTSTRAP_PASS' >&2
+  exit 0
+}
+echo 'AEL_GUARD_PASS' >&2
+"""
+
+
+def pre_push_script() -> str:
+    return guard_prelude() + active_task_resolver() + """\
+ATTEST="$AEL_RUNTIME_ROOT/.ael/scripts/ael_attestation.py"
+REMOTE_NAME="${1:-origin}"
+ATTEST_REFS=()
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [[ "$local_sha" =~ ^0+$ ]] && continue
+  if [[ "$remote_sha" =~ ^0+$ ]]; then
+    ACTIVE="$PRODUCT_ROOT/ael-workspace/runs/active_task.json"
+    [[ -f "$ACTIVE" ]] || { echo 'AEL_GUARD_ACTIVE_TASK_MISSING' >&2; exit 1; }
+    TASK_ID="$(resolve_active_task_id "$ACTIVE")" || {
+      echo 'AEL_GUARD_TASK_ID_MISSING' >&2
+      exit 1
+    }
+    RESULT="$PRODUCT_ROOT/ael-workspace/runs/tasks/$TASK_ID/result.json"
+    [[ -f "$RESULT" ]] || { echo 'AEL_GUARD_RESULT_MISSING' >&2; exit 1; }
+    BASELINE="$PRODUCT_ROOT/ael-workspace/runs/tasks/$TASK_ID/worktree_baseline.json"
+    [[ -f "$BASELINE" ]] || { echo 'AEL_GUARD_BASELINE_MISSING' >&2; exit 1; }
+    BASE_SHA="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("repo_head", ""))' "$BASELINE")"
+    [[ -n "$BASE_SHA" ]] || { echo 'AEL_GUARD_BASELINE_MISSING' >&2; exit 1; }
+    git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null && git merge-base --is-ancestor "$BASE_SHA" "$local_sha" || {
+      echo 'AEL_GUARD_BASELINE_INVALID' >&2
+      exit 1
+    }
+    COMMITS="$(git rev-list --reverse "$BASE_SHA..$local_sha")"
+    [[ -n "$COMMITS" ]] || COMMITS="$local_sha"
+  else
+    COMMITS="$(git rev-list --reverse "$remote_sha..$local_sha")"
+  fi
+  while read -r commit; do
+    [[ -z "$commit" ]] && continue
+    python3 "$ATTEST" verify --repo "$PRODUCT_ROOT" --commit "$commit" >/dev/null || {
+      echo "AEL_PUSH_GUARD_BLOCKED: $commit has no valid attestation" >&2
+      exit 1
+    }
+    ATTEST_REFS+=("refs/harness/attestations/$commit:refs/harness/attestations/$commit")
+    ATTEST_REFS+=("refs/harness/results/$commit:refs/harness/results/$commit")
+    if git show-ref --verify --quiet "refs/harness/gc/$commit"; then
+      ATTEST_REFS+=("refs/harness/gc/$commit:refs/harness/gc/$commit")
+    fi
+  done <<< "$COMMITS"
+  if [[ "$remote_sha" =~ ^0+$ ]]; then
+    TIP_TASK_ID="$(git show "refs/harness/results/$local_sha" | python3 -c 'import json,sys; print(str(json.load(sys.stdin).get("task_id") or "").strip())')" || {
+      echo 'AEL_PUSH_GUARD_BLOCKED: tip result identity is unavailable' >&2
+      exit 1
+    }
+    [[ "$TIP_TASK_ID" == "$TASK_ID" ]] || {
+      echo 'AEL_PUSH_GUARD_BLOCKED: tip result does not match active task' >&2
+      exit 1
+    }
+  fi
+done
+if (( ${#ATTEST_REFS[@]} )); then
+  git push --atomic --no-verify "$REMOTE_NAME" "${ATTEST_REFS[@]}" >/dev/null || {
+    echo 'AEL_PUSH_GUARD_BLOCKED: attestation refs were not accepted atomically' >&2
+    exit 1
+  }
+fi
+echo 'AEL_PUSH_GUARD_PASS' >&2
+"""
+
+
+def post_commit_script() -> str:
+    return guard_prelude() + active_task_resolver() + """\
+if python3 "$AEL_RUNTIME_ROOT/.ael/scripts/ael_assurance.py" release-candidate-consume --repo "$PRODUCT_ROOT" >/dev/null 2>&1; then
+  echo 'AEL_RELEASE_CANDIDATE_ATTESTED' >&2
+  exit 0
+fi
+if python3 "$AEL_RUNTIME_ROOT/.ael/scripts/ael_assurance.py" bootstrap-consume --repo "$PRODUCT_ROOT" >/dev/null 2>&1; then
+  echo 'AEL_GUARDED_BOOTSTRAP_CONSUMED' >&2
+  exit 0
+fi
+ACTIVE="$PRODUCT_ROOT/ael-workspace/runs/active_task.json"
+[[ -f "$ACTIVE" ]] || exit 0
+TASK_ID="$(resolve_active_task_id "$ACTIVE")" || {
+  echo 'AEL_GUARD_TASK_ID_MISSING' >&2
+  exit 1
+}
+RESULT="$PRODUCT_ROOT/ael-workspace/runs/tasks/$TASK_ID/result.json"
+[[ -f "$RESULT" ]] || {
+  echo 'AEL_GUARD_RESULT_MISSING' >&2
+  exit 1
+}
+python3 "$AEL_RUNTIME_ROOT/.ael/scripts/ael_attestation.py" create \
+  --repo "$PRODUCT_ROOT" --commit HEAD --result "$RESULT" >/dev/null || {
+  echo 'AEL_ATTESTATION_CREATE_FAILED: run ael finish before commit' >&2
+  exit 1
+}
+echo 'AEL_ATTESTATION_CREATED' >&2
+"""
+
+
+def install_guards(product: Path) -> dict[str, Any]:
+    git_dir = product / ".git"
+    if not git_dir.exists():
+        return {"decision": "block", "reason": "GUARDED_GIT_REPOSITORY_REQUIRED"}
+    hooks = product / ".githooks"
+    hooks.mkdir(parents=True, exist_ok=True)
+    created: list[str] = []
+    scripts = {"pre-commit": pre_commit_script(), "post-commit": post_commit_script(),
+               "pre-push": pre_push_script()}
+    for name, text in scripts.items():
+        path = hooks / name
+        path.write_text(text, encoding="utf-8")
+        path.chmod(path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+        created.append(str(path.relative_to(product)))
+    try:
+        subprocess.run(
+            ["git", "config", "--local", "core.hooksPath", ".githooks"],
+            cwd=product, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
+        )
+        subprocess.run(
+            ["git", "config", "--local", "ael.engineeringRoot", str(Path(__file__).resolve().parents[2])],
+            cwd=product, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError) as exc:
+        return {"decision": "block", "reason": f"GUARDED_GIT_CONFIG_FAILED: {exc}"}
+    return {"decision": "pass", "reason": "GUARDED_GIT_GUARDS_INSTALLED", "created": created}
+
+
+def configure(product: Path, level: str) -> dict[str, Any]:
+    if level == "guarded":
+        return install_guards(product)
+    return {"decision": "pass", "reason": "LOCAL_ASSURANCE_SELECTED"}
+
+
+def mark_local(result: dict[str, Any]) -> None:
+    result["enforcement"] = "shadow"
+    result["assurance"].update(
+        level="local", acceptance_authority="worktree", bypassable=True,
+    )
+
+
+def sync_task_execution(result: dict[str, Any]) -> None:
+    result["assurance"]["task_execution"] = (
+        "complete" if result.get("state") == "validated" and result.get("decision") == "pass"
+        else "incomplete"
+    )
+
+
+def finalize(result: dict[str, Any], decision_fn: Any, *, local: bool = False) -> None:
+    decision_fn(result)
+    if local:
+        mark_local(result)
+    sync_task_execution(result)
+
+
+def audit_guards(product: Path) -> dict[str, Any]:
+    try:
+        configured = subprocess.check_output(
+            ["git", "config", "--local", "--get", "core.hooksPath"],
+            cwd=product, text=True, stderr=subprocess.DEVNULL,
+        ).strip()
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        configured = ""
+    try:
+        runtime_root = subprocess.check_output(
+            ["git", "config", "--local", "--get", "ael.engineeringRoot"],
+            cwd=product, text=True, stderr=subprocess.DEVNULL,
+        ).strip()
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        try:
+            runtime_root = subprocess.check_output(
+                ["git", "config", "--local", "--get", "harness.engineeringRoot"],
+                cwd=product, text=True, stderr=subprocess.DEVNULL,
+            ).strip()
+        except (FileNotFoundError, subprocess.CalledProcessError):
+            runtime_root = ""
+    expected = {"pre-commit": pre_commit_script(), "post-commit": post_commit_script(),
+                "pre-push": pre_push_script()}
+    missing = [name for name in expected if not os.access(product / ".githooks" / name, os.X_OK)]
+    mismatched = [name for name, text in expected.items()
+                  if (product / ".githooks" / name).is_file()
+                  and (product / ".githooks" / name).read_text(encoding="utf-8") != text]
+    try:
+        tracked_output = subprocess.check_output(
+            ["git", "ls-files", "--", ".githooks/pre-commit", ".githooks/post-commit",
+             ".githooks/pre-push"],
+            cwd=product, text=True, stderr=subprocess.DEVNULL,
+        ).splitlines()
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        tracked_output = []
+    untracked_hooks = sorted(set(f".githooks/{name}" for name in expected) - set(tracked_output))
+    runtime = Path(runtime_root) / ".ael" / "scripts" / "ael"
+    if not runtime.is_file():
+        runtime = Path(runtime_root) / ".ael" / "scripts" / "harness"
+    valid = (configured == ".githooks" and not missing and not mismatched
+             and not untracked_hooks and runtime.is_file())
+    blockers = []
+    if configured != ".githooks" or missing or not runtime.is_file():
+        blockers.append("GUARDED_GIT_GUARDS_MISSING")
+    if mismatched:
+        blockers.append("GUARDED_GIT_GUARDS_MODIFIED")
+    if untracked_hooks:
+        blockers.append("GUARDED_GIT_GUARDS_UNTRACKED")
+    return {
+        "level": "guarded" if valid else "local",
+        "configured_hooks_path": configured,
+        "runtime_configured": bool(runtime_root),
+        "missing_hooks": missing,
+        "mismatched_hooks": mismatched,
+        "untracked_hooks": untracked_hooks,
+        "bypassable": True,
+        "blockers": blockers,
+    }
+
+
+def create_release_candidate(product: Path, result: dict[str, Any]) -> dict[str, Any]:
+    return _create_release_candidate(product, result, guarded=audit_guards(product)["level"] == "guarded")
+
+
+def refresh_result(result: dict[str, Any], product: Path, policy_digest: str, *,
+                   phase: str, verified_at: str, attestation: dict[str, Any]) -> None:
+    guards = audit_guards(product)
+    level = "guarded" if guards["level"] == "guarded" else "local"
+    result["assurance"].update(
+        level=level, acceptance_authority="git-hooks" if level == "guarded" else "worktree",
+        bypassable=True, verified_at=verified_at, blockers=guards["blockers"],
+        guard_audit=guards, head_attestation={**attestation, "phase": phase},
+    )
+    result["enforcement"] = "shadow"
+    result["enforcement_notice"] = "GUARDED" if level == "guarded" else "LOCAL_ONLY"
+    sync_task_execution(result)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    sub = parser.add_subparsers(dest="command", required=True)
+    for name in ("bootstrap-check", "bootstrap-consume", "release-candidate-check", "release-candidate-consume"):
+        command = sub.add_parser(name)
+        command.add_argument("--repo", required=True)
+    args = parser.parse_args()
+    if args.command.startswith("release-candidate"):
+        outcome = check_release_candidate(
+            Path(args.repo), consume=args.command == "release-candidate-consume",
+        )
+    else:
+        outcome = check_bootstrap(Path(args.repo), consume=args.command == "bootstrap-consume")
+    print(json.dumps(outcome, ensure_ascii=False))
+    return 0 if outcome["decision"] == "pass" else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

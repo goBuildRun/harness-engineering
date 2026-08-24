@@ -3,17 +3,116 @@ from __future__ import annotations
 
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
-SCRIPTS = Path(__file__).resolve().parents[1] / ".harness" / "scripts"
+SCRIPTS = Path(__file__).resolve().parents[1] / ".ael" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
-from quality_commands import run_builtin  # noqa: E402
+from quality_commands import command_cwd, command_env, run_builtin, run_command  # noqa: E402
 
 
 class QualityCommandsTest(unittest.TestCase):
+    def test_uv_uses_product_bound_temporary_cache_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(
+            "quality_commands.os.environ", {}, clear=True
+        ):
+            product = Path(tmp)
+            env = command_env(product, ["uv", "run", "python", "-m", "pytest"], {})
+            cache = Path(env["UV_CACHE_DIR"])
+            self.assertEqual(cache.name, "uv")
+            self.assertEqual(cache.parent.parent.name, "harness-quality-cache")
+            self.assertTrue(str(cache).startswith(tempfile.gettempdir()))
+            self.assertEqual(Path(env["PYTHONPYCACHEPREFIX"]).parent, cache.parent)
+
+    def test_uv_preserves_explicit_cache_configuration(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            env = command_env(
+                Path(tmp), ["uv", "run", "python", "-m", "pytest"],
+                {"UV_CACHE_DIR": "/configured/uv-cache"},
+            )
+            self.assertEqual(env["UV_CACHE_DIR"], "/configured/uv-cache")
+
+    def test_uv_cache_ignores_inherited_user_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(
+            "quality_commands.os.environ",
+            {"UV_CACHE_DIR": "/inherited/user/cache"}, clear=True,
+        ):
+            product = Path(tmp)
+            env = command_env(product, ["uv", "run", "python", "-m", "pytest"], {})
+            self.assertNotEqual(env["UV_CACHE_DIR"], "/inherited/user/cache")
+            self.assertEqual(Path(env["UV_CACHE_DIR"]).name, "uv")
+            self.assertEqual(
+                Path(env["UV_CACHE_DIR"]).parent.parent.name,
+                "harness-quality-cache",
+            )
+
+    def test_python_cache_ignores_inherited_user_cache_but_preserves_product_config(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(
+            "quality_commands.os.environ",
+            {"PYTHONPYCACHEPREFIX": "/inherited/user/cache"}, clear=True,
+        ):
+            product = Path(tmp)
+            isolated = command_env(product, ["python3", "-m", "compileall"], {})
+            explicit = command_env(
+                product, ["python3", "-m", "compileall"],
+                {"PYTHONPYCACHEPREFIX": "/configured/python-cache"},
+            )
+            self.assertNotEqual(isolated["PYTHONPYCACHEPREFIX"], "/inherited/user/cache")
+            self.assertEqual(explicit["PYTHONPYCACHEPREFIX"], "/configured/python-cache")
+
+    def test_command_cwd_runs_inside_nested_product_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            nested = product / "backend"
+            nested.mkdir()
+            (nested / "sample.py").write_text("value = 1\n")
+            result = run_command(
+                product, "nested syntax", ["python3", "-m", "compileall", "-q", "sample.py"],
+                {}, 30, "backend",
+            )
+            self.assertTrue(result["ok"], result)
+            self.assertEqual(result["cwd"], "backend")
+
+    def test_command_cwd_rejects_absolute_parent_and_symlink_escape(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as outside:
+            product = Path(tmp)
+            (product / "escape").symlink_to(Path(outside), target_is_directory=True)
+            for value in ("../outside", str(Path(outside)), "escape"):
+                resolved, reason = command_cwd(product, value)
+                self.assertIsNone(resolved)
+                self.assertIn("QUALITY_COMMAND_UNSAFE_CWD", reason or "")
+
+    def test_command_timeout_terminates_descendants_before_they_can_write(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            marker = product / "late-write"
+            result = run_command(
+                product, "timeout descendants",
+                ["bash", "-c", '(sleep 2; touch "$1") & wait', "_", str(marker)],
+                {}, 1,
+            )
+            time.sleep(1.5)
+            self.assertFalse(marker.exists())
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["reason"], "timeout=1s")
+
+    def test_command_success_cleans_up_detached_descendants(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            marker = product / "late-write"
+            result = run_command(
+                product, "successful wrapper",
+                ["bash", "-c", '(sleep 1; touch "$1") >/dev/null 2>&1 &', "_", str(marker)],
+                {}, 5,
+            )
+            time.sleep(1.2)
+            self.assertFalse(marker.exists())
+        self.assertTrue(result["ok"], result)
+
     def test_python_import_boundary_blocks_forbidden_layer(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product = Path(tmp)

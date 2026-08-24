@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 
 
-SCRIPTS = Path(__file__).resolve().parents[1] / ".harness" / "scripts"
+SCRIPTS = Path(__file__).resolve().parents[1] / ".ael" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 from browser_scenarios import load_scenario, run_scenario  # noqa: E402

@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 
-SCRIPTS_DIR = Path(__file__).resolve().parents[1] / ".harness" / "scripts"
+SCRIPTS_DIR = Path(__file__).resolve().parents[1] / ".ael" / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 from business_paths import (  # noqa: E402
@@ -19,7 +19,7 @@ class PlatformBusinessRootsTests(unittest.TestCase):
     def test_regular_product_workspace_is_not_a_platform_business_root(self) -> None:
         config = {
             "product": {"id": "sample-product", "profile": "generic"},
-            "workspace": {"root": "harness-workspace"},
+            "workspace": {"root": "ael-workspace"},
         }
 
         self.assertEqual(_platform_business_roots(config), ())
@@ -32,12 +32,12 @@ class PlatformBusinessRootsTests(unittest.TestCase):
                     "scripts": "scripts",
                 }
             },
-            "workspace": {"root": "harness-workspace"},
+            "workspace": {"root": "ael-workspace"},
         }
 
         self.assertEqual(
             _platform_business_roots(config),
-            ("capability-packages/", "scripts/", "harness-workspace/"),
+            ("capability-packages/", "scripts/", "ael-workspace/"),
         )
 
 
@@ -47,13 +47,13 @@ class ProfileIsolationTests(unittest.TestCase):
         self.assertNotIn("services/catalog_service/", DEFAULT_BUSINESS_ROOTS)
 
     def test_unknown_profile_returns_missing_profile_path(self) -> None:
-        harness_root = SCRIPTS_DIR.parents[1]
+        ael_root = SCRIPTS_DIR.parents[1]
 
-        path = allowlist_path(harness_root, profile="missing-profile")
+        path = allowlist_path(ael_root, profile="missing-profile")
 
         self.assertEqual(
             path,
-            harness_root / ".harness/profiles/missing-profile/package-allowlist.yaml",
+            ael_root / ".ael/profiles/missing-profile/package-allowlist.yaml",
         )
         self.assertFalse(path.exists())
 

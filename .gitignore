@@ -2,10 +2,10 @@
 .env
 .env.local
 .product-root
-.harness/products/registry.yaml
-.harness/products/active-product.json
-.harness/products/active-product*.json
-!.harness/products/active-product.example.json
+.ael/products/registry.yaml
+.ael/products/active-product.json
+.ael/products/active-product*.json
+!.ael/products/active-product.example.json
 .DS_Store
 *.pyc
 __pycache__/

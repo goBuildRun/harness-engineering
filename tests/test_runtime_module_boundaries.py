@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = ROOT / ".harness" / "scripts"
+SCRIPTS = ROOT / ".ael" / "scripts"
 
 
 class RuntimeModuleBoundariesTest(unittest.TestCase):

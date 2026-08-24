@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = ROOT / ".harness" / "scripts"
+SCRIPTS = ROOT / ".ael" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 from ci_gc_review import review  # noqa: E402
@@ -64,12 +64,12 @@ class CiGcReviewTest(unittest.TestCase):
                 })
 
             args = type("Args", (), {
-                "product_root": str(product), "harness_root": str(ROOT),
+                "product_root": str(product), "ael_root": str(ROOT),
                 "task_id": "task-1", "commit": sha, "tier": "standard", "scope": ["."],
             })()
             with patch.dict(os.environ, {
-                "HARNESS_GC_REVIEW_URL": "https://gc.example.invalid/review",
-                "HARNESS_GC_REVIEW_TOKEN": "token",
+                "AEL_GC_REVIEW_URL": "https://gc.example.invalid/review",
+                "AEL_GC_REVIEW_TOKEN": "token",
             }, clear=False), patch("urllib.request.urlopen", side_effect=respond):
                 result = review(args)
             self.assertEqual(result["decision"], "pass")
@@ -82,7 +82,7 @@ class CiGcReviewTest(unittest.TestCase):
             product = self._repo(Path(tmp))
             sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=product, text=True).strip()
             args = type("Args", (), {
-                "product_root": str(product), "harness_root": str(ROOT),
+                "product_root": str(product), "ael_root": str(ROOT),
                 "task_id": "task-1", "commit": sha, "tier": "standard", "scope": ["."],
             })()
             with patch.dict(os.environ, {}, clear=True):
@@ -100,6 +100,17 @@ class CiGcReviewTest(unittest.TestCase):
                 lite = review(args)
             self.assertEqual(lite["decision"], "pass")
             self.assertFalse(lite["required"])
+
+    def test_review_rejects_invalid_task_id_before_readback_or_network(self) -> None:
+        args = type("Args", (), {
+            "product_root": "/not/read", "ael_root": str(ROOT),
+            "task_id": "../../escape", "commit": "HEAD", "tier": "standard", "scope": ["."],
+        })()
+        with patch("ci_gc_review.resolve_commit") as resolve, patch("urllib.request.urlopen") as request:
+            result = review(args)
+        self.assertEqual(result, {"decision": "block", "reason": "TASK_ID_INVALID"})
+        resolve.assert_not_called()
+        request.assert_not_called()
 
 
 if __name__ == "__main__":

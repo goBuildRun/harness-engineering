@@ -1,0 +1,12 @@
+name: backend-agent
+description: "专注于服务端代码的子代理"
+role: "Java/Go 服务端开发工程师"
+system_prompt_ref: ".ael/rules/code-placement.md"
+permissions:
+  - can_read_all_files: true
+  - can_modify_business_code: true
+  - can_run_sandboxed_tests: true
+capabilities:
+  - TDD 驱动的接口开发
+  - 数据库迁移脚本编写
+  - API 文档维护

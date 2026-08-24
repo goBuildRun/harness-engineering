@@ -6,10 +6,11 @@ import unittest
 from pathlib import Path
 
 
-SCRIPTS_DIR = Path(__file__).resolve().parents[1] / ".harness" / "scripts"
+SCRIPTS_DIR = Path(__file__).resolve().parents[1] / ".ael" / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
-from doc_gardening_check import check_links, github_anchor  # noqa: E402
+from doc_gardening_check import check_legacy_link_labels, check_links, github_anchor  # noqa: E402
+from ael_timing import FINISH_RETRY_LIMIT, STAGE_BUDGETS_MS, STAGE_RETRY_LIMIT  # noqa: E402
 
 
 class DocGardeningAnchorTests(unittest.TestCase):
@@ -42,6 +43,47 @@ class DocGardeningAnchorTests(unittest.TestCase):
             issues = check_links(root, root, [source, target])
 
         self.assertEqual(issues, [])
+
+    def test_legacy_link_label_is_reported_even_when_target_is_valid(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            doc = root / "README.md"
+            doc.write_text(
+                "[docs/USAGE.md](./docs/getting-started/cli.md)\n",
+                encoding="utf-8",
+            )
+
+            issues = check_legacy_link_labels(root, [doc])
+
+        self.assertEqual(issues, ["STALE_LINK_LABEL:README.md:docs/USAGE.md"])
+
+    def test_public_docs_use_the_canonical_command_contract(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        docs = (
+            root / "README.md",
+            root / "ARCHITECTURE.md",
+            root / "docs/getting-started/cli.md",
+            root / "docs/design/lean-enforcement.md",
+            root / "docs/design/lean-plan-flow.md",
+            root / "docs/governance/documentation.md",
+        )
+        for path in docs:
+            text = path.read_text(encoding="utf-8")
+            self.assertIn("plan", text, path)
+            self.assertIn("status", text, path)
+            self.assertIn("finish", text, path)
+            self.assertNotIn("`start/status/finish`", text, path)
+            self.assertNotIn("ael start/status/finish", text, path)
+
+    def test_documented_story_budget_matches_runtime_contract(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        text = (root / "docs/design/lean-plan-flow.md").read_text(encoding="utf-8")
+        for stage, budget_ms in STAGE_BUDGETS_MS.items():
+            self.assertIn(stage, text)
+            self.assertIn(f"{budget_ms // 60_000} 分钟", text)
+        self.assertEqual(sum(STAGE_BUDGETS_MS.values()), 30 * 60_000)
+        self.assertEqual(FINISH_RETRY_LIMIT, 2)
+        self.assertEqual(STAGE_RETRY_LIMIT, 2)
 
 
 if __name__ == "__main__":

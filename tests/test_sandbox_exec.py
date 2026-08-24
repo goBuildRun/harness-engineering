@@ -3,16 +3,18 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 import unittest
 from unittest.mock import patch
 from pathlib import Path
 
 
-SCRIPTS = Path(__file__).resolve().parents[1] / ".harness" / "scripts"
+SCRIPTS = Path(__file__).resolve().parents[1] / ".ael" / "scripts"
+ROOT = SCRIPTS.parents[1]
 sys.path.insert(0, str(SCRIPTS))
 
-from sandbox_exec import docker_command, run_remote  # noqa: E402
+from sandbox_exec import docker_command, main as sandbox_main, parse_timeout, run_remote  # noqa: E402
 from sandbox_acceptance import accept  # noqa: E402
 
 
@@ -31,6 +33,14 @@ class Response:
 
 
 class SandboxExecTest(unittest.TestCase):
+    def test_timeout_parser_fails_closed_for_invalid_values(self) -> None:
+        self.assertEqual(parse_timeout(None), (600, None))
+        for value in ("abc", "0", "-1", "  "):
+            with self.subTest(value=value):
+                timeout, reason = parse_timeout(value)
+                self.assertEqual(timeout, 0)
+                self.assertIn("SANDBOX_TIMEOUT_INVALID", reason or "")
+
     def test_docker_command_mounts_cwd_disables_network_and_preserves_argv(self) -> None:
         cwd = Path("/tmp/product root")
         argv = ["python3", "-c", "print('ok')", "value with spaces", "$literal"]
@@ -49,10 +59,10 @@ class SandboxExecTest(unittest.TestCase):
 
     def remote_env(self) -> dict[str, str]:
         return {
-            "HARNESS_SANDBOX_REMOTE_URL": "https://executor.example.invalid/v1/run",
-            "HARNESS_SANDBOX_WORKSPACE_REF": "repo@commit",
-            "HARNESS_SANDBOX_REMOTE_TOKEN": "secret",
-            "HARNESS_SANDBOX_SUBJECT_DIGEST": "abc123",
+            "AEL_SANDBOX_REMOTE_URL": "https://executor.example.invalid/v1/run",
+            "AEL_SANDBOX_WORKSPACE_REF": "repo@commit",
+            "AEL_SANDBOX_REMOTE_TOKEN": "secret",
+            "AEL_SANDBOX_SUBJECT_DIGEST": "abc123",
         }
 
     def test_remote_backend_sends_structured_argv_and_binds_subject(self) -> None:
@@ -85,6 +95,53 @@ class SandboxExecTest(unittest.TestCase):
             ok, reason = run_remote(["true"], 10)
         self.assertFalse(ok)
         self.assertEqual(reason, "REMOTE_SANDBOX_SUBJECT_MISMATCH")
+
+    def test_main_exit_code_matches_machine_readable_decision(self) -> None:
+        emitted = []
+        with patch("sandbox_exec.emit", side_effect=lambda decision, reason, **extra: emitted.append({
+            "decision": decision, "reason": reason, **extra,
+        })), patch.object(sys, "argv", ["sandbox_exec.py"]):
+            self.assertEqual(sandbox_main(), 1)
+        self.assertEqual(emitted[-1]["decision"], "block")
+
+        with patch("sandbox_exec.emit", side_effect=lambda decision, reason, **extra: emitted.append({
+            "decision": decision, "reason": reason, **extra,
+        })), patch("sandbox_exec.run_controlled", return_value=(False, "TEST_BLOCK")), \
+                patch.object(sys, "argv", [
+                    "sandbox_exec.py", "--cwd", str(ROOT), "--", "python3", "-V",
+                ]):
+            self.assertEqual(sandbox_main(), 1)
+        self.assertEqual(emitted[-1]["decision"], "block")
+
+        with patch("sandbox_exec.emit", side_effect=lambda decision, reason, **extra: emitted.append({
+            "decision": decision, "reason": reason, **extra,
+        })), patch("sandbox_exec.run_controlled", return_value=(True, "TEST_PASS")), \
+                patch.object(sys, "argv", [
+                    "sandbox_exec.py", "--cwd", str(ROOT), "--", "python3", "-V",
+                ]):
+            self.assertEqual(sandbox_main(), 0)
+        self.assertEqual(emitted[-1]["decision"], "pass")
+
+    def test_invalid_timeout_emits_block_and_nonzero_exit(self) -> None:
+        emitted = []
+        with patch.dict(os.environ, {"AEL_SANDBOX_TIMEOUT_SECONDS": "abc"}), patch(
+            "sandbox_exec.emit", side_effect=lambda decision, reason, **extra: emitted.append({
+                "decision": decision, "reason": reason, **extra,
+            }),
+        ), patch.object(sys, "argv", [
+            "sandbox_exec.py", "--cwd", str(ROOT), "--", "python3", "-V",
+        ]):
+            self.assertEqual(sandbox_main(), 1)
+        self.assertEqual(emitted[-1]["decision"], "block")
+        self.assertIn("SANDBOX_TIMEOUT_INVALID", emitted[-1]["reason"])
+
+    def test_shell_wrapper_without_command_returns_nonzero_block(self) -> None:
+        completed = subprocess.run(
+            ["bash", str(ROOT / ".ael/scripts/run_in_sandbox.sh")],
+            cwd=ROOT, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        self.assertEqual(completed.returncode, 1)
+        self.assertEqual(json.loads(completed.stdout)["decision"], "block")
 
 
 if __name__ == "__main__":

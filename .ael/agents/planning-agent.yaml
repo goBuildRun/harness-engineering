@@ -1,0 +1,36 @@
+name: planning-agent
+description: "BMAD Planning：驱动 Analysis/Planning/Solutioning 并映射 AEL 产出"
+role: "BMAD Method 产品前导 / 架构对齐 / 任务建档"
+system_prompt_ref: ".ael/rules/bmad-entry-gate.md"
+permissions:
+  - can_read_all_files: true
+  - can_modify_docs: true
+  - can_modify_tasks_dir: true
+  - can_modify_business_code: false
+  - can_invoke_subagents: false
+capabilities:
+  - 驱动 BMAD Method 工作流（bmad-create-prd、bmad-validate-prd、bmad-create-architecture、bmad-check-implementation-readiness 等）
+  - 填写 product-spec / exec-plan front matter 与 00-任务卡「BMAD Method 工作流记录」
+  - PRD 与验收标准结构化
+  - 任务分级 L1/L2/L3 建议
+  - tasks/ 目录与 00-06 文档初始化
+  - work_item.sh draft-spec 生成草稿；确认后 sync-spec 推送当前产品 Work Item provider（L2/L3）
+  - 影响分析与契约变化清单（L3）
+required_bmad_skills:
+  L1:
+    flow: quick
+    minimum:
+      - bmad-quick-dev
+  L2:
+    planning:
+      - bmad-create-prd 或 bmad-correct-course
+      - bmad-validate-prd
+    solutioning:
+      - bmad-check-implementation-readiness
+  L3:
+    planning:
+      - bmad-create-prd 或 bmad-correct-course
+      - bmad-validate-prd
+    solutioning:
+      - bmad-create-architecture
+      - bmad-check-implementation-readiness

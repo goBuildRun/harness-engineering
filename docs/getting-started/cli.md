@@ -1,0 +1,852 @@
+# CLI 使用参考（公开入口与兼容命令）
+
+> **全景设计文档**：[architecture/overview.md](../architecture/overview.md) — 思想、方案、评估、演进
+> **通用化说明**：[architecture/team-model.md](../architecture/team-model.md) — 任意产品研发团队的 AEL 模型
+> **已有项目接入**：[getting-started/brownfield-intake.md](./brownfield-intake.md) — 已有项目接入的定位、报告和 review 规则
+> **多人协作**：[execution/collaboration.md](../execution/collaboration.md) — 多 PM/Dev 并行场景与命令
+> **精简强制执行目标**：[design/lean-enforcement.md](../design/lean-enforcement.md) — 一个入口面、一个权威结果、风险分层与成本约束
+> 本文档是 **BuildRun Agent Engineering Lifecycle 的 canonical 使用说明**。不可跳过的是“先形成与风险匹配的计划，再实施并验证”的合规语义，不是让人或 Agent 手工执行固定数量的命令。`standard/strict` 推荐路径是 `plan → start → status → finish`；低风险 `lite` 可直接 `start → status → finish`，由 `start` 生成最小绑定。`status` 只观察，不阻塞主路径。BMAD Planning、TDD、QA、安全、知识和协同能力由统一入口按 planning level 与 execution tier 编排。详细设计见 [Lean Planning Flow](../design/lean-plan-flow.md)。
+
+`AGENTS.md` 为最小地图，本文件说明公开使用方式，并保留统一入口尚未覆盖的兼容命令和诊断参考。
+
+**实现状态说明**：`ael plan/start/status/finish`、workspace audit/migrate、guarded hooks，以及受控 bare Git 的安装、接收阻断、签名 receipt 和固定 TrustPolicy 校验均已通过机械验收。本地 provider 终态已封堵；产品只有在独立 authority service 中接入终态 provider 更新、保护配置和关闭状态账本，并完成实际安装/audit 后才具备 `enforced` 能力，否则保持 `shadow`。
+
+**升级兼容说明**：已有产品不做全量 workspace 迁移。planning、knowledge 和历史 evidence 原位保留；新任务写新结果；只有进行中或重开的任务补最小运行状态。详细矩阵见 [精简执行设计 §10](../design/lean-enforcement.md#10-历史数据与兼容升级)。
+
+## 阅读与执行模型
+
+本手册同时记录目标入口和过渡期实态，但二者不能混用：
+
+| 场景 | 使用方式 |
+|------|----------|
+| 当前正常路径 | `standard/strict`: `ael plan --level <L1|L2|L3> --task-dir <dir>` → `ael start <task-id>` → `ael status` → `ael finish <task-id>`；`lite`: `ael start <task-id> --tier lite` → `ael status` → `ael finish <task-id>` |
+| 兼容能力或特殊排障 | 按任务角色读取对应章节；不要把第 2–8 节串成每个任务都要人工执行的总清单 |
+| runtime 开发/排障 | 才直接调用 `.ael/scripts/` 中的内部命令 |
+
+### 推荐的三段式入口
+
+```bash
+ael --product-root "$PRODUCT_ROOT" plan \
+  --level L3 --task-dir "$PRODUCT_ROOT/ael-workspace/planning/tasks/<task-dir>"
+ael --product-root "$PRODUCT_ROOT" start <work-item-id> --scope <path>
+ael --product-root "$PRODUCT_ROOT" finish <task-id>
+```
+
+`ael plan` 一次生成 batch planning receipt 和每个子任务的 task-scoped 凭证；它内部完成共享前置检查、BMAD/Architecture/Readiness digest、Work Item create/readback/binding receipt 和一次 context sync。默认 offline 只写确定性的本地 `task.json`，不猜测外部 Epic/Tasklist；只有显式 `--provider-mode configured` 才允许已确认的 provider 创建或绑定任务。相同 batch 输入命中 bundle/child digest cache，无关任务不会触发全量重跑。旧的 `draft-spec`、`sync-spec`、`planning_gate.sh`、`task_workspace.sh activate` 仍可用于历史任务或排障，但不应再串成新 Story 的人工总清单。
+
+batch `start` 会把 `flow_policy` 持久化到 `runs/tasks/<task-id>/result.json`。后续在新 shell 中单独执行 `finish` 会恢复 lean 策略；strict/standard 的独立 QA 使用 bounded fan-out 并行验证任务包中的 T1-T5（或等价 QA 单元），然后再做一次稳定聚合和当前 subject 绑定。
+
+统一入口内部承载以下能力，并按风险触发；兼容脚本暂保留，但不增加正常路径的使用者步骤：
+
+| 保留能力 | 来源 | 目标触发方式 | 当前说明 |
+|----------|------|--------------|----------|
+| 产品分析、规格、方案与实现就绪 | BMAD Method | `plan` 按 planning level 选择 Quick Flow 或完整规划；`start` 绑定产物，`finish` 按 execution tier 验证 | 第 2 节、[planning/bmad-planning.md](../planning/bmad-planning.md) |
+| 短地图、渐进上下文、机械反馈与文档园艺 | OpenAI AEL | `start` 加载最小上下文，`finish` 统一检查 | `AGENTS.md`、第 8 节 |
+| L1/L2/L3 规划分级和任务模板 | planning level | 保留为 planning level 与 legacy 兼容，不决定最终 execution tier | 第 2.3 节、`.ael/workflows/` |
+| TDD、调试纪律和完成前验证 | Superpowers | 按 tier 内部执行 | 第 4–5 节 |
+| 真实环境调查和浏览器 QA | GStack | 前端、交互或高风险变更按需触发 | 第 5.4 节 |
+| CONTEXT/LESSONS 和任务证据语义 | Flow-X | 上下文按需检索；证据按恢复、tier 或长期候选生成 | 第 2、5–7 节 |
+| Agent 审 Agent 与失败重试 | Ralph / Agent Review | `standard/strict` 由 `finish` 编排 | 第 4、6 节 |
+| 已有项目事实建档 | Brownfield Intake | 首次接入或事实漂移时触发，不按任务重复 | 第 2.0.1 节 |
+| 多 provider 协同 | Work Item adapter | `start/finish` 绑定并同步生命周期 | 第 2.1、2.5 节 |
+
+目标 `status` 和 `result.json` 必须统一呈现输入/输出 Token、上下文字符数、Agent 调用数、gate 耗时、重跑次数、确定性 gate 缓存命中数及遥测完整性；这些数据不再拆成单独成本报告。完整能力保留规则见 [精简强制执行设计 §1.1](../design/lean-enforcement.md#11-能力保留契约)。
+
+---
+
+## 0. 当前兼容：前置条件
+
+| 项 | 要求 |
+|----|------|
+| 产品根 | 任意产品仓库，例如 `product-repo/`（含业务代码、架构文档、`ael-workspace/`） |
+| buildrun-agent-engineering-lifecycle 工作目录 | 任意位置的 `buildrun-agent-engineering-lifecycle/`（含 `AGENTS.md`、`.ael/`） |
+| Product context | 并行研发用 `AEL_PRODUCT_ID` / `AEL_PRODUCT_ROOT` 或 `ael_product.sh`；`ael_init.sh use` 只设置默认兜底 |
+| BMAD Planning 产出 | 产品侧 `ael-workspace/planning/`，不是 buildrun-agent-engineering-lifecycle 目录 |
+| BMAD Method | 推荐由 `ael_init.sh init --install-bmad` 在产品根非交互安装 → `_bmad/` |
+| Shell | bash 3.2+ |
+| Python | 3.9+（`workspace_paths.py`、`work_item.py` 等） |
+| 权限 | `chmod +x .ael/scripts/*.sh`（首次克隆后执行一次） |
+
+**禁止**：绕过 `.ael/scripts/` 直接在宿主终端跑构建/测试。默认走 controlled argv 后端；需要容器隔离时显式切 Docker backend。
+**废弃**：`tools/` 仅转发，勿在新流程中引用。
+
+---
+
+## 1. 当前兼容：反馈协议
+
+每个门禁脚本都以 stdout JSON 表达 `decision`；统一 CLI 和独立门禁的退出码与 `decision` 保持一致（`pass=0`、`block=1`）。人类在终端直跑时默认 pretty：
+
+```json
+{
+  "decision": "pass",
+  "reason": "..."
+}
+```
+
+脚本捕获、CI、管道时保持单行 raw JSON：
+
+```json
+{"decision":"pass","reason":"..."}
+```
+
+**收到 `block` 时**：读取 `reason` → 修改计划/代码/文档 → 重新调用同一脚本。
+**禁止**：忽略 JSON、用 shell 退出码判断、向人类辩解以绕过门禁。
+
+解析示例：
+
+```bash
+RESULT=$(bash .ael/scripts/validate_ael.sh)
+echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)['decision'])"
+```
+
+需要强制 raw 输出时设置 `AEL_PRETTY=0`。`pretty.sh` 仍可用于格式化日志、文件或外部命令输出：
+
+```bash
+AEL_PRETTY=0 bash .ael/scripts/ael_init.sh list
+
+bash .ael/scripts/ael_init.sh list > /tmp/result.json
+bash .ael/scripts/pretty.sh < /tmp/result.json
+```
+
+---
+
+## 2. 当前兼容：BMAD Planning
+
+> **过渡期规则**：产品仍必须具备与风险匹配的 BMAD Planning 结果，但新任务通过 `ael plan` 一次生成 batch receipt 和 Planning Gate，不再要求手工串接多个 BMAD/Work Item 命令。L1 使用 Quick Flow，L2/L3 使用相应完整度；不要求低风险任务运行完整 Analysis / Planning / Solutioning 仪式。产出写入产品侧 **`ael-workspace/planning/`**（由 `ael-workspace/project.yaml` 配置，见 [planning/bmad-planning.md §0.1](../planning/bmad-planning.md#01-bmad-planning-目录配置产品-ael-workspaceprojectyaml)）。
+> **BMAD 在产品根执行**；**AEL 脚本在 `buildrun-agent-engineering-lifecycle/` 执行**。详见 [planning/bmad-planning.md §0.2](../planning/bmad-planning.md#02-bmad-method-在产品根执行必遵)。
+
+### 2.0 初始化与路径
+
+```bash
+# buildrun-agent-engineering-lifecycle — 首次绑定产品并创建产品 workspace
+cd /path/to/buildrun-agent-engineering-lifecycle
+bash .ael/scripts/ael_init.sh init \
+  --product-root /path/to/product \
+  --product-id my-product \
+  --product-name "My Product" \
+  --profile generic \
+  --install-bmad
+```
+
+`--install-bmad` 会在产品根非交互执行 `npx bmad-method install --directory <product-root>`，默认模块为 `bmm,tea`，默认工具为 `codex,cursor`，并将 BMAD 原生输出配置到 `ael-workspace/bmad-output/`。初始化会创建 `planning-artifacts/`、`design-artifacts/`、`implementation-artifacts/`、`test-artifacts/`，其中 `design-artifacts/` 同时配置给 BMM/CIS 的 design 输出 key。安装结束后若产品根没有生成 `_bmad/`，init 必须返回 `block`。
+
+可按团队需要用环境变量覆盖安装参数：
+
+| 变量 | 默认值 |
+|------|--------|
+| `AEL_BMAD_MODULES` | `bmm,tea` |
+| `AEL_BMAD_TOOLS` | `codex,cursor` |
+| `AEL_BMAD_COMMUNICATION_LANGUAGE` | `Chinese` |
+| `AEL_BMAD_DOCUMENT_LANGUAGE` | `Chinese` |
+| `AEL_BMAD_USER_NAME` | 产品名称 |
+
+```bash
+# 后续设置默认产品（单产品或兜底）
+bash .ael/scripts/ael_init.sh use --product-id my-product
+bash .ael/scripts/ael_init.sh list
+
+# 多产品并行：给当前终端固定产品上下文，不修改 active-product.json
+eval "$(bash .ael/scripts/ael_product.sh env --product-id my-product)"
+
+# 单次命令：只让这一条命令使用指定产品
+bash .ael/scripts/ael_product.sh exec --product-id my-product -- bash .ael/scripts/check.sh
+
+# 如未使用 --install-bmad，可在产品根手动补装 BMAD，再回到 harness 重新 init/use。
+cd /path/to/product
+npx bmad-method install
+
+# buildrun-agent-engineering-lifecycle — 查看产品 workspace 解析路径
+cd /path/to/buildrun-agent-engineering-lifecycle
+python3 .ael/scripts/workspace_paths.py json
+python3 .ael/scripts/workspace_paths.py ensure-dirs
+
+# 初始化项目级知识沉淀目录
+bash .ael/scripts/ael_knowledge.sh ensure
+
+# 全新项目：BMAD Planning 完成后，把产品目标/蓝图/架构/任务边界同步到 CONTEXT
+bash .ael/scripts/ael_knowledge.sh sync-planning
+
+# 已有项目接入：扫描既有代码、关键入口、文档、测试与技术栈
+bash .ael/scripts/ael_intake.sh status
+bash .ael/scripts/ael_intake.sh scan
+```
+
+配置分工：buildrun-agent-engineering-lifecycle `.ael/products/registry.yaml` 管本机产品台账；产品侧 `ael-workspace/project.yaml` 管 workspace 结构。说明见 [architecture/workspace.md](../architecture/workspace.md) 与产品侧 `ael-workspace/planning/README.md`。
+
+产品根解析优先级：命令行 `--product-root/--product-id` → 环境变量 `AEL_PRODUCT_ROOT/AEL_PRODUCT_ID` → 当前目录发现产品 workspace → `active-product.json` → 旧兼容标记。显式指定产品但找不到时会直接 `block`，不会静默回退到默认 active product。
+
+Work Item provider 也属于产品侧配置。长期选择写在 `<product-root>/ael-workspace/project.yaml`，本机 `.env` 只放密钥；`WORK_ITEM_PROVIDER` 仅用于临时覆盖。
+
+BMAD Planning 到 Work Item 的同步仍遵循 `bmad-work-item-v1`，但推荐由 `ael plan` 批量完成并生成 binding receipt。外部任务只保存摘要、负责人、状态、讨论和 AEL Links；完整产品规格、执行计划和任务包以 `ael-workspace/planning/` 为真相源。`draft-spec` / `sync-spec` 仅是历史兼容入口。详见 [planning/work-item-contract.md](../planning/work-item-contract.md)。
+
+| 产品场景 | 产品侧 `project.yaml` | 本机 `.env` / 环境变量 |
+|----------|----------------------|-------------------------|
+| 钉钉 Teambition 项目 | `provider: teambition`、`providers.teambition.project_id`、可选 `providers.teambition.assignee_id` | `DINGTALK_APP_KEY`、`DINGTALK_APP_SECRET`、`DINGTALK_OPERATOR_USER_ID`；个人覆盖用 `TEAMBITION_ASSIGNEE_ID` |
+| 飞书任务 | `provider: feishu`、`providers.feishu.tasklist_guid/list_tasks_path/list_query`、可选 `providers.feishu.assignee_id` | `FEISHU_APP_ID`、`FEISHU_APP_SECRET`；个人覆盖用 `FEISHU_ASSIGNEE_ID` |
+| Jira | `provider: jira`、`providers.jira.base_url`、`providers.jira.project_key`、`issue_type`、可选 `providers.jira.assignee_id` | `JIRA_EMAIL`、`JIRA_API_TOKEN`；个人覆盖用 `JIRA_ASSIGNEE_ID` |
+| 本地/离线 | `noop` | 无 |
+
+业务质量命令也属于产品侧配置。严格 CI 下，`quality.commands.lint/test` 缺失会 `block`：
+
+```yaml
+quality:
+  env:
+    PYTHONPATH: services
+  required:
+    lint: true
+    test: true
+  commands:
+    lint:
+      - name: python syntax check
+        builtin: python-syntax
+        paths: [services, tests]
+    test:
+      - name: service scaffold unittest
+        cwd: services
+        cmd: [python3, -m, unittest, discover, -s, tests]
+```
+
+每条命令可声明产品根内的相对 `cwd`。AEL 在执行前解析真实路径并拒绝绝对路径、`..`、不存在目录及符号链接逃逸；`cwd` 不改变 argv allowlist、环境变量限制或 shell 禁令。
+
+知识沉淀目录：
+
+- `ael-workspace/knowledge/CONTEXT.md` — 项目共享上下文
+- `ael-workspace/knowledge/LESSONS.md` — 跨任务失败教训
+- `ael-workspace/knowledge/REFERENCE_SYSTEMS.md` — 上游与重度依赖系统的核心逻辑、扩展点、代码入口和禁改边界
+- `ael-workspace/evidence/progress/` — 中断恢复
+- `ael-workspace/evidence/summaries/` — 任务摘要
+- `ael-workspace/evidence/test-reports/` — 测试证据
+- `ael-workspace/evidence/review-reports/` — 审查证据
+- `ael-workspace/evidence/growth-reports/` — 自我成长候选报告
+- `ael-workspace/evidence/intake-reports/` — 已有项目接入候选报告
+
+排障过程中如果发现跨任务可复现的教训，不要等人提醒再手写 `LESSONS.md`。Agent 应先把它记录成可 review 的成长候选证据：
+
+```bash
+bash .ael/scripts/ael_growth.sh capture \
+  --title "Feishu tasklist auth" \
+  --summary "经验沉淀：飞书任务清单 1470403 不是普通 API scope 问题，必须把应用作为 app/editor 清单成员初始化。" \
+  --category "lesson" \
+  --trigger "配置 providers.feishu.tasklist_guid 后 diagnose 失败" \
+  --failed "只开通飞书 API scope 或把机器人群组加入清单" \
+  --cause "tenant_access_token 仍按应用身份做资源级鉴权" \
+  --next-action "用清单 owner/editor 的 user_access_token 跑 feishu-tasklist-member"
+```
+
+`capture` 只写 `ael-workspace/evidence/progress/*-GROWTH-CAPTURE.md`，随后由 `ael_growth.sh scan` 生成 GROWTH 报告，人工 review 后再用 `ael_growth.sh apply-review` 进入 `CONTEXT.md` / `LESSONS.md`。它适合外部系统权限坑、重复失败路径、架构边界、新默认行为和需要以后自动复用的排障结论；不要把 token、secret 或完整请求头写入摘要。
+
+全新项目的首批 `CONTEXT.md` 不来自 intake，而来自 BMAD Planning：产品规格、产品蓝图、架构/执行计划、任务卡和 BMAD 原生 planning artifacts。`planning_gate.sh` 通过后会自动执行 `ael_knowledge.sh sync-planning`；也可以手动重跑这个命令刷新受管区块。
+
+已有项目接入报告只读取产品根下的既有代码和文档，并排除 `ael-workspace/`、`ael-workspace*` 备份、`_bmad/`、`bmad-output/`、`.env`、依赖缓存与本地 Agent 缓存。报告中的候选不会绕过人工判断直接进入长期知识；人工或 Agent review 后运行 `apply-review`，由 AEL 自动写入 `CONTEXT.md` / `LESSONS.md` / `REFERENCE_SYSTEMS.md` 的受管区块。报告顶部的 `## 0. Review 工作台（先处理）` 是 intake 完成度看板，处理完后把 `- [ ]` 改成 `- [x]`。
+
+如果仓库中包含上游官方代码或 vendor 代码，先在产品侧 `project.yaml` 配置 `intake.scopes`。例如把 `OpenViking/`、`deer-flow/` 设为 `upstream-reference + debt: ignore`，再把 `deer-flow/mobile/` 设为 `product-owned + debt: track`，即可让报告只沉淀上游核心逻辑/特性，同时只追踪自研范围的技术债。
+
+完成报告顶部 review 后，不需要手工编辑 knowledge 文件，直接让 AEL 应用：
+
+```bash
+# 已全部勾选时正式沉淀
+bash .ael/scripts/ael_intake.sh apply-review
+
+# 未全部勾选但想先生成草稿时
+bash .ael/scripts/ael_intake.sh apply-review --allow-pending
+```
+
+### 2.0.1 已有项目接入 Review
+
+首次接入已有产品时，在创建新功能规格前先 review INTAKE 报告：
+
+| 报告内容 | Review 结果 |
+|----------|-------------|
+| 产品目标、核心用户、领域术语 | `apply-review` 写入 `knowledge/CONTEXT.md` |
+| 服务目录、技术栈、运行/测试命令 | `apply-review` 写入 `knowledge/CONTEXT.md`，必要时再补产品 README |
+| DeerFlow、OpenViking 等重度依赖 | 报告提名关键文档和关键代码入口；`apply-review` 写入 `knowledge/REFERENCE_SYSTEMS.md` 的证据入口；Agent/架构负责人深读后补核心机制摘要 |
+| 重复失败、临时方案、返工线索 | `apply-review` 写入 `knowledge/LESSONS.md`，需要排期时创建技术债 Work Item |
+| 服务边界、数据流、部署边界 | 迁入产品架构文档 |
+| 一次性噪音或证据不足项 | 留在 INTAKE 报告，不升级 |
+
+完整规则见 [getting-started/brownfield-intake.md](./brownfield-intake.md)。
+
+### 2.1 产品规格（Planning → `ael-workspace/planning/product-specs/`）
+
+```bash
+cd /path/to/buildrun-agent-engineering-lifecycle
+PRODUCT_ROOT=/path/to/product
+cp .ael/templates/product-spec.md "$PRODUCT_ROOT/ael-workspace/planning/product-specs/某功能.md"
+# 编辑 front matter 与验收标准
+bash .ael/scripts/work_item.sh draft-spec "$PRODUCT_ROOT/ael-workspace/planning/product-specs/某功能.md" --assignee <provider-user-id>
+# 在 Codex 对话中确认任务标题、范围和负责人
+bash .ael/scripts/work_item.sh sync-spec "$PRODUCT_ROOT/ael-workspace/planning/product-specs/某功能.md" --assignee <provider-user-id>
+# Planning Gate/Execution 状态变化后，用受审计文件同步既有任务描述（当前支持飞书）
+bash .ael/scripts/work_item.sh update-description --id <work-item-id> --file <description.md>
+```
+
+`draft-spec` 不调用外部 API、不会改 Product Spec；`sync-spec` 会为未绑定的验收勾选项创建当前 provider 的 Work Item，在任务描述里写入 Product Spec、Exec Plan、Task Package、Context 的链接和负责人，并把 `#<work-item-id>` 回写到勾选行尾。`update-description` 先校验既有任务，再用完整 Markdown 文件更新描述；它不创建新任务，也不改变完成状态。
+
+### 2.2 执行计划（Solutioning → `ael-workspace/planning/exec-plans/active/`）
+
+```bash
+cp .ael/templates/exec-plan.md "$PRODUCT_ROOT/ael-workspace/planning/exec-plans/active/某功能.md"
+# linked_spec 填 product-specs/某功能.md
+```
+
+### 2.3 任务分级与建档（→ `ael-workspace/planning/tasks/`）
+
+| 级别 | 任务目录 | Work Item | 模板（在 buildrun-agent-engineering-lifecycle） |
+|------|----------|-----------|-------------------------------|
+| L1 | 当前可不建 | 外部 provider 豁免 | 目标状态由 AEL 生成本地任务 ID，仍保持可追踪 |
+| L2 | **必须** | 当前产品 provider 的 Work Item ID | `tasks/_templates/00` + `03` + `04` |
+| L3 | **必须** | 当前产品 provider 的 Work Item ID | `00`～`06` 全套 |
+
+```bash
+TASK_DIR="$PRODUCT_ROOT/ael-workspace/planning/tasks/$(date +%Y-%m-%d)-<work-item-id>-功能简称"
+mkdir -p "$TASK_DIR"
+cp tasks/_templates/00-任务卡.md tasks/_templates/03-实施方案.md tasks/_templates/04-实施记录.md "$TASK_DIR/"
+```
+
+`00-任务卡.md` 链接格式：`product-specs/...`、`exec-plans/active/...`；**Gate 1 → 已确认**。
+
+### 2.4 前导门禁
+
+```bash
+bash .ael/scripts/planning_gate.sh L2 "$TASK_DIR"
+```
+
+`TASK_DIR` 可传绝对路径、产品根相对路径（`ael-workspace/planning/tasks/...`）、planning 根相对路径（`tasks/...`）或任务目录 basename；`planning_gate`、task contract 与 DAG 检查使用同一解析规则。
+
+凭证：`ael-workspace/runs/planning_gate_pass.json` + `ael-workspace/planning/tasks/.../planning_gate_pass.json`。`phase0_pass.json` 会作为历史兼容副本同步写入。
+
+L2/L3 的 `03-实施方案.md` 必须通过 7 字段任务契约：
+
+```bash
+bash .ael/scripts/task_contract_check.sh --task-dir "$TASK_DIR"
+```
+
+### 2.5 agent_start
+
+```bash
+bash .ael/scripts/agent_start.sh <work-item-id>
+```
+
+从 `ael-workspace/planning/tasks/` 自动恢复 Planning Gate，并把产品侧 `CONTEXT.md`、`LESSONS.md`、`REFERENCE_SYSTEMS.md` 摘要注入本次任务上下文；工作区在 `ael-workspace/runs/tasks/<id>/`。
+
+新 batch 的 runtime scope 由任务目录及 `03-实施方案.md` 的写入边界组成，并按实际 diff/risk 选择 execution tier；L3 不再无条件映射为 `strict`，但高风险路径、真实 Provider、生产/安全/迁移变更仍会自动升级。重复启动同一 Work Item 只允许单调提升 tier 或扩充 scope，保留原 worktree/Token baseline，且拒绝把既有 task 重新绑定到另一个 Work Item。新流程写入 `runs/tasks/<id>/`，不覆盖共享 active pointer。
+
+---
+
+### 2.6 多人协作要点
+
+> 完整场景与命令见 **[execution/collaboration.md](../execution/collaboration.md)**。
+
+| 角色 | 并行方式 | 关键命令 |
+|------|----------|----------|
+| PM | 各开分支，独立 `ael-workspace/planning/tasks/<id>/` | `ael plan --level ... --task-dir ...`（旧 provider 命令仅用于兼容） |
+| Dev | 共享 AEL，一任务一分支 | `agent_start <work-item-id>`、`work_item.sh list-mine` |
+| 切换任务 | 一人一时一个 Work Item ID | `agent_start <新work-item-id>` |
+
+`.env` 按当前产品 provider 填写：Teambition 用 `DINGTALK_OPERATOR_USER_ID`，飞书用 `FEISHU_*`，Jira 用 `JIRA_*`。
+
+---
+
+## 3. 当前兼容：人类工程师进入执行闭环
+
+### 3.1 写清验收标准
+
+将 PRD/用户故事放入 `$PRODUCT_ROOT/ael-workspace/planning/product-specs/<功能名>.md`，先生成待确认任务草稿，再同步到当前产品 Work Item provider：
+
+```bash
+PRODUCT_ROOT=/path/to/product
+bash .ael/scripts/work_item.sh draft-spec "$PRODUCT_ROOT/ael-workspace/planning/product-specs/某功能.md" --assignee <provider-user-id>
+bash .ael/scripts/work_item.sh sync-spec "$PRODUCT_ROOT/ael-workspace/planning/product-specs/某功能.md" --assignee <provider-user-id>
+```
+
+### 3.2 初始化 Agent 工作区（自动恢复 Planning Gate）
+
+```bash
+bash .ael/scripts/agent_start.sh <work-item-id>             # 须与 00-任务卡一致
+bash .ael/scripts/task_workspace.sh show-active              # 确认当前激活任务
+```
+
+成功时返回 `{"decision":"pass","reason":"AGENT_READY: ..."}`，并生成：
+
+- `ael-workspace/runs/tasks/<work-item-id>/planning_gate_pass.json` — 任务隔离工作区（兼容同步 `phase0_pass.json`）
+- `ael-workspace/runs/tasks/<work-item-id>/context.md` — 本任务上下文，包含 BMAD Planning、协同系统摘要和产品知识注入
+- `ael-workspace/runs/tasks/<work-item-id>/worktree_baseline.json` — 首次启动时的 tracked/untracked 指纹；恢复任务不会覆盖
+- `ael-workspace/runs/context.md` — 任务上下文（兼容副本）
+
+### 3.3 复杂需求：执行计划
+
+```bash
+PRODUCT_ROOT=/path/to/product
+cp .ael/templates/exec-plan.md "$PRODUCT_ROOT/ael-workspace/planning/exec-plans/active/my-feature.md"
+# 编辑目标、验收标准、进度日志后，再让 Lead 拆 tasks-dag.md
+```
+
+### 3.4 交给 Lead Agent
+
+在 Cursor/Claude 中载入本仓库，以 **lead-agent** 身份阅读 `CLAUDE.md`，下达需求（可附带当前产品 Work Item ID）。
+
+### 3.5 合并前人类 Review
+
+Agent 完成 `mr_ready.sh` 且 CI 通过后，人类做**业务语义** Review（非替代 QA 机械门禁）。
+
+---
+
+## 4. 当前兼容：Lead Agent
+
+身份：`lead-agent`（见 `CLAUDE.md`）。**严禁修改业务代码文件。**
+
+### 4.1 拆任务 DAG
+
+```bash
+cp .ael/templates/tasks-dag.md "$TASK_DIR/tasks-dag.md"
+# 按需求编辑 T1、T2… 负责人与依赖
+```
+
+格式示例：
+
+```markdown
+- [ ] T1: (user-service) 新增登录 API / 负责人: backend-agent / 前置依赖: 无
+- [ ] T2: (web) 登录页对接 / 负责人: frontend-agent / 前置依赖: T1
+- [ ] T3: QA 验收 T1-T2 / 负责人: qa-evaluator / 前置依赖: T2
+- [ ] T4: GC 清扫 / 负责人: gc-sweeper / 前置依赖: T3
+```
+
+### 4.2 计划门禁（调度子代理前）
+
+```bash
+bash .ael/scripts/feedback_planner.sh '[ ] T1 services/catalog_service/app/api/health.py 写失败测试 [ ] 写最小实现 [ ] 沙箱跑测试'
+```
+
+须同时包含 **测试/TDD** 与 **`[ ]` 勾选语法**，否则 `block`。
+
+### 4.2.1 任务契约与 DAG 同步门禁
+
+调度子代理前，Lead 必须确认 `03-实施方案.md` 与 `tasks-dag.md` 一致：
+
+```bash
+bash .ael/scripts/task_contract_check.sh --task-dir "$TASK_DIR"
+bash .ael/scripts/dag_sync_check.sh --task-dir "$TASK_DIR"
+```
+
+规则：
+
+- `03-实施方案.md` 的实现任务使用 7 字段契约：`id/read_files/write_files/action/verify/done`
+- `tasks-dag.md` 的实现任务 ID 必须覆盖 03；QA/GC 可使用 `T-QA`、`T-GC`
+- `write_files` 必须落在结构白名单内
+- 缺少任务目录内 `tasks-dag.md` 或 active `task_dir` 默认 `block`；诊断场景才可显式加 `--allow-skip`
+
+### 4.3 调度子代理
+
+按 DAG 顺序唤起 `backend-agent` / `frontend-agent`，明确告知：
+
+- 任务 ID（如 T1）
+- 须使用的沙箱命令格式
+- 完成后不得自签被要求的独立验收；须回报 Lead，由 Lead 按当前工序和风险决定是否触发 QA
+
+### 4.4 当前需要独立 QA 的任务
+
+当当前 L2/L3 兼容流程或目标 execution tier 要求独立 QA 时，不得由实现者直接勾选 `[x]`。流程：
+
+```bash
+# 1. 唤起 qa-evaluator 审查 T1
+# 2. QA 执行签章（见第 5 节）
+bash .ael/scripts/qa_sign_off.sh T1 pass '边界、安全、契约测试已通过'
+# 3. 物理门禁
+bash .ael/scripts/subagent-pr-gate.sh T1
+# 4. 证据门禁：QA 签章 + TEST/REVIEW 报告
+bash .ael/scripts/qa_evidence_check.sh
+# 5. 三方均 pass 后，方可在 tasks-dag.md 将 T1 改为 [x]
+```
+
+### 4.5 Epic 收尾：按需 GC + 合并
+
+仅当 execution tier、跨模块重构或明显熵减风险要求独立 GC 时运行 `memory-sweep`；否则直接进入最终检查，不创建空 GC 任务。
+
+```bash
+bash .ael/scripts/memory-sweep.sh T-GC   # 仅在独立 GC 被要求时
+bash .ael/scripts/check.sh
+bash .ael/scripts/mr_ready.sh --message "feat: 完成某功能"
+```
+
+---
+
+## 5. 当前兼容：Backend / Frontend Agent
+
+身份：`backend-agent` 或 `frontend-agent`。可读 `.ael/rules/code-style-*.md`。
+
+### 5.1 领取任务
+
+从 Lead 获取 `tasks-dag.md` 中属于自己的条目（如 T1），确认前置依赖已为 `[x]`。
+
+### 5.2 TDD 循环
+
+```bash
+# 示例：Node 项目
+bash .ael/scripts/run_in_sandbox.sh 'npm test -- --testPathPattern=login'
+
+# 示例：Go 项目
+bash .ael/scripts/run_in_sandbox.sh 'go test ./internal/auth/...'
+
+# 示例：Java 项目
+bash .ael/scripts/run_in_sandbox.sh 'mvn -q test -Dtest=LoginServiceTest'
+```
+
+失败时脚本返回 `block` 与截断日志 → 自我修复后重跑，直至 `pass`。
+
+默认 `run_in_sandbox.sh` 使用 controlled 后端：不经 shell eval，拦截 shell 控制符、提权和危险删除。需要容器后端时使用：
+
+```bash
+AEL_SANDBOX_BACKEND=docker \
+AEL_SANDBOX_IMAGE=python:3.11-slim \
+bash .ael/scripts/run_in_sandbox.sh 'python3 -m unittest discover -s tests'
+```
+
+Docker 后端默认 `AEL_SANDBOX_DOCKER_NETWORK=none`，并把当前解析出的 product 根挂载到容器 `/workspace`。远程执行器使用同一入口：设置 `AEL_SANDBOX_BACKEND=remote`、HTTPS `AEL_SANDBOX_REMOTE_URL`、`AEL_SANDBOX_WORKSPACE_REF`、`AEL_SANDBOX_REMOTE_TOKEN` 和可选 `AEL_SANDBOX_SUBJECT_DIGEST`。客户端只发送 JSON argv 与 workspace ref，不发送 shell 字符串或本机目录；返回 subject 不匹配时 fail closed。remote 协议已接入，但 Firecracker/远程 executor 实机隔离仍需部署验证。
+
+首次启用 Docker backend 或更换 Docker/image 配置后，可运行显式环境验收。该验收检查产品根可见、默认网络隔离和 argv 边界；它依赖本机 Docker，因此不进入默认 `validate_ael`：
+
+```bash
+python3 .ael/scripts/sandbox_acceptance.py --cwd "$PWD"
+```
+
+### 5.3 调试纪律
+
+```bash
+bash .ael/scripts/gstack_investigate.sh \
+  '假说1:  mock 未注入导致 NPE' \
+  '假说2:  时区导致 token 过期断言失败'
+```
+
+未登记假说不得继续盲目改代码。
+
+### 5.4 前端额外：浏览器 QA
+
+首次使用前先检查环境：
+
+```bash
+bash .ael/scripts/browser_qa_setup.sh check
+```
+
+未安装 Playwright Chromium 时，显式安装：
+
+```bash
+bash .ael/scripts/browser_qa_setup.sh install --install-package
+```
+
+应用启动后：
+
+```bash
+python3 .ael/scripts/browser_qa.py http://localhost:3000 --action audit
+python3 .ael/scripts/browser_qa.py http://localhost:3000 --action screenshot
+python3 .ael/scripts/browser_qa.py http://localhost:3000 --action click-test --selector '[data-testid=save]'
+python3 .ael/scripts/browser_qa.py http://localhost:3000 --action scenario --scenario tests/browser/login.json
+```
+
+`browser_qa.py` 只接受真实 Playwright 证据。默认报告、截图与 trace 写入产品侧 `ael-workspace/runs/browser-qa/`；未安装 Playwright、页面无法访问、console error 或 network failure 都会返回 `block`。`scenario` JSON 使用 `steps` 数组，最多 50 步，只允许 `click`、`fill`、`press`、`expect-visible`、`expect-text`、`wait-for-url`，并在报告中记录逐步 decision；默认禁止读取产品根之外的场景。`click-test --script` 仅作兼容，不作为新场景首选。
+
+### 5.5 完成汇报
+
+向 Lead 汇报变更文件列表、沙箱测试 `pass` 输出和已知风险。只有 execution tier、任务恢复或人工阅读需要时才生成对应文件：
+
+- `ael-workspace/evidence/summaries/<taskId>-<Tn>-SUMMARY.md`
+- 如中断：`ael-workspace/evidence/progress/<taskId>-<Tn>-PROGRESS.md`
+
+**禁止**自行执行 `qa_sign_off.sh` 或 `subagent-pr-gate.sh`（QA 专属）。
+
+---
+
+## 6. 当前兼容：QA Evaluator
+
+身份：`qa-evaluator`（见 `.ael/rules/verification-skepticism.md`）。**禁止写业务逻辑。**
+
+### 6.1 审查清单
+
+- 测试是否覆盖边界、错误路径、安全（越权/注入）
+- 是否存在「为通过而写」的伪测试
+- 契约与 `ael-workspace/planning/product-specs/` 验收标准是否一致
+
+### 6.2 破坏性测试
+
+在沙箱内补充攻击用例并执行：
+
+```bash
+bash .ael/scripts/run_in_sandbox.sh 'npm test -- --testPathPattern=auth.security'
+```
+
+当前 L2/L3 兼容路径在启用独立 QA 时必须记录证据；目标状态由 `finish` 按 `standard/strict` 要求生成或引用：
+
+- TEST 报告：`ael-workspace/evidence/test-reports/<work-item-id>-<Tn>-TEST.md`
+- REVIEW 报告：`ael-workspace/evidence/review-reports/<work-item-id>-<Tn>-REVIEW.md`
+
+### 6.3 签章
+
+**通过：**
+
+```bash
+bash .ael/scripts/qa_sign_off.sh T1 pass '已补充越权用例；边界 3 项全绿'
+```
+
+**驳回：**
+
+```bash
+bash .ael/scripts/qa_sign_off.sh T1 fail '缺少未登录访问 /api/admin 的负向用例'
+```
+
+凭证路径（有激活任务时）：
+
+- 主路径：`ael-workspace/runs/tasks/<taskId>/qa_approved_<Tn>.json`
+- 兼容副本：`ael-workspace/runs/qa_approved_<Tn>.json`
+
+结构见 `.ael/templates/qa-evidence.json`。排障：`bash .ael/scripts/task_workspace.sh qa-path T1`
+
+### 6.4 通知 Lead 跑门禁
+
+```bash
+bash .ael/scripts/subagent-pr-gate.sh T1
+bash .ael/scripts/qa_evidence_check.sh
+```
+
+仅当 `qa_sign_off`、`subagent-pr-gate`、`qa_evidence_check` 均为 `pass` 时，Lead 可将 DAG 标为 `[x]`。
+
+---
+
+## 7. 当前兼容：GC Sweeper
+
+身份：`gc-sweeper`（见 `.ael/rules/gc-golden-principles.md`）。**禁止添加新功能。**
+
+### 7.1 触发扫描
+
+```bash
+bash .ael/scripts/memory-sweep.sh T1
+```
+
+`block` 时按 `reason` 中的 `AI_COMMENT` / `DEBUG_PRINT` 定位并清理。
+
+### 7.2 清理范围
+
+- `TODO: AI` / `FIXME: agent` 类过程注释
+- 业务代码中的 `console.log`、调试 `print`（测试目录除外）
+- 死代码、无用 import
+
+### 7.3 复检
+
+```bash
+bash .ael/scripts/memory-sweep.sh T1   # 直至 pass
+# 仅发现跨任务长期候选时运行 Growth scan / review / apply
+bash .ael/scripts/ael_growth.sh scan
+bash .ael/scripts/check.sh
+```
+
+Growth 不是固定收尾。只有出现新的失败模式、架构边界、默认行为或明确技术债候选时才进入 review；没有候选时不得为“走流程”生成空报告。
+
+`scan` 生成的报告包含 Work Item 身份，以及对该 Work Item 候选来源路径和候选文本规范化后的 `Evidence digest`。任务身份从 active Planning Gate 读取，也可用 `--work-item` 显式提供；文件名或报告头未绑定该任务的历史 evidence 不参与 freshness。`freshness` 不使用文件系统 `mtime`，因此同一 commit 在 receive/CI 隔离 checkout 中仍可确定性重放。候选内容变化返回 `GROWTH_REPORT_STALE`；旧格式报告没有摘要或 Work Item 绑定时返回 `GROWTH_REPORT_UNBOUND`，必须重新 `scan` 并完成 review。
+
+同一 Work Item 增量 `scan` 时，来源路径和规范化摘要均未变化的已审候选会保留原人工决定与处理结果；新增候选或文本发生变化的候选保持待审。复用键不依赖条目序号，避免新增 evidence 导致旧决定错位或被全部重置。
+
+`agent_start.sh` 会原子启动或恢复同一 Work Item 的 lean runtime，保证 `result.json` 与 worktree/Token baseline 同步存在；恢复任务不会覆盖原 baseline，只会单调增强 tier/scope binding。QA sign-off 只写 `runs/tasks/<work-item>/`，凭证和 TEST/REVIEW 文件均按 Work Item 查找，禁止回退复用全局 `qa_approved_T*.json`。
+
+---
+
+## 8. 当前 runtime 与 CI 命令参考
+
+在仓库根目录执行：
+
+```bash
+# AEL 结构完整性（克隆后/改 .ael 后必跑）
+bash .ael/scripts/validate_ael.sh
+
+# 文档断链与陈旧引用
+bash .ael/scripts/doc-gardening.sh
+
+# 发布前总检：Planning Gate + validate + structure_guard --diff + plan_sync + dag_sync + qa_evidence + growth_review + quality
+bash .ael/scripts/check.sh
+
+# MR 前（产品根 git 状态 + runs 防漏 + check 全链）
+bash .ael/scripts/mr_ready.sh --message "feat: 描述"
+
+# 开源发布前，仅发布 buildrun-agent-engineering-lifecycle runtime 时执行
+bash .ael/scripts/release_preflight.sh
+
+# 可选：前端浏览器 QA 环境检查
+bash .ael/scripts/browser_qa_setup.sh check
+```
+
+`mr_ready` 始终输出绑定当前 diff 的 `review_checklist`（correctness/security/tests/scope）。独立 reviewer receipt 必须位于产品 `ael-workspace/runs/`、绑定相同 subject digest、包含四视角结论，且 reviewer 不能是实现或 Lead 角色。设置 `AEL_AGENT_REVIEW_RECEIPT=<path>` 提交 receipt；设置 `AEL_AGENT_REVIEW_REQUIRED=true` 后，缺少有效 receipt 会返回 `AGENT_REVIEW_REQUIRED`。未启用 required 时 checklist 仅用于 shadow 数据采集，不能宣称已完成独立 Agent Review。
+
+Lifecycle core 不安装或要求托管平台 workflow。GitHub 可作为普通 Git remote、代码浏览和备份通道，但不参与任务状态、commit 准入、发布资格或 Work Item 完成态。
+
+`finish` 验证当前任务并把结果写入 `result.json`，同时刷新当前 guard audit；其 `head_attestation.phase: pre-commit-head` 明确表示验证的是提交前 HEAD，而不是尚未创建的目标提交。guarded 仓库在 commit 后由 `post-commit` 将该结果作为 canonical Git blob，与目标 commit 的 tree、task、policy 和 result digest 绑定，写入 `refs/harness/attestations/<commit>`；创建时会从 commit tree 重算 subject。`status` 只读验证当前 HEAD 的 attestation、result object 与 hooks，不访问网络。
+
+attestation 是共享协议，不是新的任务完成态。local/guarded 仓库所有者仍可修改 hooks、refs 和对象，因此只能防陈旧与误操作。内部 `ael_receive.py` 读取 receive 更新集合，在 bare Git 中逐个验证受保护 ref 的全部新增 commit，并从 commit tree 重算 tier、scope、policy 与机械 code-health；范围解析失败会 fail closed，`pre-receive` 校验不修改 bare 仓库或产品 workspace。attestation ref 与 `refs/harness/results/<commit>` 只保证 canonical result Git object 可达，服务端仍重新验证其绑定。`post-receive` 仅为实际接受的 commit 签发 receipt；receipt 物化失败时 provider 因缺少有效 receipt 不能进入终态。
+
+---
+
+## 9. 接入保障等级与目标端到端路径
+
+execution tier 与 assurance level 必须分开理解：前者决定任务需要跑哪些 gate，后者决定无效结果能否进入正式版本。
+
+| 接入等级 | 使用场景 | 日常入口 | 当前状态 |
+|----------|----------|----------|----------|
+| `local` | 个人、本地 Git、快速试用 | `plan/start/status/finish`（`lite` 可省略 `plan`） | 已可用；结果可审计但可被显式绕过 |
+| `guarded` | 小团队、希望低成本阻止误提交/误推送 | `ael_init.sh init --assurance guarded ...` 安装版本化 `.githooks` | 已实现；hooks 可被 `--no-verify` 或管理员绕过，不等于 enforced |
+| `enforced` | 合规、发布或组织级不可绕过准入 | 日常入口不变，管理员在受控 bare Git 安装并审计 receive authority | 框架能力已端到端验证；仅实际 authority audit 通过的产品可启用 |
+
+`guarded` 是轻量推广的默认目标，不要求自建 Gitea/GitLab 或购买 GitHub 套餐；它不能因方便而伪称不可绕过。需要绝对准入时，再选择 protected branch、受控 bare repository、发布 gate 等 `enforced` 承载方式。
+
+管理员内部接入使用 `.ael/scripts/ael_enforced.py install`，提供 bare repo、正式 refs、独立 SSH 私钥、`allowed_signers` 和 receipt 目录；随后执行 `audit`。含 Git submodule 的产品还必须为每个 gitlink 提供 `--submodule-repository <product-path>=<absolute-local-repository>`。receive 只从这些管理员配置的本地对象库按 commit tree 中的 gitlink SHA 物化内容，不信任提交内 `.gitmodules` URL、不联网；缺映射、对象缺失或路径越界均 fail closed。audit 会检查 hook 内容与执行权限、runtime、正式 refs、receipt 目录、信任根、子模块对象源以及私钥不得对 group/other 开放。该工具不进入开发者日常公共命令面；私钥和 receipt 目录不得提交进产品仓库。
+
+Guarded 接入会把 `pre-commit` / `post-commit` / `pre-push` 写入产品 `.githooks/`，并在 repo-local `.git/config` 中设置 `core.hooksPath` 和 AEL 安装根。`pre-commit` 校验有效 `finish` 结果，`post-commit` 创建 commit-bound attestation，`pre-push` 遍历本次新增的全部 commit、逐个验证并批量同步其 attestation refs。该同步不与随后发生的分支 push 构成服务端原子事务，只用于 guarded 审计便利；真正的原子接受属于 `pre-receive`。Guard audit 要求三个 hooks 已纳入 Git且内容未偏移。hooks 可被仓库所有者绕过，因此始终保持 `bypassable: true`。
+
+首次安装 hooks 时，在暂存接入文件后执行 `ael bootstrap-guarded --task-id <id> --reason '<原因>'`。一次性 receipt 保存在 `.git/harness/`，绑定当前 HEAD、index tree、精确 staged paths 和任务身份；pre-commit 只验证，post-commit 仅在新 commit parent/tree 匹配后消费。已有版本化 hooks 的仓库不能创建 bootstrap receipt，且该机制仍属于可绕过的 `guarded`，不是 `enforced`。
+
+目标公开路径是 `plan/start/status/finish`，其中 `status` 只读；低风险 `lite` 可省略显式 `plan`。30 分钟是 Story 的最大预算而非理想耗时。`stage` 仅供统一入口写入六阶段计时和诊断数据，不是使用者需要手工串联的公开步骤（旧结果字段仍显示 `shadow`）：
+
+```bash
+bash .ael/scripts/ael start demo-login-task --scope src/auth --work-item <provider-id>
+bash .ael/scripts/ael stage demo-login-task end takeover --decision pass
+bash .ael/scripts/ael stage demo-login-task start planning
+# planning → implementation_test → independent_qa → deploy_provider → finalize 依次 start/end
+bash .ael/scripts/ael status demo-login-task
+bash .ael/scripts/ael finish demo-login-task
+```
+
+无论 fresh start 还是 resume，当 `<task-id>` 能从产品侧 `ael-workspace/planning/tasks/*/task.json`、`planning_gate_pass.json` 或兼容 `phase0_pass.json` 唯一解析到 Work Item 时，`start` 都复用完整 `{id, provider}` 绑定，无需重复传 `--work-item`。已有 `work_item: null` run 会单调补齐该绑定；自动补绑本身不重建 baseline、不覆盖已有 scope/tier，并按 binding strengthening 语义使旧 gate 失效后重验。resume 显式传入的更强 tier 或新增 scope 仍沿用原有单调加严规则；显式 Work Item 与已提交规划绑定冲突时立即 `block`。
+
+同一任务目录内的三个结构化凭证必须兼容：相同 ID 可由空 provider 单调补全为唯一非空 provider；Work Item ID 冲突或多个非空 provider 冲突均视为歧义。多个任务目录映射到同一 task/Work Item 也视为歧义。上述情况中，`start` 都在任何 baseline、result 或 active-task 写入前以 `TASK_START_WORK_ITEM_AMBIGUOUS` 和稳定排序的 `source/id/provider` 候选来源 `block`，不会创建 `work_item: null` run。没有已提交 Planning 映射的本地任务仍可显式传 `--work-item`，保持 Task ID 与外部协同 ID 可分离。
+
+lite onboarding 的风险分类只读取实际产品 execution paths。`start` 自动生成的本地 `runs/` 状态和最小 `planning/tasks/<task-id>/task.json` 不会把 lite 自行升级为 standard 或造成 scope 越界；它们仍包含在完整 subject/attestation 中，不能被提交后静默替换。
+
+范围变更和紧急修复仍通过 `start` 建档，不增加公共命令。使用 `--kind scope-change|hotfix --reason '<原因>'`；`scope-change` 最低为 standard，`hotfix` 强制提升到 strict，不能用显式 `--tier lite` 降级，也不豁免 planning、scope、测试、GC 或最终结果不变式。
+
+版本化 hooks、产品 `project.yaml` 和接管记录的维护可使用 `--kind ael-maintenance --tier lite`。只有变更完全位于该固定接入白名单时保持 lite，并仍执行 AEL、structure、quality 与机械 GC；任何产品源码、业务 evidence 或其他路径都会自动升级为 standard/strict。
+
+`standard` / `strict` 命中 GC 要求而没有有效独立结果时，`finish` 返回 `GC_REQUIRED`。`gc_result.json` 必须包含 `role: gc-sweeper`、`independent: true`，并绑定当前 `task_id`、`subject_digest`、`policy_digest`；任一不匹配都不可复用。配置 `AEL_GC_AGENT_ARGV`（JSON argv 数组）后可自动调用一次 runner；runner 只接收任务 scope、`changed_since_baseline` 文件的真实 patch/新增文件内容、变更文件列表、一层直接依赖、触发信号、限制和结果契约。上下文超过 `AEL_GC_CONTEXT_MAX_CHARS`（默认 200000）或超过一次 Agent 调用预算都返回 `BUDGET_APPROVAL_REQUIRED`，不会静默截断或扩读全仓。受控 receive authority 不信任客户端自报的 GC Agent 结论；机械扫描触发独立 GC 时，要求 `refs/harness/gc/<commit>` 指向以 `harness-gc-review` namespace 签名的最小 receipt，并重算 task、policy、context digest、triggers 和 telemetry。缺失、篡改、跨 commit/policy 或 Agent 调用次数不为一均阻断。
+
+机械 code-health 是过近似触发器，不替代独立 GC 的最终裁决。有效 GC receipt 可以把结构化结果 stdout、职责内聚的大文件等误报裁决为通过；结果仍保留 `mechanical_decision` 与 Agent receipt digest 供审计。机械结果为 block 时，receipt 的 `mechanical_adjudication` 必须用 `retain`、`non_actionable_observation`、`remediated` 或 `deferred` 对每个 trigger 提供唯一、完整且带原因的裁决，缺失、重复、未知 trigger 或未知 decision 均 fail closed。receipt 无效、存在未绑定 Work Item 的 deferred finding，或 GC 自身返回 block 时仍必须阻断。
+
+`release-candidate` 绑定当前非空 index、`write-tree` 和一次性父提交。Work Item 已有中间提交时，当前 staged paths 可以是完整 baseline-relative subject 的子集；但 staged path 必须全部属于 subject，且 subject 中不能残留未暂存或未跟踪改动。
+
+Guarded release candidate 只允许把候选提交后才能真实取得的门禁暂挂：`T5`、可选的最终 `T-GC`，以及 reason 精确为 `STRICT_EVIDENCE_REQUIRED` 的 strict evidence。回执会显式记录这些 pending gates；任何 T1-T4、其它 QA 问题、strict evidence 绑定错误或其它失败检查仍返回 `RELEASE_CANDIDATE_NOT_ELIGIBLE`。候选提交不是最终 attestation，部署和生产验收后仍须补真实 browser/deployment/rollback evidence、完成 QA/GC 并重新运行 `finish`。
+
+workspace 兼容命令：
+
+```bash
+bash .ael/scripts/ael workspace audit
+bash .ael/scripts/ael migrate-task <task-id> --reason '<复核原因>'
+bash .ael/scripts/ael amend-task <task-id> --scope <retained-path-1> --scope <retained-path-2> --scope <new-path> --reason '<修订原因>'
+bash .ael/scripts/ael usage-baseline <task-id> --reason '<忽略此前用量的明确原因>'
+```
+
+`migrate-task` 只接受 audit 已归入 `needs_migration` 的进行中、且拥有 Planning Gate 凭证的任务。已完成 legacy、缺凭证或不存在的任务分别返回 `COMPLETED_LEGACY_MIGRATION_FORBIDDEN`、`MIGRATION_CREDENTIAL_MISSING`、`MIGRATION_TASK_NOT_FOUND`，且不得创建 runs 或 baseline；已有 `result.json` 仅允许兼容身份修复，不批量重写历史 workspace。
+
+迁移结果缺少结构化 scope 时使用 `amend-task`。`--scope` 是完整替换集，不是追加项：必须为所有需要保留和新增的路径分别重复传入 `--scope`。该命令要求显式 scope 和 reason，保留旧 binding digest、前后 scope 与时间戳，重算 binding/policy，并将所有旧 checks 标记 stale；它不能修改历史任务卡、baseline 或 QA evidence，也不能直接把任务变为通过。
+
+`status` 同时重算当前 worktree subject 与 policy digest，但只返回内存中的状态投影，不改写 `result.json`。任一输入变化都会在投影中把 `validated` 退回 `active`，标记旧 checks 为 stale、增加 rerun 计数并返回 `INPUT_CHANGED`；下一次 `finish` 才持久化失效状态、重新执行当前 tier 所需检查并重算派生 blockers。HEAD 已有同任务的有效 attestation 且当前工作树 clean 时，`status` 以 canonical Git result 为准，避免 task-start dirty baseline 在提交后误伤已接收结果。`result.json` 在原子写入和读取时都执行共享 schema 校验，非法 state/tier/check/cost 或伪造的完整遥测会返回 `RESULT_SCHEMA_INVALID`。
+
+`finish` 在全部 gate 结束后再次重算 worktree subject 与 policy。knowledge / Growth 自动同步、质量命令或其它 gate 若改变了受验证输入，本次执行返回 `INPUT_CHANGED`，所有旧 check 标记 stale；必须基于新 subject 刷新 GC、strict evidence 并重新 `finish`，不得把 gate 前结果用于 commit attestation。
+
+本地 `finish` 只在 subject、policy、相关输入和工具 digest 全部一致时复用确定性的 `tier` 与 `scope` 判定，并把命中数累加到 `cost.ael.cache_hits`。diff code-health 每次都以 `source: executed` 重跑；QA、GC Agent、生产、部署和回滚证据不进入缓存。GC 修改代码后，tier、scope、测试、结构和 code-health 的旧 fingerprint 均失效。CI `ci-check` 始终针对目标 commit 重新执行，不读取本地缓存。
+
+设置 `AEL_USAGE_RECEIPT=<json-path>` 可把 Agent/provider 成本写入同一 `result.json.cost`。receipt 必须包含与当前执行一致的 `task_id`、`subject_digest`、`policy_digest`，非空 `provider` / `model`，以及 `implementation`、`harness` 两组 `input_tokens`、`output_tokens`、`context_chars`、`agent_calls`。未提供时成本保持 `unknown` 且不单独阻断；提供后若任务、subject、policy 或来源身份不匹配，则返回 `USAGE_RECEIPT_BINDING_MISMATCH` 或 `USAGE_RECEIPT_SOURCE_MISSING`。
+
+Codex Desktop/CLI 向进程提供 `CODEX_THREAD_ID` 时，`ael finish` 会在本机 Codex sessions/archived_sessions 中按该 ID 唯一定位 rollout，自动导入服务端累计 Token；不按时间猜测，不扫描或合并其他会话，也不复制 prompt、message 或工具参数。找不到唯一匹配时保持 `unknown`。显式导出命令仅用于离线诊断或不透传 thread ID 的执行环境：
+
+```bash
+python3 .ael/scripts/codex_usage_receipt.py \
+  --rollout /absolute/path/to/rollout.jsonl \
+  --output /absolute/path/to/usage-receipt.json \
+  --task-id <task-id> \
+  --subject-digest <current-subject-digest> \
+  --policy-digest <current-policy-digest>
+AEL_USAGE_RECEIPT=/absolute/path/to/usage-receipt.json bash .ael/scripts/ael finish <task-id>
+```
+
+导出器只采用最后一条有效 `token_count.total_token_usage`，并记录 session ID、模型、usage 时间、rollout 大小与 SHA-256。`input_tokens` 包含服务端报告的 cached input，细分值保留在 receipt `source`。Codex rollout 未提供可信 `context_chars` / `agent_calls` 时这两项保持 `unknown`，所以 Token 可精确展示，但 `telemetry_complete` 仍为 `false`；不得用事件条数或 context-window 容量填充。
+
+GC telemetry 同样要求非空 `provider` / `model`，以及真实 `agent_calls`、`context_chars`、`duration_ms`；缺身份或使用布尔值/负数时返回 `GC_TELEMETRY_INVALID`。内部 `ael_metrics.py` 可从任务 `result.json` 目录只读汇总 rollout 指标；baseline 含 `unknown` 或 lite 样本少于 5 时只报告 `insufficient_data`。
+
+结构化 gate runner 按 tier 将 planning、structure、QA、knowledge、growth 和 quality 分别写入 `checks`。standard 命中 `.tsx/.jsx/.vue/.svelte/.html/.css/.scss` 或 frontend/web/ui/pages/components 路径时自动要求 `AEL_BROWSER_QA_URL` 并执行浏览器审计；strict 还要求 `AEL_STRICT_EVIDENCE` 指向绑定当前 subject、包含 browser/deployment/rollback pass 的 JSON receipt。Product Spec 声明 `production_evidence.provider_mode: real_required` 时，Planning Gate 会固化该要求；生产适配器必须通过 canonical `ael_provider_preflight.py` 生成同 subject 的 v3 离线 receipt，再由 `provider_attempt.py` 在 `deploy_provider` 预算内原子占用唯一调用机会。旧 `provider_verifier_preflight.py` v2 receipt 只保留兼容读取，不能进入 authority-required 真实调用或满足 strict gate，避免先消耗生产调用再因 schema 不一致返工。strict receipt 的 `provider_acceptance` 必须包含该 attempt receipt、`provider_mode: real`、`synthetic_only: false` 和相同 `evidence_ref`；合成 canary 或手写 digest 不能满足要求。产品可在 `quality.commands.lint` 使用 `python-import-boundaries` builtin 声明 `paths` 和 `boundaries: [{from, forbid}]`，通用默认值不内置产品目录。
+
+真实 Provider 路径还要求两个独立的 SSH authority receipt：调用前的 `network-sandbox/provider-preflight` 必须固定签署 `network: none`、`workspace: read-only` 及 preflight 输入/trace digest；调用后的 `provider-response/provider-execution` 必须签署同一次 attempt 与最终 evidence digest。`provider_attempt.py` 通过 `--sandbox-authority-receipt`、`--provider-authority-receipt` 接收收据；response authority 可在唯一 Provider 调用后于同一阶段 deadline 内原子发布，AEL 只等待与当前 attempt 精确匹配的收据，旧收据不会导致重试生产调用。最终 binding 只能写入当前 task runtime，strict gate 会重验完整双签名链。
+
+信任根不再从调用方环境变量读取。authority 部署必须在 AEL 安装目录创建权限保护、非 symlink 的 `.ael/authority-trust.json`，schema 为 `harness-authority-trust-v1`；`authorities` 至少按实际能力配置 `network-sandbox`、`provider-response`、`lifecycle-readback`、`qa-reviewer-identity` 和 `terminal-acceptance`，每项只含固定 `principal`、AEL `.ael/` 内相对 `allowed_signers` 路径与 `signer_fingerprint`。安装目录、policy 和 allowed-signers 必须由产品调用方不可写的部署身份管理；缺项、路径越界、symlink、group/other writable 或 signer 不匹配都 fail closed。fixture key 只用于离线测试，未安装并审计真实 authority 的产品仍保持 `guarded`、`bypassable: true`，不能宣称网络隔离、Provider response 或外部身份已 enforced。
+
+外部 lifecycle `ready_to_release` 回读同样不接受 caller-authored JSON；它要求 `lifecycle-readback/ready-to-release-readback` authority 精确签署 task、Work Item、provider、candidate、commit、status 与 readback，并使用安装 policy 的 `lifecycle-readback` pin。缺少、过期、错 signer 或任一身份不匹配均返回 `LIFECYCLE_TRUSTED_READBACK_REQUIRED`。真实部署未安装该 authority 时保持 blocked，不使用本地 fixture 降级。
+
+独立 QA 身份不再由 `CODEX_THREAD_ID` 自发生成。host/supervisor 先生成 `qa-reviewer-identity/qa-signoff` SSH receipt，精确绑定 reviewer session、`qa-evaluator` role、task 与 Work Item；QA 进程只用 `AEL_QA_REVIEWER_IDENTITY_RECEIPT` 传递收据路径，验签 pin 固定来自安装 policy 的 `qa-reviewer-identity`。实现 session 与已签 reviewer session 相同、host receipt 缺失/篡改/过期或安装 pin 缺失时均不能签章。
+
+CI Planning credential 自动物化到 `ael-workspace/runs/ci/<task-id>/planning_gate_pass.json`，包含原始 Planning source ref/SHA-256，以及目标 commit 的 `changed_files`/digest；gate 子进程通过 `AEL_CI_TASK_ID`、`AEL_CI_PLANNING_GATE` 和父进程固定的 changed-files digest 选择同一 task 环境。即使 checkout 为 clean，`plan_sync` 仍检查目标 commit 的真实路径集。CI 不再写共享 `runs/planning_gate_pass.json` 或 `runs/active_task.json`，源文件变化、changed-files 篡改、跨 task 路径、symlink runtime、非法 ID 或 shared-path 回退都会在执行任何 gate 前阻断。
+
+每个外部 gate 另有 orchestration watchdog，默认 `AEL_GATE_TIMEOUT_SECONDS=120`。该值仍受 Story/阶段剩余预算的更小值约束；并行批次和后续串行 gate 共享同一阶段 deadline，不会为每个 gate 重置额度。超时会终止 gate 的整个进程组，并返回绑定 gate 名称和实际 timeout 的 `GATE_TIMEOUT` 或 `STAGE_BUDGET_EXCEEDED` block；该结果不可被 knowledge/Growth 自动同步或重试覆盖。
+
+本地 `work_item.sh close` 默认只写 `ready_to_release`；即使传入 receipt、ref 和 commit，`done`、`implemented`、`released` 等终态也固定返回 `ACCEPTANCE_AUTHORITY_SERVICE_REQUIRED`。终态只能由受控 `git-receive` / `release-gate` 服务执行：服务从权限保护的部署配置构造 `TrustPolicy`，固定 acceptance policy ID/digest、receipt signer 指纹和 policy signer 指纹，验证 receipt 后再调用 provider。Provider 在真正写终态前还会重验原始 acceptance receipt 的 SSH 签名与安装 policy 的 `terminal-acceptance` pin；仓内没有可导入的本地 issuer capability。普通调用者提供的环境变量、allowed-signers、自签 policy 或进程内对象不能成为 trust anchor。当前受控终态 adapter 仅启用 WaveWeaver 使用的 Feishu；Jira 和 Teambition 不在该 release-gate 的终态写入范围，调用会返回 `ACCEPTANCE_PROVIDER_TERMINAL_UNSUPPORTED`。
+
+外部 acceptance policy 固定 repo identity、唯一保护 ref、允许的 authority、候选 task、可关闭的 Work Item/provider 及 `closure_order`。目标 receipt 签名绑定关闭序号和前置事项；验证器不接受调用者声明的 completed ID tuple，而要求按 policy 严格前缀提供每个 predecessor 的 acceptance receipt，并逐一重验 Work Item、provider、policy、commit、ref、closure index、有效期与固定 signer。缺失返回 `ACCEPTANCE_CLOSURE_RECEIPTS_REQUIRED`，乱序、篡改或错误签名继续阻断。目标 receipt 还必须等于保护 ref 当前 tip，并通过 attestation object、provider、work item、task、policy/result digest、有效期及两层固定 signer 校验。产品提交内 contract 只能记录这些固定值的摘要，不能自授权；祖先可达、调用者改选 ref、自选信任根、旧 receipt 重放或手写 JSON 一律阻断。
+
+| 公开动作 | 使用者看到的结果 | 过渡期内部能力参考 |
+|----------|------------------|--------------------|
+| `start` | 任务身份、初始 execution tier、范围、预算与待办 | 第 2 节的规划/绑定 + `agent_start.sh` |
+| `stage` | 六阶段开始/结束、累计 wall、预算、重试和 root ledger | `ael_timing.py` + `ael_cycle_commands.py` |
+| `status` | 当前有效 tier、通过项、阻塞项、实现成本和 AEL 开销 | `task_workspace.sh`、各 gate 的 JSON 结果 |
+| `finish` | 重新按实际 diff 分级，执行或复用必要检查，写入 `result.json` | 第 4–8 节按角色和风险选择的 gate + `check.sh` / `mr_ready.sh` |
+
+过渡期需要直接调用脚本时，从上表进入对应章节，只执行当前 planning level、角色和风险要求的命令。不要复制一条固定 L2/L3 链给所有任务，也不要在本地验证后直接把外部 Work Item 置为 `done`；本地 `finish` 最多进入 ready/review，目标 commit 被受控 Git 接收点或发布入口接受后才关闭任务。
+
+---
+
+## 10. 当前兼容错误排查
+
+| 现象 | 处理 |
+|------|------|
+| `BMAD_GATE_BLOCKED` | 补 `ael-workspace/planning/product-specs`、`ael-workspace/planning/tasks` 目录或 Gate 1；见 [planning/bmad-planning.md](../planning/bmad-planning.md) |
+| `NO_PLANNING_GATE` | `check.sh`：先 `planning_gate.sh pass` |
+| `PLANNING_GATE_NOT_FOUND` | `agent_start`：未 MR 合并 `ael-workspace/planning/tasks/` 或未 pull；`git pull` 后重试 |
+| `PLANNING_GATE_INVALID` | Planning Gate JSON 无效；重跑 `planning_gate.sh` |
+| `NO_WORK_ITEM_IN_PLANNING_GATE` | L2/L3 Planning Gate 缺 work_item；重跑 gate 并填 Work Item ID |
+| `WORK_ITEM_MISMATCH` | `agent_start` 参数 ≠ `00-任务卡` Work Item ID |
+| `WORK_ITEM_GATE` / `*_INVALID_ID` | L2/L3 须匹配当前 provider 的 ID 规则；noop 下 `sync-spec` 会生成语义化本地 ID |
+| `VIOLATION_NO_TDD` | 计划须含「测试」/`test`/`TDD` |
+| `VIOLATION_NO_DAG` | 计划须含 `[ ]` 勾选语法 |
+| `VIOLATION_NO_PATH` | 计划须含白名单业务路径（如 `services/catalog_service/`）或 `structure_guard` |
+| `VIOLATION_NO_PLAN_REF` | L2/L3 计划须引用 `03-实施方案` 或任务 ID |
+| `PATH_PREFLIGHT_FAIL` | `structure_guard --path` 未 pass |
+| `PLAN_SYNC_*` | 本任务相对启动 baseline 的变更路径不在 `03-实施方案`；更新 03 或收窄本任务修改 |
+| `PLAN_SYNC_BASELINE_*` | 旧任务缺 baseline 时，由负责人复核计划外 dirty 路径确为任务前变更，再执行 `plan_sync_check.sh --recover-baseline '<复核原因>'`；恢复记录不可覆盖 |
+| `TASK_CONTRACT_*` | `03-实施方案.md` 缺 7 字段任务契约、路径或可执行验证 |
+| `DAG_SYNC_*` | `tasks-dag.md` 与 `03-实施方案.md` 实现任务 ID 不一致 |
+| `STRUCTURE_*` / `UNKNOWN_PROFILE` | 路径不在白名单或显式 profile 不存在；见 `.ael/profiles/<profile>/package-allowlist.yaml`，只有 `generic` 使用 `.ael/rules/package-allowlist.yaml` 兼容副本 |
+| `VIOLATION_NO_QA` | 先 `qa_sign_off.sh … pass` |
+| `QA_NOT_PASSED` | 凭证为 fail，须修复后重新 QA |
+| `QA_EVIDENCE_*` | 补齐 `qa_approved_<Tn>.json`、TEST 报告、REVIEW 报告，并确保报告结论为通过 |
+| `GC_DIRTY` | gc-sweeper 按 reason 清理后重跑 `memory-sweep.sh` |
+| `PROVIDER_TERMINAL_STATUS_FORBIDDEN` | 本地不能关闭 Work Item；等待受控接受点生成 lifecycle receipt |
+| `ATTESTATION_*` | 当前 commit 缺少有效 attestation，或 commit/tree/policy/result 绑定不匹配；重新 `finish` 后提交 |
+| `INPUT_CHANGED` | 上次 validated 后代码或 policy 已变化；重新运行 `finish`，旧 fingerprint 不再有效 |
+| `RESULT_SCHEMA_INVALID` | result 字段、枚举、check 最小字段或成本类型不符合共享 schema；须由 AEL 重建或迁移 |
+| `AEL_INVALID` | 按 reason 补齐 manifest 缺失项 |
+| `MR_TASK_DIR_UNKNOWN` | 一 MR 一 `ael-workspace/planning/tasks/<id>/`，或设 `AEL_TASK_DIR` |
+| `list-mine` 为空 | noop 下恒空；Teambition/Jira 检查任务是否指派给当前账号；飞书检查 `tasklist_guid` / `list_query` 与 `FEISHU_ASSIGNEE_ID` 是否匹配 |
+| 受控命令仍 block | 读 `CONTROLLED_EXEC_FAILED` 日志，必要时 `gstack_investigate.sh` |
+| `DOCKER_SANDBOX_UNAVAILABLE` | 本机/CI 未安装 Docker，或 Docker daemon 不可用；改用默认 controlled 后端或配置 Docker runner |
+| `REMOTE_SANDBOX_CONFIG_*` / `REMOTE_SANDBOX_SUBJECT_MISMATCH` | remote backend 缺少 HTTPS endpoint、workspace ref/token，或 executor 返回的 subject 与目标不一致；不能回退伪造 pass |
+| `PLAYWRIGHT_*` | 运行 `browser_qa_setup.sh check` 定位；本地可用 `install --install-package`，CI 推荐 Playwright 官方镜像 |
+| `QUALITY_*_UNCONFIGURED` | 产品侧 `ael-workspace/project.yaml` 缺 `quality.commands.lint/test`，或严格 CI 未显式豁免 |
+
+完整错误码见 [architecture/overview.md](../architecture/overview.md) §18.3。
+
+---
+
+## 11. 文档索引
+
+| 文档 | 用途 |
+|------|------|
+| [architecture/overview.md](../architecture/overview.md) | **全景：设计·方案·评估·演进** |
+| [architecture/team-model.md](../architecture/team-model.md) | 通用产品研发 AEL 模型 |
+| [getting-started/cli.md](./cli.md) | **本文件：三项主动作 + 只读 status 的使用模型与过渡期兼容参考** |
+| [execution/collaboration.md](../execution/collaboration.md) | 多人 PM/Dev 协作 |
+| [planning/work-item-contract.md](../planning/work-item-contract.md) | BMAD Planning 到 Teambition/飞书/Jira 的同步契约 |
+| [architecture/workflow.md](../architecture/workflow.md) | 双闭环 + Work Item provider 总览 |
+| [planning/bmad-planning.md](../planning/bmad-planning.md) | BMAD Planning · BMAD Method 前导 + `bmad_method_gate.py` |
+| [governance/quality.md](../governance/quality.md) | 质量不变式 |
+| [../AGENTS.md](../../AGENTS.md) | Agent 导航地图 |
+| [../.ael/README.md](../../.ael/README.md) | 脚本与机制索引 |

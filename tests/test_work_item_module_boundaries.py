@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = ROOT / ".harness" / "scripts"
+SCRIPTS = ROOT / ".ael" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 from work_item_providers import (  # noqa: E402
@@ -32,6 +32,8 @@ class WorkItemModuleBoundariesTest(unittest.TestCase):
             "work_item_feishu.py",
             "work_item_feishu_payload.py",
             "work_item_jira.py",
+            "work_item_local_binding.py",
+            "work_item_provider_config.py",
             "work_item_providers.py",
             "work_item_teambition.py",
             "work_item_teambition_support.py",
