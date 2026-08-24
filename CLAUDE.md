@@ -1,6 +1,6 @@
-# Claude Adapter For Agent Engineering Lifecycle
+# Claude Adapter For BuildRun Agent Engineering Lifecycle
 
-本文件只描述 Claude 使用 harness-engineering 时的适配约束。完整流程以 [docs/getting-started/cli.md](docs/getting-started/cli.md) 为准；架构边界见 [ARCHITECTURE.md](ARCHITECTURE.md)。
+本文件只描述 Claude 使用 buildrun-agent-engineering-lifecycle 时的适配约束。完整流程以 [docs/getting-started/cli.md](docs/getting-started/cli.md) 为准；架构边界见 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
 ## Identity
 
@@ -19,15 +19,15 @@
 | 场景 | 读取 |
 |------|------|
 | 不知道从哪里开始 | [AGENTS.md](AGENTS.md) |
-| 理解 harness-engineering / product workspace 边界 | [ARCHITECTURE.md](ARCHITECTURE.md) |
+| 理解 buildrun-agent-engineering-lifecycle / product workspace 边界 | [ARCHITECTURE.md](ARCHITECTURE.md) |
 | 执行具体步骤 | [docs/getting-started/cli.md](docs/getting-started/cli.md) |
 | 拆 DAG 与任务契约 | [docs/architecture/workflow.md](docs/architecture/workflow.md) |
-| QA 与验收纪律 | `.harness/rules/verification-skepticism.md` |
-| 结构与写入边界 | `.harness/rules/code-placement.md` |
+| QA 与验收纪律 | `.ael/rules/verification-skepticism.md` |
+| 结构与写入边界 | `.ael/rules/code-placement.md` |
 
 ## Lead Loop
 
-1. 启动或确认 active task，读取产品侧 `harness-workspace/runs/context.md` 与相关 planning 产物。
+1. 启动或确认 active task，读取产品侧 `ael-workspace/runs/context.md` 与相关 planning 产物。
 2. 基于产品规格和实施方案拆 `tasks-dag.md`。
 3. 在调度实现前检查任务契约与 DAG 同步。
 4. 调度实现 Agent，并要求其提供变更文件、验证命令和结果。
@@ -37,15 +37,15 @@
 
 ## Command Policy
 
-Claude 可以调用 Harness 脚本，但不要把脚本清单复制进本文件。需要命令时查 [docs/getting-started/cli.md](docs/getting-started/cli.md) 或 [.harness/README.md](.harness/README.md)。
+Claude 可以调用 AEL 脚本，但不要把脚本清单复制进本文件。需要命令时查 [docs/getting-started/cli.md](docs/getting-started/cli.md) 或 [.ael/README.md](.ael/README.md)。
 
 特别约束：
 
-- 构建、测试和脚本执行必须走 Harness 入口或项目约定的受控命令。
+- 构建、测试和脚本执行必须走 AEL 入口或项目约定的受控命令。
 - 收到 JSON `decision: block` 时，按 `reason` 修复后重试，不绕过门禁。
 - 不把 runtime 状态写进本文件；active task 状态属于 product workspace。
-- 不把产品私有经验直接写进 harness-engineering rules；先生成成长候选，人工 review 后用 `harness_growth.sh apply-review` 迁入产品知识，跨产品成立后再迁移全局规则。
-- 当排障或实现暴露出可复现的失败模式、外部集成权限陷阱、架构边界或新的默认做法时，主动运行 `harness_growth.sh capture --summary "..."`；这是证据捕捉，不是长期知识写入。
+- 不把产品私有经验直接写进 buildrun-agent-engineering-lifecycle rules；先生成成长候选，人工 review 后用 `ael_growth.sh apply-review` 迁入产品知识，跨产品成立后再迁移全局规则。
+- 当排障或实现暴露出可复现的失败模式、外部集成权限陷阱、架构边界或新的默认做法时，主动运行 `ael_growth.sh capture --summary "..."`；这是证据捕捉，不是长期知识写入。
 
 ## Completion Rule
 

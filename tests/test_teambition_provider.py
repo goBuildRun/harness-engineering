@@ -12,7 +12,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 
-SCRIPT_DIR = Path(__file__).resolve().parents[1] / ".harness" / "scripts"
+SCRIPT_DIR = Path(__file__).resolve().parents[1] / ".ael" / "scripts"
 sys.path.insert(0, str(SCRIPT_DIR))
 
 from work_item_providers import TeambitionProvider  # noqa: E402
@@ -164,7 +164,7 @@ class TeambitionProviderTest(unittest.TestCase):
             provider = RecordingTeambitionProvider(
                 {"status_update_mode": "stage", "stage_id_map": {"开发中": "stage_dev"}}
             )
-            ok, reason = provider.update_status(TASK_ID, "harness_execution_started")
+            ok, reason = provider.update_status(TASK_ID, "ael_execution_started")
 
         self.assertTrue(ok)
         self.assertIn("stage=in_progress", reason)
@@ -359,7 +359,7 @@ class TeambitionProviderTest(unittest.TestCase):
         other_owner_id = "6a38f8959690bfdafc8e80f5"
         with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, env(), clear=True):
             root = Path(tmp)
-            spec_dir = root / "harness-workspace/planning/product-specs"
+            spec_dir = root / "ael-workspace/planning/product-specs"
             spec_dir.mkdir(parents=True)
             (spec_dir / "sample.md").write_text(
                 "\n".join(

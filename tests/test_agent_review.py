@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 
 
-SCRIPTS = Path(__file__).resolve().parents[1] / ".harness" / "scripts"
+SCRIPTS = Path(__file__).resolve().parents[1] / ".ael" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 from agent_review import build_checklist, load_and_validate_receipt  # noqa: E402

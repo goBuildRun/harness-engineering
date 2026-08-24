@@ -12,18 +12,18 @@ from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / ".harness" / "scripts"))
+sys.path.insert(0, str(ROOT / ".ael" / "scripts"))
 
-from harness_gate_inputs import execution_dependency_digest  # noqa: E402
-from harness_gate_inputs import gate_input_digest  # noqa: E402
-from harness_gate_imports import add_import_targets, python_modules  # noqa: E402
-from harness_gate_argv import command_executes_path  # noqa: E402
-from harness_gate_language import (  # noqa: E402
+from ael_gate_inputs import execution_dependency_digest  # noqa: E402
+from ael_gate_inputs import gate_input_digest  # noqa: E402
+from ael_gate_imports import add_import_targets, python_modules  # noqa: E402
+from ael_gate_argv import command_executes_path  # noqa: E402
+from ael_gate_language import (  # noqa: E402
     MAX_LANGUAGE_SOURCE_CHARS, shell_words,
 )
-from harness_gate_manifest import CandidateManifest, GateInputError  # noqa: E402
-from harness_gate_python import PythonEnvironment  # noqa: E402
-from harness_gate_tools import tool_dependency_entries  # noqa: E402
+from ael_gate_manifest import CandidateManifest, GateInputError  # noqa: E402
+from ael_gate_python import PythonEnvironment  # noqa: E402
+from ael_gate_tools import tool_dependency_entries  # noqa: E402
 
 
 class E4GateLanguageTest(unittest.TestCase):
@@ -36,10 +36,10 @@ class E4GateLanguageTest(unittest.TestCase):
         self.assertNotEqual(before, after)
 
     def test_gate_dependency_modules_and_review_suites_are_manifested(self) -> None:
-        manifest = (ROOT / ".harness/harness-manifest.yaml").read_text(encoding="utf-8")
+        manifest = (ROOT / ".ael/ael-manifest.yaml").read_text(encoding="utf-8")
         for relative in (
-            ".harness/scripts/harness_gate_argv.py",
-            ".harness/scripts/harness_gate_imports.py",
+            ".ael/scripts/ael_gate_argv.py",
+            ".ael/scripts/ael_gate_imports.py",
             "tests/test_e4_gate_language.py",
             "tests/test_e4_review_hardening.py",
         ):
@@ -442,7 +442,7 @@ class E4GateLanguageTest(unittest.TestCase):
                     raise SyntaxError("selected interpreter syntax")
                 return real_parse(source, *args, **kwargs)
 
-            with mock.patch("harness_gate_tools.ast.parse", side_effect=selected_parse), \
+            with mock.patch("ael_gate_tools.ast.parse", side_effect=selected_parse), \
                     self.assertRaises(GateInputError) as raised:
                 execution_dependency_digest(adapter, [sys.executable, str(adapter)])
 
@@ -451,7 +451,7 @@ class E4GateLanguageTest(unittest.TestCase):
     def test_cacheable_gate_binds_selected_interpreter_startup_environment(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            scripts = root / ".harness/scripts"
+            scripts = root / ".ael/scripts"
             interpreter = root / "venv/bin/python3"
             site_packages = root / "venv/lib/python3.12/site-packages"
             scripts.mkdir(parents=True)
@@ -600,7 +600,7 @@ class E4GateLanguageTest(unittest.TestCase):
                     raise SyntaxError("selected interpreter syntax")
                 return real_parse(source, *args, **kwargs)
 
-            with mock.patch("harness_gate_language.ast.parse", side_effect=selected_parse), \
+            with mock.patch("ael_gate_language.ast.parse", side_effect=selected_parse), \
                     self.assertRaises(GateInputError) as raised:
                 execution_dependency_digest(
                     adapter, [sys.executable, "-c", "FUTURE_ARGV_SYNTAX", str(adapter)],
@@ -626,7 +626,7 @@ class E4GateLanguageTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             harness = root / "harness"
-            scripts = harness / ".harness/scripts"
+            scripts = harness / ".ael/scripts"
             site_packages = root / "external/site-packages"
             package = site_packages / "provider_sdk"
             scripts.mkdir(parents=True)
@@ -653,7 +653,7 @@ class E4GateLanguageTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             harness = root / "harness"
-            scripts = harness / ".harness/scripts"
+            scripts = harness / ".ael/scripts"
             site_packages = root / "external/site-packages"
             package = site_packages / "provider_sdk"
             scripts.mkdir(parents=True)
@@ -682,7 +682,7 @@ class E4GateLanguageTest(unittest.TestCase):
     def test_shared_dynamic_import_memo_marks_every_gate_uncacheable(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            scripts = root / ".harness/scripts"
+            scripts = root / ".ael/scripts"
             scripts.mkdir(parents=True)
             wrapper = scripts / "gate.py"
             wrapper.write_text(
@@ -774,7 +774,7 @@ class E4GateLanguageTest(unittest.TestCase):
     def test_wrapper_inline_dynamic_python_import_downgrades_gate_cache(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            scripts = root / ".harness/scripts"
+            scripts = root / ".ael/scripts"
             scripts.mkdir(parents=True)
             wrapper = scripts / "gate.sh"
             wrapper.write_text(
@@ -920,7 +920,7 @@ class E4GateLanguageTest(unittest.TestCase):
                     raise SyntaxError("future syntax")
                 return real_parse(source, *args, **kwargs)
 
-            with mock.patch("harness_gate_python.ast.parse", side_effect=versioned_parse):
+            with mock.patch("ael_gate_python.ast.parse", side_effect=versioned_parse):
                 gate_input_digest(
                     "structure", harness=root, product=root, changed_files=[],
                     planning_gate=root / "missing.json", planning_credential={},
@@ -947,7 +947,7 @@ class E4GateLanguageTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             harness = root / "harness"
-            scripts = harness / ".harness/scripts"
+            scripts = harness / ".ael/scripts"
             scripts.mkdir(parents=True)
             wrapper = scripts / "gate.py"
             wrapper.write_text("import future_provider\n", encoding="utf-8")

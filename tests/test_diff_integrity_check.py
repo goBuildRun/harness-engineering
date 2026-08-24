@@ -10,7 +10,7 @@ from types import SimpleNamespace
 
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / ".harness" / "scripts"))
+sys.path.insert(0, str(ROOT / ".ael" / "scripts"))
 
 from diff_integrity_check import (  # noqa: E402
     changed_for_layout, check_commit_integrity, check_diff_integrity,
@@ -107,7 +107,7 @@ class DiffIntegrityCheckTest(unittest.TestCase):
             (repo / "new.md").write_text("content\n", encoding="utf-8")
             layout = SimpleNamespace(
                 product_root=repo,
-                agent_workspace=repo / "harness-workspace/runs",
+                agent_workspace=repo / "ael-workspace/runs",
             )
 
             self.assertEqual(changed_for_layout(layout), ["new.md"])

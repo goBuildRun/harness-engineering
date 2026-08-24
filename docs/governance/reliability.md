@@ -6,9 +6,9 @@
 
 - 应用支持按 git worktree 启动独立实例（业务项目配置后启用）
 - 日志/指标/追踪应对 Agent 可查询（LogQL / PromQL 或等价本地栈）
-- 受控执行：`.harness/scripts/run_in_sandbox.sh` 默认 controlled argv；需要容器隔离时设置 `HARNESS_SANDBOX_BACKEND=docker`，首次启用或配置变化后运行 `python3 .harness/scripts/sandbox_acceptance.py --cwd "$PWD"` 做可选实机验收
-- 前端验证：`.harness/scripts/browser_qa.py`（真实 Playwright 入口；未安装或页面异常会 block）
-- 浏览器 QA 环境：`.harness/scripts/browser_qa_setup.sh check|install`；CI 设置 `HARNESS_BROWSER_QA_URL` 后启用 Playwright 镜像 job
+- 受控执行：`.ael/scripts/run_in_sandbox.sh` 默认 controlled argv；需要容器隔离时设置 `AEL_SANDBOX_BACKEND=docker`，首次启用或配置变化后运行 `python3 .ael/scripts/sandbox_acceptance.py --cwd "$PWD"` 做可选实机验收
+- 前端验证：`.ael/scripts/browser_qa.py`（真实 Playwright 入口；未安装或页面异常会 block）
+- 浏览器 QA 环境：`.ael/scripts/browser_qa_setup.sh check|install`；CI 设置 `AEL_BROWSER_QA_URL` 后启用 Playwright 镜像 job
 - 已有项目接入报告应能重复生成；报告差异用于发现服务目录、测试入口、CI 或技术栈漂移
 - 相同 fingerprint 的确定性检查应复用结果；人工、生产副作用和部署/回滚证据必须绑定当前 commit，不能缓存复用
 

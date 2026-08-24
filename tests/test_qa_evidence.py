@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = ROOT / ".harness" / "scripts"
+SCRIPTS = ROOT / ".ael" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 from qa_evidence_check import qa_candidates, report_passes, validate_qa_json  # noqa: E402
@@ -39,10 +39,10 @@ class QaEvidenceTest(unittest.TestCase):
     def test_activation_rejects_invalid_gate_identity_without_external_write(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product = Path(tmp) / "product"
-            task = product / "harness-workspace/planning/tasks/unsafe-gate"
+            task = product / "ael-workspace/planning/tasks/unsafe-gate"
             task.mkdir(parents=True)
-            (product / "harness-workspace/project.yaml").write_text(
-                "product:\n  id: demo\nworkspace:\n  root: harness-workspace\n  planning: planning\n  runs: runs\n",
+            (product / "ael-workspace/project.yaml").write_text(
+                "product:\n  id: demo\nworkspace:\n  root: ael-workspace\n  planning: planning\n  runs: runs\n",
                 encoding="utf-8",
             )
             (task / "planning_gate_pass.json").write_text(json.dumps({
@@ -56,35 +56,35 @@ class QaEvidenceTest(unittest.TestCase):
             self.assertEqual(result, {"ok": False, "reason": "TASK_ID_INVALID"})
             with self.assertRaisesRegex(ValueError, "TASK_ID_INVALID"):
                 task_workspace_dir(layout, "../../escape")
-            self.assertFalse((product / "harness-workspace/escape").exists())
+            self.assertFalse((product / "ael-workspace/escape").exists())
 
     def test_qa_sign_off_rejects_invalid_active_identity_without_external_write(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product = Path(tmp) / "product"
-            runs = product / "harness-workspace/runs"
+            runs = product / "ael-workspace/runs"
             runs.mkdir(parents=True)
-            (product / "harness-workspace/project.yaml").write_text(
-                "product:\n  id: demo\nworkspace:\n  root: harness-workspace\n  runs: runs\n  evidence: evidence\n",
+            (product / "ael-workspace/project.yaml").write_text(
+                "product:\n  id: demo\nworkspace:\n  root: ael-workspace\n  runs: runs\n  evidence: evidence\n",
                 encoding="utf-8",
             )
             (runs / "active_task.json").write_text(json.dumps({"work_item_id": "../../escape"}))
 
             completed = subprocess.run(
                 ["bash", str(SCRIPTS / "qa_sign_off.sh"), "T1", "fail", "reject identity"],
-                cwd=product, env={**os.environ, "HARNESS_PRODUCT_ROOT": str(product)},
+                cwd=product, env={**os.environ, "AEL_PRODUCT_ROOT": str(product)},
                 text=True, capture_output=True, check=True,
             )
 
             self.assertEqual(json.loads(completed.stdout)["reason"], "ACTIVE_TASK_ID_INVALID")
-            self.assertFalse((product / "harness-workspace/escape").exists())
+            self.assertFalse((product / "ael-workspace/escape").exists())
 
     def test_malformed_active_task_cannot_fall_back_to_legacy_qa_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product = Path(tmp) / "product"
-            runs = product / "harness-workspace/runs"
+            runs = product / "ael-workspace/runs"
             runs.mkdir(parents=True)
-            (product / "harness-workspace/project.yaml").write_text(
-                "product:\n  id: demo\nworkspace:\n  root: harness-workspace\n  runs: runs\n  evidence: evidence\n",
+            (product / "ael-workspace/project.yaml").write_text(
+                "product:\n  id: demo\nworkspace:\n  root: ael-workspace\n  runs: runs\n  evidence: evidence\n",
                 encoding="utf-8",
             )
             (runs / "active_task.json").write_text("[]")
@@ -92,7 +92,7 @@ class QaEvidenceTest(unittest.TestCase):
                 "decision": "pass", "task_id": "T1", "reviewer": "qa-evaluator",
                 "structure_gate": "pass", "paths_reviewed": [],
             }))
-            env = {**os.environ, "HARNESS_PRODUCT_ROOT": str(product)}
+            env = {**os.environ, "AEL_PRODUCT_ROOT": str(product)}
 
             sign_off = subprocess.run(
                 ["bash", str(SCRIPTS / "qa_sign_off.sh"), "T1", "fail", "must block"],
@@ -113,11 +113,11 @@ class QaEvidenceTest(unittest.TestCase):
     def test_qa_sign_off_scopes_lean_runtime_task_id(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product = Path(tmp)
-            workspace = product / "harness-workspace"
+            workspace = product / "ael-workspace"
             runs = workspace / "runs"
             runs.mkdir(parents=True)
             (workspace / "project.yaml").write_text(
-                "product:\n  id: demo\nworkspace:\n  root: harness-workspace\n  runs: runs\n  evidence: evidence\n",
+                "product:\n  id: demo\nworkspace:\n  root: ael-workspace\n  runs: runs\n  evidence: evidence\n",
                 encoding="utf-8",
             )
             (runs / "active_task.json").write_text(
@@ -128,7 +128,7 @@ class QaEvidenceTest(unittest.TestCase):
             completed = subprocess.run(
                 ["bash", str(SCRIPTS / "qa_sign_off.sh"), "T1", "fail", "expected rejection"],
                 cwd=product,
-                env={**os.environ, "HARNESS_PRODUCT_ROOT": str(product)},
+                env={**os.environ, "AEL_PRODUCT_ROOT": str(product)},
                 text=True,
                 capture_output=True,
                 check=True,
@@ -142,13 +142,13 @@ class QaEvidenceTest(unittest.TestCase):
     def test_qa_sign_off_does_not_append_duplicate_task_document_entry(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product = Path(tmp)
-            workspace = product / "harness-workspace"
+            workspace = product / "ael-workspace"
             runs = workspace / "runs"
             task = workspace / "planning/tasks/task-WI-42"
             runs.mkdir(parents=True)
             task.mkdir(parents=True)
             (workspace / "project.yaml").write_text(
-                "product:\n  id: demo\nworkspace:\n  root: harness-workspace\n"
+                "product:\n  id: demo\nworkspace:\n  root: ael-workspace\n"
                 "  planning: planning\n  runs: runs\n  evidence: evidence\n",
                 encoding="utf-8",
             )
@@ -164,7 +164,7 @@ class QaEvidenceTest(unittest.TestCase):
             subprocess.run(
                 ["bash", str(SCRIPTS / "qa_sign_off.sh"), "T1", "fail", "portable"],
                 cwd=product,
-                env={**os.environ, "HARNESS_PRODUCT_ROOT": str(product)},
+                env={**os.environ, "AEL_PRODUCT_ROOT": str(product)},
                 text=True,
                 capture_output=True,
                 check=True,
@@ -177,9 +177,9 @@ class QaEvidenceTest(unittest.TestCase):
     def test_work_item_never_falls_back_to_global_qa_receipt(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product = Path(tmp)
-            (product / "harness-workspace").mkdir()
-            (product / "harness-workspace/project.yaml").write_text(
-                "product:\n  id: demo\nworkspace:\n  root: harness-workspace\n  runs: runs\n  evidence: evidence\n",
+            (product / "ael-workspace").mkdir()
+            (product / "ael-workspace/project.yaml").write_text(
+                "product:\n  id: demo\nworkspace:\n  root: ael-workspace\n  runs: runs\n  evidence: evidence\n",
                 encoding="utf-8",
             )
             layout = load_layout(ROOT, product)

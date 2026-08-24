@@ -11,7 +11,7 @@ from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = ROOT / ".harness" / "scripts"
+SCRIPTS = ROOT / ".ael" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 import work_item  # noqa: E402
@@ -23,7 +23,7 @@ class WorkItemClosePurityTest(unittest.TestCase):
         provider.name = "noop"
         provider.update_status.return_value = (True, "NOOP_UPDATED")
         args = SimpleNamespace(
-            harness_root=str(ROOT), id="WI-42", status="in_progress", note="started",
+            ael_root=str(ROOT), id="WI-42", status="in_progress", note="started",
         )
         output = io.StringIO()
         with mock.patch("work_item.get_provider", return_value=provider), redirect_stdout(output):

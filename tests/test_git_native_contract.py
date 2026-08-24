@@ -14,7 +14,7 @@ class GitNativeContractTest(unittest.TestCase):
             "platform: github", "required_check:", "harness-commit-acceptance",
             "GITHUB_TOKEN", "workflow_run", "required_run_id",
         )
-        roots = (ROOT / ".harness" / "scripts", ROOT / ".harness" / "templates")
+        roots = (ROOT / ".ael" / "scripts", ROOT / ".ael" / "templates")
         findings = []
         for base in roots:
             for path in base.rglob("*"):

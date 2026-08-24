@@ -1,13 +1,18 @@
 ## Summary
 
 
-## Harness Binding
+## AEL Binding
 
+AEL-Task: <task-id>
+AEL-Scope: <repo-relative-root-or-.>
+AEL-Tier: standard
+
+<!-- Legacy aliases: keep synchronized until downstream automation has migrated. -->
 Harness-Task: <task-id>
 Harness-Scope: <repo-relative-root-or-.>
 Harness-Tier: standard
 
 ## Validation
 
-- [ ] `harness finish` passed locally
+- [ ] `ael finish` passed locally
 - [ ] Scope and tier match the actual diff

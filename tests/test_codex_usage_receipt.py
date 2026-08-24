@@ -10,9 +10,9 @@ from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / ".harness" / "scripts" / "codex_usage_receipt.py"
+SCRIPT = ROOT / ".ael" / "scripts" / "codex_usage_receipt.py"
 import sys
-sys.path.insert(0, str(ROOT / ".harness" / "scripts"))
+sys.path.insert(0, str(ROOT / ".ael" / "scripts"))
 from codex_usage_receipt import automatic_receipt  # noqa: E402
 
 

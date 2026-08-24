@@ -11,15 +11,15 @@ from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = ROOT / ".harness" / "scripts"
+SCRIPTS = ROOT / ".ael" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
-import harness_cycle_release  # noqa: E402
-import harness_gc_runner  # noqa: E402
-from harness_cycle_stages import STAGE_ORDER, close_story_cycle, start_story_cycle  # noqa: E402
-from harness_gc_runner import invoke_gc_once, read_gc_result  # noqa: E402
-from harness_release_readback import validate as validate_readback  # noqa: E402
-from harness_runtime import canonical_digest, result_path  # noqa: E402
+import ael_cycle_release  # noqa: E402
+import ael_gc_runner  # noqa: E402
+from ael_cycle_stages import STAGE_ORDER, close_story_cycle, start_story_cycle  # noqa: E402
+from ael_gc_runner import invoke_gc_once, read_gc_result  # noqa: E402
+from ael_release_readback import validate as validate_readback  # noqa: E402
+from ael_runtime import canonical_digest, result_path  # noqa: E402
 
 
 class LifecycleReadbackHardeningTest(unittest.TestCase):
@@ -79,18 +79,18 @@ class LifecycleReadbackHardeningTest(unittest.TestCase):
             path.write_text("{}\n", encoding="utf-8")
             result = self.closed_result(path)
             with (
-                mock.patch.object(harness_cycle_release, "load_result", return_value=result),
-                mock.patch.object(harness_cycle_release, "dump_json") as emitted,
+                mock.patch.object(ael_cycle_release, "load_result", return_value=result),
+                mock.patch.object(ael_cycle_release, "dump_json") as emitted,
                 mock.patch.object(
-                    harness_cycle_release, "committed_candidate",
+                    ael_cycle_release, "committed_candidate",
                     return_value={"decision": "pass", "commit": "a" * 40},
                 ),
                 mock.patch.object(
-                    harness_cycle_release, "validate_readback",
+                    ael_cycle_release, "validate_readback",
                     return_value={"decision": "pass", "reason": "LIFECYCLE_READBACK_VALID"},
                 ),
                 mock.patch.object(
-                    harness_cycle_release, "verify_attestation",
+                    ael_cycle_release, "verify_attestation",
                     return_value={
                         "decision": "pass", "reason": "ATTESTATION_VALID",
                         "result": {
@@ -104,17 +104,17 @@ class LifecycleReadbackHardeningTest(unittest.TestCase):
                     },
                 ) as verify,
                 mock.patch.object(
-                    harness_cycle_release, "validate_current_release_evidence",
+                    ael_cycle_release, "validate_current_release_evidence",
                     return_value={"decision": "pass", "reason": "RELEASE_EVIDENCE_CURRENT"},
                     create=True,
                 ),
-                mock.patch.object(harness_cycle_release, "finish_stage") as finish,
-                mock.patch.object(harness_cycle_release, "atomic_write_result") as write,
+                mock.patch.object(ael_cycle_release, "finish_stage") as finish,
+                mock.patch.object(ael_cycle_release, "atomic_write_result") as write,
                 mock.patch.object(
-                    harness_cycle_release, "load_candidate_snapshot", return_value={"snapshot": True},
+                    ael_cycle_release, "load_candidate_snapshot", return_value={"snapshot": True},
                 ),
             ):
-                harness_cycle_release.cmd_release_ready(
+                ael_cycle_release.cmd_release_ready(
                     SimpleNamespace(
                         product_root=str(product), task_id="task-1", commit="HEAD", receipt="",
                     ),
@@ -138,7 +138,7 @@ class LifecycleReadbackHardeningTest(unittest.TestCase):
             "lifecycle": {"provider": "noop", "decision": "pass"},
         }
 
-        outcome = harness_cycle_release._attestation_result_status(
+        outcome = ael_cycle_release._attestation_result_status(
             live, {"result": attested},
         )
 
@@ -152,15 +152,15 @@ class LifecycleReadbackHardeningTest(unittest.TestCase):
             path.write_text("{}\n", encoding="utf-8")
             result = self.closed_result(path)
             with (
-                mock.patch.object(harness_cycle_release, "load_result", return_value=result),
+                mock.patch.object(ael_cycle_release, "load_result", return_value=result),
                 mock.patch.object(
-                    harness_cycle_release, "_guarded_release_integrity",
+                    ael_cycle_release, "_guarded_release_integrity",
                     return_value={"decision": "block", "reason": "RELEASE_EVIDENCE_MANIFEST_STALE"},
                 ),
-                mock.patch.object(harness_cycle_release, "atomic_write_result") as write,
-                mock.patch.object(harness_cycle_release, "dump_json"),
+                mock.patch.object(ael_cycle_release, "atomic_write_result") as write,
+                mock.patch.object(ael_cycle_release, "dump_json"),
             ):
-                harness_cycle_release.cmd_release_ready(
+                ael_cycle_release.cmd_release_ready(
                     SimpleNamespace(
                         product_root=str(product), task_id="task-1", commit="HEAD", receipt="",
                     ),
@@ -191,20 +191,20 @@ class LifecycleReadbackHardeningTest(unittest.TestCase):
             result["cycle"]["current_stage"] = "finalize"
             result["cycle"]["ended_at"] = "2026-08-22T00:10:00.000Z"
             with (
-                mock.patch.object(harness_cycle_release, "load_result", return_value=result),
+                mock.patch.object(ael_cycle_release, "load_result", return_value=result),
                 mock.patch.object(
-                    harness_cycle_release, "_guarded_release_integrity",
+                    ael_cycle_release, "_guarded_release_integrity",
                     return_value={"decision": "pass", "commit": "a" * 40},
                 ),
                 mock.patch.object(
-                    harness_cycle_release, "validate_readback",
+                    ael_cycle_release, "validate_readback",
                     return_value={"decision": "pass", "reason": "LIFECYCLE_READBACK_VALID"},
                 ),
-                mock.patch.object(harness_cycle_release, "atomic_write_result") as write,
-                mock.patch.object(harness_cycle_release, "dump_json") as emitted,
-                mock.patch.object(harness_cycle_release, "finish_stage") as finish,
+                mock.patch.object(ael_cycle_release, "atomic_write_result") as write,
+                mock.patch.object(ael_cycle_release, "dump_json") as emitted,
+                mock.patch.object(ael_cycle_release, "finish_stage") as finish,
             ):
-                harness_cycle_release.cmd_release_ready(
+                ael_cycle_release.cmd_release_ready(
                     SimpleNamespace(
                         product_root=str(product), task_id="task-1", commit="HEAD", receipt="",
                     ),
@@ -225,27 +225,27 @@ class LifecycleReadbackHardeningTest(unittest.TestCase):
             path.write_text("{}\n", encoding="utf-8")
             result = self.closed_result(path)
             with (
-                mock.patch.object(harness_cycle_release, "load_result", return_value=result),
+                mock.patch.object(ael_cycle_release, "load_result", return_value=result),
                 mock.patch.object(
-                    harness_cycle_release, "_guarded_release_integrity",
+                    ael_cycle_release, "_guarded_release_integrity",
                     side_effect=[
                         {"decision": "block", "reason": "RELEASE_EVIDENCE_MANIFEST_STALE"},
                         {"decision": "pass", "commit": "a" * 40},
                     ],
                 ),
                 mock.patch.object(
-                    harness_cycle_release, "validate_readback",
+                    ael_cycle_release, "validate_readback",
                     return_value={"decision": "pass", "reason": "LIFECYCLE_READBACK_VALID"},
                 ),
-                mock.patch.object(harness_cycle_release, "atomic_write_result"),
-                mock.patch.object(harness_cycle_release, "dump_json") as emitted,
-                mock.patch.object(harness_cycle_release, "finish_stage") as finish,
+                mock.patch.object(ael_cycle_release, "atomic_write_result"),
+                mock.patch.object(ael_cycle_release, "dump_json") as emitted,
+                mock.patch.object(ael_cycle_release, "finish_stage") as finish,
             ):
                 args = SimpleNamespace(
                     product_root=str(product), task_id="task-1", commit="HEAD", receipt="",
                 )
-                harness_cycle_release.cmd_release_ready(args, refresh_assurance=mock.Mock())
-                harness_cycle_release.cmd_release_ready(args, refresh_assurance=mock.Mock())
+                ael_cycle_release.cmd_release_ready(args, refresh_assurance=mock.Mock())
+                ael_cycle_release.cmd_release_ready(args, refresh_assurance=mock.Mock())
 
         self.assertEqual(emitted.call_args.args[0]["reason"], "STORY_ALREADY_READY_TO_RELEASE")
         self.assertEqual(result["decision"], "pass")
@@ -261,30 +261,30 @@ class LifecycleReadbackHardeningTest(unittest.TestCase):
             path.write_text("{}\n", encoding="utf-8")
             result = self.closed_result(path)
             with (
-                mock.patch.object(harness_cycle_release, "load_result", return_value=result),
+                mock.patch.object(ael_cycle_release, "load_result", return_value=result),
                 mock.patch.object(
-                    harness_cycle_release, "_closed_cycle_status",
+                    ael_cycle_release, "_closed_cycle_status",
                     side_effect=[
                         {"decision": "block", "reason": "STORY_LEDGER_INVALID"},
                         {"decision": "pass", "reason": "STORY_CYCLE_CLOSED"},
                     ],
                 ),
                 mock.patch.object(
-                    harness_cycle_release, "_guarded_release_integrity",
+                    ael_cycle_release, "_guarded_release_integrity",
                     return_value={"decision": "pass", "commit": "a" * 40},
                 ),
                 mock.patch.object(
-                    harness_cycle_release, "validate_readback",
+                    ael_cycle_release, "validate_readback",
                     return_value={"decision": "pass", "reason": "LIFECYCLE_READBACK_VALID"},
                 ),
-                mock.patch.object(harness_cycle_release, "atomic_write_result"),
-                mock.patch.object(harness_cycle_release, "dump_json") as emitted,
+                mock.patch.object(ael_cycle_release, "atomic_write_result"),
+                mock.patch.object(ael_cycle_release, "dump_json") as emitted,
             ):
                 args = SimpleNamespace(
                     product_root=str(product), task_id="task-1", commit="HEAD", receipt="",
                 )
-                harness_cycle_release.cmd_release_ready(args, refresh_assurance=mock.Mock())
-                harness_cycle_release.cmd_release_ready(args, refresh_assurance=mock.Mock())
+                ael_cycle_release.cmd_release_ready(args, refresh_assurance=mock.Mock())
+                ael_cycle_release.cmd_release_ready(args, refresh_assurance=mock.Mock())
 
         self.assertEqual(emitted.call_args.args[0]["reason"], "STORY_ALREADY_READY_TO_RELEASE")
         self.assertEqual(result["decision"], "pass")
@@ -305,27 +305,27 @@ class LifecycleReadbackHardeningTest(unittest.TestCase):
                 "cycle": {"canonical_finish": {"decision": "pass", "input_digest": "finish"}},
             }
             with (
-                mock.patch.object(harness_cycle_release, "load_result", return_value=result),
+                mock.patch.object(ael_cycle_release, "load_result", return_value=result),
                 mock.patch.object(
-                    harness_cycle_release, "budget_status", return_value={"decision": "pass"},
+                    ael_cycle_release, "budget_status", return_value={"decision": "pass"},
                 ),
                 mock.patch.object(
-                    harness_cycle_release, "stage_budget_status", return_value={"decision": "pass"},
+                    ael_cycle_release, "stage_budget_status", return_value={"decision": "pass"},
                 ),
                 mock.patch.object(
-                    harness_cycle_release, "_guarded_release_integrity",
+                    ael_cycle_release, "_guarded_release_integrity",
                     return_value={"decision": "pass", "commit": "a" * 40},
                 ),
                 mock.patch.object(
-                    harness_cycle_release, "validate_readback", return_value={"decision": "pass"},
+                    ael_cycle_release, "validate_readback", return_value={"decision": "pass"},
                 ),
                 mock.patch.object(
-                    harness_cycle_release, "finish_stage", side_effect=OSError("invalid ledger"),
+                    ael_cycle_release, "finish_stage", side_effect=OSError("invalid ledger"),
                 ),
-                mock.patch.object(harness_cycle_release, "atomic_write_result") as write,
-                mock.patch.object(harness_cycle_release, "dump_json") as emitted,
+                mock.patch.object(ael_cycle_release, "atomic_write_result") as write,
+                mock.patch.object(ael_cycle_release, "dump_json") as emitted,
             ):
-                harness_cycle_release.cmd_release_ready(
+                ael_cycle_release.cmd_release_ready(
                     SimpleNamespace(
                         product_root=str(product), task_id="task-1", commit="HEAD", receipt="",
                     ),
@@ -355,12 +355,12 @@ class GCRunnerHardeningTest(unittest.TestCase):
                 "subject_digest": "subject", "triggers": [], "finding_details": [],
             }
             with (
-                mock.patch.dict(os.environ, {"HARNESS_GC_AGENT_ARGV": '["gc-agent"]'}),
+                mock.patch.dict(os.environ, {"AEL_GC_AGENT_ARGV": '["gc-agent"]'}),
                 mock.patch.object(
-                    harness_gc_runner, "build_gc_context", return_value=({}, 2),
+                    ael_gc_runner, "build_gc_context", return_value=({}, 2),
                 ),
                 mock.patch.object(
-                    harness_gc_runner, "run_process_group",
+                    ael_gc_runner, "run_process_group",
                     return_value=SimpleNamespace(returncode=1), create=True,
                 ) as runner,
             ):
@@ -386,9 +386,9 @@ class GCRunnerHardeningTest(unittest.TestCase):
                 "subject_digest": "subject", "triggers": [], "finding_details": [],
             }
             with (
-                mock.patch.dict(os.environ, {"HARNESS_GC_AGENT_ARGV": '["missing-gc-agent"]'}),
-                mock.patch.object(harness_gc_runner, "build_gc_context", return_value=({}, 2)),
-                mock.patch.object(harness_gc_runner, "run_process_group", side_effect=OSError("missing")),
+                mock.patch.dict(os.environ, {"AEL_GC_AGENT_ARGV": '["missing-gc-agent"]'}),
+                mock.patch.object(ael_gc_runner, "build_gc_context", return_value=({}, 2)),
+                mock.patch.object(ael_gc_runner, "run_process_group", side_effect=OSError("missing")),
             ):
                 outcome = invoke_gc_once(
                     result, root, mechanical, ["feature.py"], root, timeout_ms=10,

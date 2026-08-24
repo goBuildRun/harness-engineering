@@ -12,7 +12,7 @@ from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT_DIR = ROOT / ".harness" / "scripts"
+SCRIPT_DIR = ROOT / ".ael" / "scripts"
 sys.path.insert(0, str(SCRIPT_DIR))
 
 from worktree_baseline import capture_baseline  # noqa: E402
@@ -23,26 +23,26 @@ from plan_sync_check import (  # noqa: E402
     task_changed,
 )
 from business_paths import find_business_paths, load_business_roots  # noqa: E402
-from harness_gate_work_items import prepare_ci_task  # noqa: E402
-from harness_runtime import canonical_digest, git_changed  # noqa: E402
+from ael_gate_work_items import prepare_ci_task  # noqa: E402
+from ael_runtime import canonical_digest, git_changed  # noqa: E402
 from workspace_paths import load_layout  # noqa: E402
 
 
 class PlanSyncBaselineTest(unittest.TestCase):
     def _product(self, root: Path) -> tuple[Path, Path, Path]:
         product = root / "product"
-        task_dir = product / "harness-workspace" / "planning" / "tasks" / "2026-07-26-wi-demo"
+        task_dir = product / "ael-workspace" / "planning" / "tasks" / "2026-07-26-wi-demo"
         task_dir.mkdir(parents=True)
         (product / "services" / "gateway").mkdir(parents=True)
         (product / "services" / "gateway" / "legacy.py").write_text("base\n", encoding="utf-8")
-        (product / "harness-workspace" / "project.yaml").write_text(
+        (product / "ael-workspace" / "project.yaml").write_text(
             """
 product:
   id: demo
   name: Demo
   profile: generic
 workspace:
-  root: harness-workspace
+  root: ael-workspace
   planning: planning
   runs: runs
   knowledge: knowledge
@@ -62,19 +62,19 @@ workspace:
         subprocess.run(["git", "add", "."], cwd=product, check=True)
         subprocess.run(["git", "commit", "-qm", "base"], cwd=product, check=True)
 
-        workspace = product / "harness-workspace" / "runs" / "tasks" / "wi-demo"
+        workspace = product / "ael-workspace" / "runs" / "tasks" / "wi-demo"
         workspace.mkdir(parents=True)
-        active = product / "harness-workspace" / "runs" / "active_task.json"
+        active = product / "ael-workspace" / "runs" / "active_task.json"
         active.write_text(json.dumps({"work_item_id": "wi-demo"}), encoding="utf-8")
         return product, task_dir, workspace / "worktree_baseline.json"
 
     def _run(self, product: Path, task_dir: Path, *extra: str) -> dict:
-        env = {**os.environ, "HARNESS_PRODUCT_ROOT": str(product)}
+        env = {**os.environ, "AEL_PRODUCT_ROOT": str(product)}
         out = subprocess.check_output(
             [
                 sys.executable,
                 str(SCRIPT_DIR / "plan_sync_check.py"),
-                "--harness-root",
+                "--ael-root",
                 str(ROOT),
                 "--product-root",
                 str(product),
@@ -114,7 +114,7 @@ workspace:
     def test_ci_plan_and_baseline_resolve_without_shared_active_task(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product, task_dir, _legacy_baseline = self._product(Path(tmp))
-            runs = product / "harness-workspace/runs"
+            runs = product / "ael-workspace/runs"
             (runs / "active_task.json").unlink()
             baseline = runs / "tasks/task-1/worktree_baseline.json"
             baseline.parent.mkdir(parents=True)
@@ -128,8 +128,8 @@ workspace:
             }))
             layout = load_layout(ROOT, product)
             with mock.patch.dict(os.environ, {
-                "HARNESS_CI_TASK_ID": "task-1",
-                "HARNESS_CI_PLANNING_GATE": str(credential),
+                "AEL_CI_TASK_ID": "task-1",
+                "AEL_CI_PLANNING_GATE": str(credential),
             }, clear=True):
                 active_id, active_baseline = active_task_baseline(layout)
                 self.assertEqual(active_id, "task-1")
@@ -154,18 +154,18 @@ workspace:
             changed = git_changed(product, "HEAD")
             self.assertIn("services/gateway/unplanned.py", changed)
             self.assertTrue(prepare_ci_task(ROOT, product, "wi-demo", changed_files=changed))
-            credential = product / "harness-workspace/runs/ci/wi-demo/planning_gate_pass.json"
+            credential = product / "ael-workspace/runs/ci/wi-demo/planning_gate_pass.json"
             env = {
                 **os.environ,
-                "HARNESS_PRODUCT_ROOT": str(product),
-                "HARNESS_CI_TASK_ID": "wi-demo",
-                "HARNESS_CI_PLANNING_GATE": str(credential),
-                "HARNESS_CI_CHANGED_FILES_DIGEST": canonical_digest(changed),
+                "AEL_PRODUCT_ROOT": str(product),
+                "AEL_CI_TASK_ID": "wi-demo",
+                "AEL_CI_PLANNING_GATE": str(credential),
+                "AEL_CI_CHANGED_FILES_DIGEST": canonical_digest(changed),
             }
             output = subprocess.check_output(
                 [
                     sys.executable, str(SCRIPT_DIR / "plan_sync_check.py"),
-                    "--harness-root", str(ROOT), "--product-root", str(product),
+                    "--ael-root", str(ROOT), "--product-root", str(product),
                     "--task-dir", str(task_dir),
                 ],
                 cwd=ROOT,
@@ -180,9 +180,9 @@ workspace:
     def test_lean_task_id_selects_active_plan_over_stale_gate(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product, task_dir, _baseline = self._product(Path(tmp))
-            runs = product / "harness-workspace/runs"
+            runs = product / "ael-workspace/runs"
             (runs / "active_task.json").write_text(json.dumps({"task_id": "wi-demo"}), encoding="utf-8")
-            stale = product / "harness-workspace/planning/tasks/2026-07-25-wi-stale"
+            stale = product / "ael-workspace/planning/tasks/2026-07-25-wi-stale"
             stale.mkdir()
             (stale / "03-实施方案.md").write_text(
                 "| ID | write_files |\n|---|---|\n| T1 | `services/stale.py` |\n",
@@ -199,7 +199,7 @@ workspace:
                 [
                     sys.executable,
                     str(SCRIPT_DIR / "plan_sync_check.py"),
-                    "--harness-root",
+                    "--ael-root",
                     str(ROOT),
                     "--product-root",
                     str(product),
@@ -212,7 +212,7 @@ workspace:
     def test_active_plan_does_not_inherit_scope_from_a_newer_unrelated_task(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product, task_dir, baseline = self._product(Path(tmp))
-            newer = product / "harness-workspace/planning/tasks/2026-08-15-wi-unrelated"
+            newer = product / "ael-workspace/planning/tasks/2026-08-15-wi-unrelated"
             newer.mkdir()
             (newer / "03-实施方案.md").write_text(
                 "| ID | write_files |\n|---|---|\n| T1 | `services/unrelated/new.py` |\n",
@@ -230,7 +230,7 @@ workspace:
                 [
                     sys.executable,
                     str(SCRIPT_DIR / "plan_sync_check.py"),
-                    "--harness-root",
+                    "--ael-root",
                     str(ROOT),
                     "--product-root",
                     str(product),
@@ -264,7 +264,7 @@ workspace:
     def test_plan_sync_accepts_explicit_business_root_for_submodule_pointer(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product, task_dir, baseline = self._product(Path(tmp))
-            (product / "harness-workspace" / "project.yaml").write_text(
+            (product / "ael-workspace" / "project.yaml").write_text(
                 """
 product:
   id: demo
@@ -272,7 +272,7 @@ platform_product:
   source_roots:
     runtime: deer-flow
 workspace:
-  root: harness-workspace
+  root: ael-workspace
   planning: planning
   runs: runs
   knowledge: knowledge
@@ -293,7 +293,7 @@ workspace:
 
             layout = load_layout(ROOT, product)
             roots = load_business_roots(ROOT, product_root=product)
-            self.assertEqual(roots, ("deer-flow/", "harness-workspace/"))
+            self.assertEqual(roots, ("deer-flow/", "ael-workspace/"))
             self.assertIn("deer-flow", extract_planned_paths(layout, str(task_dir)))
             self.assertIn("deer-flow", task_changed(layout))
 

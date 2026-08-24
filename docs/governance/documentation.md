@@ -2,21 +2,21 @@
 
 > 初始审查日期：2026-06-20
 > 最近复核：2026-08-23
-> 基准实态：Agent Engineering Lifecycle 已从 embedded harness 调整为 **harness-engineering `harness-engineering/` + product-owned `harness-workspace/`**。
+> 基准实态：BuildRun Agent Engineering Lifecycle 已从 embedded harness 调整为 **buildrun-agent-engineering-lifecycle `buildrun-agent-engineering-lifecycle/` + product-owned `ael-workspace/`**。
 
 ## 1. 审查结论
 
 ## 1.0 命名基准
 
-本仓库的正式产品名称是 **Agent Engineering Lifecycle**。`harness-engineering/`、`.harness/`、`harness-workspace/` 和 `harness` CLI 是保留的物理路径或兼容接口，不是产品名称。
+本仓库的正式产品名称是 **BuildRun Agent Engineering Lifecycle**。`buildrun-agent-engineering-lifecycle/`、`.ael/`、`ael-workspace/` 和 `harness` CLI 是保留的物理路径或兼容接口，不是产品名称。
 
 | 语义 | 正式名称 | 说明 |
 |------|----------|------|
-| Agent 执行运行时 | **BuildRun Harness** | 位于父平台的 `enterprise-agent/`；负责 Agent 的运行、恢复和运营 |
-| 产品研发变化与交付 | **Agent Engineering Lifecycle** | 本仓库；负责规划、实现、验证、接受、发布和知识沉淀 |
+| Agent 执行运行时 | **BuildRun Harness** | 位于父平台的 `buildrun-harness/`；负责 Agent 的运行、恢复和运营 |
+| 产品研发变化与交付 | **BuildRun Agent Engineering Lifecycle** | 本仓库；负责规划、实现、验证、接受、发布和知识沉淀 |
 | 上游方法引用 | **OpenAI Harness Engineering** | 仅在说明能力来源时使用，不代表本仓库产品名 |
 
-新文档不得使用 `Team Product R&D Harness`、`Team Product Harness` 或 `Enterprise Agent Harness`。历史记录、兼容字段和物理路径可以保留，但必须明确标注为历史/兼容语义。
+新文档不得使用 `Team Product R&D AEL`、`Team Product AEL` 或 `Enterprise Agent AEL`。历史记录、兼容字段和物理路径可以保留，但必须明确标注为历史/兼容语义。
 
 文档权威边界：
 
@@ -45,17 +45,17 @@
 
 | 维度 | 结果 | 说明 |
 |------|------|------|
-| harness-engineering / product workspace 分离 | ✅ 已对齐 | harness-engineering 保存运行时、脚本、模板、示例与本机台账；产品仓库保存产物、知识、证据 |
-| 位置无关启动 | ✅ 已对齐 | `harness_init.sh init/use/list` 指定产品根，不要求同级目录 |
-| 产品台账 | ✅ 已对齐 | `.harness/products/registry.yaml` + session context + `active-product.json` fallback 为本机状态，开源源码只提交 example |
-| 产品配置 | ✅ 已对齐 | `<product-root>/harness-workspace/project.yaml` 是产品 workspace 真相源 |
+| buildrun-agent-engineering-lifecycle / product workspace 分离 | ✅ 已对齐 | buildrun-agent-engineering-lifecycle 保存运行时、脚本、模板、示例与本机台账；产品仓库保存产物、知识、证据 |
+| 位置无关启动 | ✅ 已对齐 | `ael_init.sh init/use/list` 指定产品根，不要求同级目录 |
+| 产品台账 | ✅ 已对齐 | `.ael/products/registry.yaml` + session context + `active-product.json` fallback 为本机状态，开源源码只提交 example |
+| 产品配置 | ✅ 已对齐 | `<product-root>/ael-workspace/project.yaml` 是产品 workspace 真相源 |
 | BMAD Planning 命名 | ✅ 已对齐 | 历史 `Phase 0` 已重构为 BMAD Planning；产品目录使用 `planning/` |
-| 运行状态 | ✅ 已对齐 | `harness-workspace/runs/` |
-| 长期知识 | ✅ 已对齐 | `harness-workspace/knowledge/CONTEXT.md`、`LESSONS.md`、`REFERENCE_SYSTEMS.md`；全新项目由 BMAD planning 同步，已有项目由 intake review 沉淀 |
-| 证据与成长 | ✅ 已对齐 | `harness-workspace/evidence/{intake-reports,summaries,progress,test-reports,review-reports,growth-reports}` |
+| 运行状态 | ✅ 已对齐 | `ael-workspace/runs/` |
+| 长期知识 | ✅ 已对齐 | `ael-workspace/knowledge/CONTEXT.md`、`LESSONS.md`、`REFERENCE_SYSTEMS.md`；全新项目由 BMAD planning 同步，已有项目由 intake review 沉淀 |
+| 证据与成长 | ✅ 已对齐 | `ael-workspace/evidence/{intake-reports,summaries,progress,test-reports,review-reports,growth-reports}` |
 | 精简强制执行目标 | ✅ 已对齐 | `design/lean-enforcement.md` 是唯一目标设计；当前可运行命令仍以 `getting-started/cli.md` 为准 |
 | 三级接入保障 | ✅ 框架 fixture 已对齐 | `local|guarded|enforced` 描述部署防绕过强度，与 `lite|standard|strict` 任务深度正交；旧 `shadow|enforced` 字段暂作兼容；产品实际 authority 仍需独立安装审计 |
-| 已有项目接入 | ✅ 已对齐 | `docs/getting-started/brownfield-intake.md` + `harness_intake.sh` + 产品侧 `intake-reports/` |
+| 已有项目接入 | ✅ 已对齐 | `docs/getting-started/brownfield-intake.md` + `ael_intake.sh` + 产品侧 `intake-reports/` |
 | Flow-X 吸收 | ✅ 已对齐 | 7 字段任务契约、DAG 同步、知识沉淀、自我成长候选报告与 apply-review |
 | 兼容边界 | ✅ 已记录 | `workspace_paths.py` / `planning_gate_pass.json` 是新语义入口；`phase0_paths.py` / `phase0_pass.json` 只作为历史兼容名 |
 | 精简升级数据策略 | ✅ 已对齐 | 历史 workspace 原位可读；新任务写新格式；仅活动或重开任务补最小 `result.json`，外部 Work Item ID 不重建 |
@@ -65,7 +65,7 @@
 | Agent 分层规则 | ✅ 已对齐 | Agent 规则只强制共同不变式；独立 QA、浏览器 QA、GC、TEST/REVIEW 和人工 Gate 按当前兼容工序或 execution tier 触发 |
 | Profile 隔离 | ✅ 已对齐 | generic 默认不含产品目录或领域约束；未知显式 profile fail closed；产品规则只从对应 profile 加载 |
 | 公开仓库边界 | ✅ 已机械化 | `test_public_repository.py` 检查路径、内容、静态字符串拼接、本机状态和绝对路径；禁止通过拆字符串隐藏产品标识 |
-| 任务身份与层级 | ✅ 已对齐 | 任务模板区分 Harness Task ID、Work Item ID、planning level 与 execution tier；`任务编号`、`风险等级` 仅作当前脚本兼容镜像 |
+| 任务身份与层级 | ✅ 已对齐 | 任务模板区分 AEL Task ID、Work Item ID、planning level 与 execution tier；稳定字段 `harness_task_id`、`任务编号`、`风险等级` 仅作兼容镜像 |
 | 入口文档精简 | ✅ 已对齐 | README 与全景手册已收敛为入口和系统解释；命令、配置、成熟度和技术债继续由各自权威文档维护 |
 | 文档链接与锚点 | ✅ 已机械化 | `doc_gardening_check.py` 同时校验本地 Markdown 路径和章节锚点；产品外部引用必须显式标注，不伪装为 harness 内部相对链接 |
 
@@ -73,27 +73,27 @@
 
 | 真相源 | 责任 |
 |--------|------|
-| `.harness/products/registry.yaml` | harness-engineering 在本机管理哪些产品、产品根在哪里；gitignored |
-| `HARNESS_PRODUCT_ID` / `HARNESS_PRODUCT_ROOT` | 多产品并行时当前 session 作用于哪个产品 |
-| `.harness/products/active-product.json` | 未显式指定产品时的默认兜底；gitignored |
-| `.harness/products/*.example.*` | 开源源码中的产品台账格式示例 |
-| `<product-root>/harness-workspace/project.yaml` | 产品 workspace 结构、BMAD 输出路径、知识与证据目录 |
-| `.harness/config.yaml` | Harness 默认值与历史兼容 |
-| `.harness/harness-manifest.yaml` | Harness 自身必备文件清单 |
+| `.ael/products/registry.yaml` | buildrun-agent-engineering-lifecycle 在本机管理哪些产品、产品根在哪里；gitignored |
+| `AEL_PRODUCT_ID` / `AEL_PRODUCT_ROOT` | 多产品并行时当前 session 作用于哪个产品 |
+| `.ael/products/active-product.json` | 未显式指定产品时的默认兜底；gitignored |
+| `.ael/products/*.example.*` | 开源源码中的产品台账格式示例 |
+| `<product-root>/ael-workspace/project.yaml` | 产品 workspace 结构、BMAD 输出路径、知识与证据目录 |
+| `.ael/config.yaml` | AEL 默认值与历史兼容 |
+| `.ael/ael-manifest.yaml` | AEL 自身必备文件清单 |
 
 ## 3. 权威路径
 
 | 类型 | 路径 |
 |------|------|
-| 产品规格 | `harness-workspace/planning/product-specs/` |
-| 执行计划 | `harness-workspace/planning/exec-plans/active/`、`completed/` |
-| 任务包 | `harness-workspace/planning/tasks/` |
-| 运行状态 | `harness-workspace/runs/` |
-| 长期知识 | `harness-workspace/knowledge/` |
-| 接入/测试/审查/成长证据 | `harness-workspace/evidence/` |
-| Harness 模板 | `harness-engineering/.harness/templates/`、`harness-engineering/tasks/_templates/` |
+| 产品规格 | `ael-workspace/planning/product-specs/` |
+| 执行计划 | `ael-workspace/planning/exec-plans/active/`、`completed/` |
+| 任务包 | `ael-workspace/planning/tasks/` |
+| 运行状态 | `ael-workspace/runs/` |
+| 长期知识 | `ael-workspace/knowledge/` |
+| 接入/测试/审查/成长证据 | `ael-workspace/evidence/` |
+| AEL 模板 | `buildrun-agent-engineering-lifecycle/.ael/templates/`、`buildrun-agent-engineering-lifecycle/tasks/_templates/` |
 
-旧路径 `harness-workspace/phase0/`、裸 `phase0/`、`docs/product-specs/` 只允许在历史兼容说明中出现。
+旧路径 `ael-workspace/phase0/`、裸 `phase0/`、`docs/product-specs/` 只允许在历史兼容说明中出现。
 
 ## 4. 核心入口
 
@@ -102,8 +102,8 @@
 | 文档 | 职责 |
 |------|------|
 | [README.md](../../README.md) | GitHub 中文开源入口 |
-| [architecture/workspace.md](../architecture/workspace.md) | harness-engineering + product workspace 内部设计解读 |
-| [architecture/team-model.md](../architecture/team-model.md) | 通用产品研发 Harness 模型 |
+| [architecture/workspace.md](../architecture/workspace.md) | buildrun-agent-engineering-lifecycle + product workspace 内部设计解读 |
+| [architecture/team-model.md](../architecture/team-model.md) | 通用产品研发 AEL 模型 |
 | [getting-started/brownfield-intake.md](../getting-started/brownfield-intake.md) | 已有项目接入的定位、操作、报告和 review 规则 |
 | [planning/work-item-contract.md](../planning/work-item-contract.md) | BMAD Planning 到 Work Item 的协同契约 |
 | [getting-started/cli.md](../getting-started/cli.md) | canonical 使用模型与过渡期兼容命令参考 |
@@ -117,12 +117,12 @@
 
 | 不变式 | 机械检查 |
 |--------|----------|
-| Harness 必备文件不会静默丢失 | `.harness/harness-manifest.yaml` + `validate_harness.sh` |
+| AEL 必备文件不会静默丢失 | `.ael/ael-manifest.yaml` + `validate_ael.sh` |
 | Agent 入口保持短小且链接到权威文档 | `agents_max_lines` + `agents_must_link` |
 | generic 与产品 profile 不串味 | `test_business_paths.py` + `structure_check.py` |
 | 文档相对链接和章节锚点有效 | `doc-gardening.sh` + `test_doc_gardening.py` |
 | 旧目录名只出现在兼容说明中 | `doc_gardening_check.py` 的陈旧引用规则 |
-| Harness 自检不修改 active product 或产品 workspace | 状态型 Growth smoke 在临时产品根执行；`validate_harness.sh` 不调用 `harness_init use` |
+| AEL 自检不修改 active product 或产品 workspace | 状态型 Growth smoke 在临时产品根执行；`validate_ael.sh` 不调用 `ael_init use` |
 
 ## 6. 当前缺口与状态
 
@@ -134,7 +134,7 @@
 | HDC-006 | 成本与缓存 | implementation/harness 分项 schema、绑定 usage receipt、GC provider/model/calls/context/duration、fingerprint 和只读 rollout 汇总已落地；真实第三方 usage response 联调仍需 endpoint/model/key，未知 baseline 或样本不足返回 insufficient_data |
 | HDC-007 | Legacy workspace 兼容 | **已完成**：`workspace audit` 只读分类且有无副作用测试；`migrate-task` 机械拒绝已完成 legacy、缺凭证和不存在任务，仅活动凭证任务可逐项迁移，已有结果只做身份修复 |
 | HDC-010 | 三级保障接入验收 | **框架 fixture 已完成**：local/guarded、bare Git receive 阻断、acceptance receipt、provider 消费、authority audit 与独立 SSH GC receipt 已覆盖；真实团队部署、跨平台安装和产品实例 authority 仍须单独 install/audit |
-| HDC-011 | 能力迁移验收 | `capability_contract.py` 已将 BMAD/TDD/QA/知识/浏览器/GC/协同/Git 接受能力接入 `validate_harness`；真实 provider 生命周期仍由 HDC-003/HDC-010 跟踪 |
+| HDC-011 | 能力迁移验收 | `capability_contract.py` 已将 BMAD/TDD/QA/知识/浏览器/GC/协同/Git 接受能力接入 `validate_ael`；真实 provider 生命周期仍由 HDC-003/HDC-010 跟踪 |
 
 ## 7. 已解决或保留兼容
 
@@ -142,5 +142,5 @@
 |----|----------|
 | HDC-001 | `workspace_paths.py` 已成为语义入口；`phase0_paths.py` 和旧凭证名只保留兼容读取。 |
 | HDC-002 | `qa_evidence_check.sh` 已接入 `check.sh`；更深报告语义校验作为质量增强，不再视为流程缺口。 |
-| HDC-008 | 仓库 `.DS_Store` 已从工作树移出并保存在 `/tmp/harness-engineering.DS_Store.backup`，文档园艺恢复可执行。 |
+| HDC-008 | 仓库 `.DS_Store` 已从工作树移出并保存在 `/tmp/buildrun-agent-engineering-lifecycle.DS_Store.backup`，文档园艺恢复可执行。 |
 | HDC-009 | 历史产品文档中的架构引用已改为显式 `$PRODUCT_ROOT/...` 外部引用，不再参与 harness 内部相对链接判定。 |

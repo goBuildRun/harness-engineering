@@ -15,14 +15,14 @@ from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = ROOT / ".harness" / "scripts"
+SCRIPTS = ROOT / ".ael" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
-import harness_cycle_release  # noqa: E402
-import harness_cycle_stage_commands  # noqa: E402
+import ael_cycle_release  # noqa: E402
+import ael_cycle_stage_commands  # noqa: E402
 import provider_attempt  # noqa: E402
-from harness_attestation import create_attestation  # noqa: E402
-from harness_candidate import (  # noqa: E402
+from ael_attestation import create_attestation  # noqa: E402
+from ael_candidate import (  # noqa: E402
     _snapshot_digest,
     bound_candidate,
     build_snapshot,
@@ -30,8 +30,8 @@ from harness_candidate import (  # noqa: E402
     refresh_evidence,
     release_evidence_paths,
 )
-from harness_gate_inputs import gate_input_digest  # noqa: E402
-from harness_runtime import result_path, subject_for, task_operation_lock  # noqa: E402
+from ael_gate_inputs import gate_input_digest  # noqa: E402
+from ael_runtime import result_path, subject_for, task_operation_lock  # noqa: E402
 
 
 def candidate_binding(snapshot: dict) -> dict:
@@ -64,11 +64,11 @@ class CandidateIntegrityTest(unittest.TestCase):
         ).strip()
 
     def test_release_evidence_excludes_mutable_runtime_control_records(self) -> None:
-        result_ref = "harness-workspace/runs/tasks/task-1/result.json"
+        result_ref = "ael-workspace/runs/tasks/task-1/result.json"
         changed = [
-            "harness-workspace/evidence/qa.json",
-            "harness-workspace/runs/tasks/task-1/phase-handoff.json",
-            "harness-workspace/runs/tasks/task-1/wall-clock-ledger.jsonl",
+            "ael-workspace/evidence/qa.json",
+            "ael-workspace/runs/tasks/task-1/phase-handoff.json",
+            "ael-workspace/runs/tasks/task-1/wall-clock-ledger.jsonl",
             result_ref,
         ]
 
@@ -187,17 +187,17 @@ class CandidateIntegrityTest(unittest.TestCase):
             repo = Path(tmp)
             baseline = self.repo(repo)
             feature = repo / "feature.py"
-            evidence = repo / "harness-workspace/evidence/qa.json"
+            evidence = repo / "ael-workspace/evidence/qa.json"
             feature.write_text("VALUE = 1\n", encoding="utf-8")
             evidence.parent.mkdir(parents=True)
             evidence.write_text('{"decision":"pass"}\n', encoding="utf-8")
             snapshot = build_snapshot(
-                repo, ["feature.py", "harness-workspace/evidence/qa.json"],
+                repo, ["feature.py", "ael-workspace/evidence/qa.json"],
                 baseline_commit=baseline,
             )
             binding = candidate_binding(snapshot)
             subprocess.run(
-                ["git", "add", "feature.py", "harness-workspace/evidence/qa.json"],
+                ["git", "add", "feature.py", "ael-workspace/evidence/qa.json"],
                 cwd=repo, check=True,
             )
             subprocess.run(["git", "commit", "-qm", "candidate+evidence"], cwd=repo, check=True)
@@ -213,7 +213,7 @@ class CandidateIntegrityTest(unittest.TestCase):
             (repo / "feature.py").write_text("VALUE = 1\n", encoding="utf-8")
             snapshot = build_snapshot(repo, ["feature.py"], baseline_commit=baseline)
             binding = candidate_binding(snapshot)
-            extra = repo / "harness-workspace/evidence/undeclared.json"
+            extra = repo / "ael-workspace/evidence/undeclared.json"
             extra.parent.mkdir(parents=True)
             extra.write_text('{"decision":"pass"}\n', encoding="utf-8")
             subprocess.run(
@@ -231,23 +231,23 @@ class CandidateIntegrityTest(unittest.TestCase):
             repo = Path(tmp)
             baseline = self.repo(repo)
             feature = repo / "feature.py"
-            evidence = repo / "harness-workspace/evidence/qa.json"
+            evidence = repo / "ael-workspace/evidence/qa.json"
             feature.write_text("VALUE = 1\n", encoding="utf-8")
             evidence.parent.mkdir(parents=True)
             evidence.write_text('{"decision":"pass","review":"A"}\n', encoding="utf-8")
             snapshot = build_snapshot(
-                repo, ["feature.py", "harness-workspace/evidence/qa.json"],
+                repo, ["feature.py", "ael-workspace/evidence/qa.json"],
                 baseline_commit=baseline,
             )
             binding = candidate_binding(snapshot)
             attested_manifest = refresh_evidence(
-                repo, ["harness-workspace/evidence/qa.json"],
+                repo, ["ael-workspace/evidence/qa.json"],
             )
             evidence.write_text(
                 '{"decision":"pass","review":"forged-B"}\n', encoding="utf-8",
             )
             subprocess.run(
-                ["git", "add", "feature.py", "harness-workspace/evidence/qa.json"],
+                ["git", "add", "feature.py", "ael-workspace/evidence/qa.json"],
                 cwd=repo, check=True,
             )
             subprocess.run(["git", "commit", "-qm", "forged evidence"], cwd=repo, check=True)
@@ -263,8 +263,8 @@ class CandidateIntegrityTest(unittest.TestCase):
         product = Path("/tmp/e4-release-binding")
         snapshot = {"snapshot": True}
         manifest = {
-            "evidence_paths": ["harness-workspace/evidence/qa.json"],
-            "evidence_entries": [{"path": "harness-workspace/evidence/qa.json"}],
+            "evidence_paths": ["ael-workspace/evidence/qa.json"],
+            "evidence_entries": [{"path": "ael-workspace/evidence/qa.json"}],
             "evidence_digest": "attested-evidence",
         }
         result = {
@@ -274,28 +274,28 @@ class CandidateIntegrityTest(unittest.TestCase):
         attested = {**result, "evidence_manifest": manifest}
         with (
             mock.patch.object(
-                harness_cycle_release, "load_candidate_snapshot", return_value=snapshot,
+                ael_cycle_release, "load_candidate_snapshot", return_value=snapshot,
             ),
             mock.patch.object(
-                harness_cycle_release, "committed_candidate",
+                ael_cycle_release, "committed_candidate",
                 side_effect=[
                     {"decision": "pass", "commit": "a" * 40},
                     {"decision": "block", "reason": "CANDIDATE_COMMIT_EVIDENCE_MISMATCH"},
                 ],
             ) as committed,
             mock.patch.object(
-                harness_cycle_release, "verify_attestation",
+                ael_cycle_release, "verify_attestation",
                 return_value={"decision": "pass", "result": attested},
             ),
             mock.patch.object(
-                harness_cycle_release, "_attestation_result_status",
+                ael_cycle_release, "_attestation_result_status",
                 return_value={"decision": "pass", "reason": "ATTESTATION_RESULT_BOUND"},
             ),
             mock.patch.object(
-                harness_cycle_release, "validate_current_release_evidence",
+                ael_cycle_release, "validate_current_release_evidence",
             ) as live_evidence,
         ):
-            outcome = harness_cycle_release._guarded_release_integrity(
+            outcome = ael_cycle_release._guarded_release_integrity(
                 product, product / "result.json", "task-1", result, "HEAD",
             )
 
@@ -361,16 +361,16 @@ class StageEvidenceTest(unittest.TestCase):
             active = {"cycle": {"current_stage": "independent_qa"}}
             qa_block = {"decision": "block", "reason": "QA_EVIDENCE_INVALID"}
             with (
-                mock.patch.object(harness_cycle_stage_commands, "load_result", return_value=active),
-                mock.patch.object(harness_cycle_stage_commands, "atomic_write_result"),
-                mock.patch.object(harness_cycle_stage_commands, "dump_json"),
+                mock.patch.object(ael_cycle_stage_commands, "load_result", return_value=active),
+                mock.patch.object(ael_cycle_stage_commands, "atomic_write_result"),
+                mock.patch.object(ael_cycle_stage_commands, "dump_json"),
                 mock.patch.object(
-                    harness_cycle_stage_commands, "validate_current_qa_evidence",
+                    ael_cycle_stage_commands, "validate_current_qa_evidence",
                     return_value=qa_block,
                 ),
-                mock.patch.object(harness_cycle_stage_commands, "finish_stage") as finish,
+                mock.patch.object(ael_cycle_stage_commands, "finish_stage") as finish,
             ):
-                harness_cycle_stage_commands.cmd_stage(
+                ael_cycle_stage_commands.cmd_stage(
                     self.args(product, action="end", stage="independent_qa"),
                 )
             finish.assert_not_called()
@@ -379,28 +379,28 @@ class StageEvidenceTest(unittest.TestCase):
             deploy_state = {"candidate": {"digest": "subject"}, "cycle": {}}
             with (
                 mock.patch.object(
-                    harness_cycle_stage_commands, "load_result", return_value=deploy_state,
+                    ael_cycle_stage_commands, "load_result", return_value=deploy_state,
                 ),
-                mock.patch.object(harness_cycle_stage_commands, "atomic_write_result"),
-                mock.patch.object(harness_cycle_stage_commands, "dump_json"),
+                mock.patch.object(ael_cycle_stage_commands, "atomic_write_result"),
+                mock.patch.object(ael_cycle_stage_commands, "dump_json"),
                 mock.patch.object(
-                    harness_cycle_stage_commands, "load_candidate_snapshot",
+                    ael_cycle_stage_commands, "load_candidate_snapshot",
                     return_value={"snapshot": True},
                 ),
                 mock.patch.object(
-                    harness_cycle_stage_commands, "changed_since_baseline", return_value=[],
+                    ael_cycle_stage_commands, "changed_since_baseline", return_value=[],
                 ),
                 mock.patch.object(
-                    harness_cycle_stage_commands, "bound_candidate",
+                    ael_cycle_stage_commands, "bound_candidate",
                     return_value={"decision": "pass", "candidate_digest": "subject"},
                 ),
                 mock.patch.object(
-                    harness_cycle_stage_commands, "validate_current_qa_evidence",
+                    ael_cycle_stage_commands, "validate_current_qa_evidence",
                     return_value=qa_block,
                 ) as qa_check,
-                mock.patch.object(harness_cycle_stage_commands, "begin_stage") as begin,
+                mock.patch.object(ael_cycle_stage_commands, "begin_stage") as begin,
             ):
-                harness_cycle_stage_commands.cmd_stage(
+                ael_cycle_stage_commands.cmd_stage(
                     self.args(product, action="start", stage="deploy_provider"),
                 )
             begin.assert_not_called()
@@ -409,7 +409,7 @@ class StageEvidenceTest(unittest.TestCase):
     def test_governed_qa_receipts_bind_the_frozen_candidate(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product = Path(tmp)
-            qa = product / "harness-workspace/runs/tasks/task-1/qa_approved_T1.json"
+            qa = product / "ael-workspace/runs/tasks/task-1/qa_approved_T1.json"
             qa.parent.mkdir(parents=True)
             (product / "feature.py").write_text("VALUE = 1\n", encoding="utf-8")
             snapshot = build_snapshot(product, ["feature.py"], baseline_commit="a" * 40)
@@ -431,7 +431,7 @@ class StageEvidenceTest(unittest.TestCase):
                 },
             }
 
-            outcome = harness_cycle_stage_commands.validate_qa_candidate_binding(
+            outcome = ael_cycle_stage_commands.validate_qa_candidate_binding(
                 product, result, payload, snapshot=snapshot,
             )
 
@@ -450,47 +450,47 @@ class StageEvidenceTest(unittest.TestCase):
                 "cycle": {},
             }
             manifest = {"evidence_digest": "evidence", "evidence_paths": []}
-            initial_paths = ["harness-workspace/evidence/qa.json"]
-            handoff_path = "harness-workspace/runs/tasks/task-1/phase-handoff.json"
-            result_ref = "harness-workspace/runs/tasks/task-1/result.json"
+            initial_paths = ["ael-workspace/evidence/qa.json"]
+            handoff_path = "ael-workspace/runs/tasks/task-1/phase-handoff.json"
+            result_ref = "ael-workspace/runs/tasks/task-1/result.json"
             refresh = mock.Mock(return_value=manifest)
             with (
                 mock.patch.object(
-                    harness_cycle_stage_commands, "load_result", return_value=result,
+                    ael_cycle_stage_commands, "load_result", return_value=result,
                 ),
-                mock.patch.object(harness_cycle_stage_commands, "atomic_write_result"),
-                mock.patch.object(harness_cycle_stage_commands, "dump_json"),
+                mock.patch.object(ael_cycle_stage_commands, "atomic_write_result"),
+                mock.patch.object(ael_cycle_stage_commands, "dump_json"),
                 mock.patch.object(
-                    harness_cycle_stage_commands, "load_candidate_snapshot",
+                    ael_cycle_stage_commands, "load_candidate_snapshot",
                     return_value={"snapshot": True},
                 ),
                 mock.patch.object(
-                    harness_cycle_stage_commands, "changed_since_baseline",
+                    ael_cycle_stage_commands, "changed_since_baseline",
                     side_effect=[
                         [*initial_paths, result_ref],
                         [*initial_paths, handoff_path, result_ref],
                     ],
                 ),
                 mock.patch.object(
-                    harness_cycle_stage_commands, "bound_candidate",
+                    ael_cycle_stage_commands, "bound_candidate",
                     return_value={"decision": "pass", "candidate_digest": "subject"},
                 ),
                 mock.patch.object(
-                    harness_cycle_stage_commands, "validate_current_qa_evidence",
+                    ael_cycle_stage_commands, "validate_current_qa_evidence",
                     return_value={"decision": "pass", "reason": "QA_EVIDENCE_CURRENT"},
                 ),
                 mock.patch.object(
-                    harness_cycle_stage_commands, "refresh_evidence", refresh,
+                    ael_cycle_stage_commands, "refresh_evidence", refresh,
                 ),
                 mock.patch.object(
-                    harness_cycle_stage_commands, "begin_stage",
+                    ael_cycle_stage_commands, "begin_stage",
                     return_value={"decision": "pass", "reason": "STAGE_STARTED"},
                 ),
                 mock.patch.object(
-                    harness_cycle_stage_commands, "write_phase_handoff", return_value={},
+                    ael_cycle_stage_commands, "write_phase_handoff", return_value={},
                 ),
             ):
-                harness_cycle_stage_commands.cmd_stage(
+                ael_cycle_stage_commands.cmd_stage(
                     self.args(product, action="start", stage="deploy_provider"),
                 )
 
@@ -503,8 +503,8 @@ class StageEvidenceTest(unittest.TestCase):
             path = result_path(product, "task-1")
             path.parent.mkdir(parents=True)
             path.write_text("{}\n", encoding="utf-8")
-            evidence_ref = "harness-workspace/evidence/qa.json"
-            result_ref = "harness-workspace/runs/tasks/task-1/result.json"
+            evidence_ref = "ael-workspace/evidence/qa.json"
+            result_ref = "ael-workspace/runs/tasks/task-1/result.json"
             manifest = {"evidence_digest": "current", "evidence_paths": [evidence_ref]}
             result = {
                 "task_id": "task-1",
@@ -521,14 +521,14 @@ class StageEvidenceTest(unittest.TestCase):
 
             with (
                 mock.patch.object(
-                    harness_cycle_stage_commands, "changed_since_baseline",
+                    ael_cycle_stage_commands, "changed_since_baseline",
                     return_value=[evidence_ref, result_ref],
                 ),
                 mock.patch.object(
-                    harness_cycle_stage_commands, "refresh_evidence", side_effect=refresh,
+                    ael_cycle_stage_commands, "refresh_evidence", side_effect=refresh,
                 ),
             ):
-                outcome = harness_cycle_stage_commands.validate_current_release_evidence(
+                outcome = ael_cycle_stage_commands.validate_current_release_evidence(
                     product, "task-1", result,
                 )
 
@@ -553,7 +553,7 @@ class StageEvidenceTest(unittest.TestCase):
                 },
             }
 
-            missing_receipt = harness_cycle_stage_commands.validate_qa_candidate_binding(
+            missing_receipt = ael_cycle_stage_commands.validate_qa_candidate_binding(
                 product, result, payload, snapshot=snapshot,
             )
             qa.write_text(json.dumps({
@@ -561,7 +561,7 @@ class StageEvidenceTest(unittest.TestCase):
                 "candidate_subject_digest": snapshot["candidate_digest"],
                 "candidate_snapshot_digest": snapshot["snapshot_digest"],
             }), encoding="utf-8")
-            missing_aggregate = harness_cycle_stage_commands.validate_qa_candidate_binding(
+            missing_aggregate = ael_cycle_stage_commands.validate_qa_candidate_binding(
                 product, result, {**payload, "candidate": {}}, snapshot=snapshot,
             )
 
@@ -589,7 +589,7 @@ class StageEvidenceTest(unittest.TestCase):
                 },
             }
 
-            outcome = harness_cycle_stage_commands.validate_qa_candidate_binding(
+            outcome = ael_cycle_stage_commands.validate_qa_candidate_binding(
                 product, result, payload, snapshot=snapshot,
                 changed_paths=["feature.py", "late.py"],
             )
@@ -615,12 +615,12 @@ class StageEvidenceTest(unittest.TestCase):
                 },
             }
             with (
-                mock.patch.object(harness_cycle_stage_commands, "load_result", return_value=result),
-                mock.patch.object(harness_cycle_stage_commands, "atomic_write_result"),
-                mock.patch.object(harness_cycle_stage_commands, "dump_json") as emitted,
-                mock.patch.object(harness_cycle_stage_commands, "_freeze_candidate") as freeze,
+                mock.patch.object(ael_cycle_stage_commands, "load_result", return_value=result),
+                mock.patch.object(ael_cycle_stage_commands, "atomic_write_result"),
+                mock.patch.object(ael_cycle_stage_commands, "dump_json") as emitted,
+                mock.patch.object(ael_cycle_stage_commands, "_freeze_candidate") as freeze,
             ):
-                harness_cycle_stage_commands.cmd_stage(
+                ael_cycle_stage_commands.cmd_stage(
                     self.args(product, action="start", stage="independent_qa"),
                 )
 
@@ -645,16 +645,16 @@ class StageEvidenceTest(unittest.TestCase):
                 },
             }
             with (
-                mock.patch.object(harness_cycle_stage_commands, "load_result", return_value=result),
-                mock.patch.object(harness_cycle_stage_commands, "atomic_write_result"),
-                mock.patch.object(harness_cycle_stage_commands, "dump_json") as emitted,
+                mock.patch.object(ael_cycle_stage_commands, "load_result", return_value=result),
+                mock.patch.object(ael_cycle_stage_commands, "atomic_write_result"),
+                mock.patch.object(ael_cycle_stage_commands, "dump_json") as emitted,
                 mock.patch.object(
-                    harness_cycle_stage_commands, "_freeze_candidate",
+                    ael_cycle_stage_commands, "_freeze_candidate",
                     side_effect=ValueError("CANDIDATE_BASELINE_INVALID"),
                 ),
-                mock.patch.object(harness_cycle_stage_commands, "begin_stage") as begin,
+                mock.patch.object(ael_cycle_stage_commands, "begin_stage") as begin,
             ):
-                harness_cycle_stage_commands.cmd_stage(
+                ael_cycle_stage_commands.cmd_stage(
                     self.args(product, action="start", stage="independent_qa"),
                 )
 
@@ -998,32 +998,32 @@ class ReleaseAttestationTest(unittest.TestCase):
                 path.write_text("{}\n", encoding="utf-8")
                 result = self.result()
                 with (
-                    mock.patch.object(harness_cycle_release, "load_result", return_value=result),
-                    mock.patch.object(harness_cycle_release, "atomic_write_result"),
-                    mock.patch.object(harness_cycle_release, "dump_json"),
+                    mock.patch.object(ael_cycle_release, "load_result", return_value=result),
+                    mock.patch.object(ael_cycle_release, "atomic_write_result"),
+                    mock.patch.object(ael_cycle_release, "dump_json"),
                     mock.patch.object(
-                        harness_cycle_release, "budget_status",
+                        ael_cycle_release, "budget_status",
                         return_value={"decision": "pass"},
                     ),
                     mock.patch.object(
-                        harness_cycle_release, "stage_budget_status",
+                        ael_cycle_release, "stage_budget_status",
                         return_value={"decision": "pass"},
                     ),
                     mock.patch.object(
-                        harness_cycle_release, "load_candidate_snapshot",
+                        ael_cycle_release, "load_candidate_snapshot",
                         return_value={"snapshot": True},
                     ),
                     mock.patch.object(
-                        harness_cycle_release, "committed_candidate",
+                        ael_cycle_release, "committed_candidate",
                         return_value={"decision": "pass", "commit": "a" * 40},
                     ),
                     mock.patch.object(
-                        harness_cycle_release, "verify_attestation",
+                        ael_cycle_release, "verify_attestation",
                         return_value={"decision": "block", "reason": reason},
                     ) as verify,
-                    mock.patch.object(harness_cycle_release, "validate_readback") as readback,
+                    mock.patch.object(ael_cycle_release, "validate_readback") as readback,
                 ):
-                    harness_cycle_release.cmd_release_ready(
+                    ael_cycle_release.cmd_release_ready(
                         SimpleNamespace(
                             product_root=str(product), task_id="task-1",
                             commit="commit-1", receipt="",
@@ -1045,49 +1045,49 @@ class ReleaseAttestationTest(unittest.TestCase):
             result = self.result()
             refresh = mock.Mock()
             with (
-                mock.patch.object(harness_cycle_release, "load_result", return_value=result),
-                mock.patch.object(harness_cycle_release, "atomic_write_result"),
-                mock.patch.object(harness_cycle_release, "dump_json"),
+                mock.patch.object(ael_cycle_release, "load_result", return_value=result),
+                mock.patch.object(ael_cycle_release, "atomic_write_result"),
+                mock.patch.object(ael_cycle_release, "dump_json"),
                 mock.patch.object(
-                    harness_cycle_release, "budget_status", return_value={"decision": "pass"},
+                    ael_cycle_release, "budget_status", return_value={"decision": "pass"},
                 ),
                 mock.patch.object(
-                    harness_cycle_release, "stage_budget_status",
+                    ael_cycle_release, "stage_budget_status",
                     return_value={"decision": "pass"},
                 ),
                 mock.patch.object(
-                    harness_cycle_release, "load_candidate_snapshot",
+                    ael_cycle_release, "load_candidate_snapshot",
                     return_value={"snapshot": True},
                 ),
                 mock.patch.object(
-                    harness_cycle_release, "committed_candidate",
+                    ael_cycle_release, "committed_candidate",
                     return_value={"decision": "pass", "commit": "a" * 40},
                 ),
                 mock.patch.object(
-                    harness_cycle_release, "verify_attestation",
+                    ael_cycle_release, "verify_attestation",
                     return_value={
                         "decision": "pass", "reason": "ATTESTATION_VALID",
                         "result": deepcopy(result),
                     },
                 ),
                 mock.patch.object(
-                    harness_cycle_release, "validate_current_release_evidence",
+                    ael_cycle_release, "validate_current_release_evidence",
                     return_value={"decision": "pass", "reason": "RELEASE_EVIDENCE_CURRENT"},
                     create=True,
                 ),
                 mock.patch.object(
-                    harness_cycle_release, "validate_readback",
+                    ael_cycle_release, "validate_readback",
                     return_value={"decision": "pass"},
                 ),
                 mock.patch.object(
-                    harness_cycle_release, "finish_stage", return_value={"decision": "pass"},
+                    ael_cycle_release, "finish_stage", return_value={"decision": "pass"},
                 ),
                 mock.patch.object(
-                    harness_cycle_release, "close_story_cycle",
+                    ael_cycle_release, "close_story_cycle",
                     return_value={"decision": "pass", "reason": "STORY_READY_TO_RELEASE"},
                 ),
             ):
-                harness_cycle_release.cmd_release_ready(
+                ael_cycle_release.cmd_release_ready(
                     SimpleNamespace(
                         product_root=str(product), task_id="task-1",
                         commit="commit-1", receipt="",
@@ -1108,22 +1108,22 @@ class ReleaseAttestationTest(unittest.TestCase):
             attested["candidate"] = {"digest": "older-subject"}
             emitted = []
             with (
-                mock.patch.object(harness_cycle_release, "load_result", return_value=result),
-                mock.patch.object(harness_cycle_release, "atomic_write_result"),
-                mock.patch.object(harness_cycle_release, "dump_json", side_effect=emitted.append),
-                mock.patch.object(harness_cycle_release, "budget_status", return_value={"decision": "pass"}),
-                mock.patch.object(harness_cycle_release, "stage_budget_status", return_value={"decision": "pass"}),
-                mock.patch.object(harness_cycle_release, "load_candidate_snapshot", return_value={"snapshot": True}),
-                mock.patch.object(harness_cycle_release, "committed_candidate", return_value={"decision": "pass", "commit": "a" * 40}),
-                mock.patch.object(harness_cycle_release, "verify_attestation", return_value={"decision": "pass", "reason": "ATTESTATION_VALID", "result": attested}),
-                mock.patch.object(harness_cycle_release, "validate_readback") as readback,
+                mock.patch.object(ael_cycle_release, "load_result", return_value=result),
+                mock.patch.object(ael_cycle_release, "atomic_write_result"),
+                mock.patch.object(ael_cycle_release, "dump_json", side_effect=emitted.append),
+                mock.patch.object(ael_cycle_release, "budget_status", return_value={"decision": "pass"}),
+                mock.patch.object(ael_cycle_release, "stage_budget_status", return_value={"decision": "pass"}),
+                mock.patch.object(ael_cycle_release, "load_candidate_snapshot", return_value={"snapshot": True}),
+                mock.patch.object(ael_cycle_release, "committed_candidate", return_value={"decision": "pass", "commit": "a" * 40}),
+                mock.patch.object(ael_cycle_release, "verify_attestation", return_value={"decision": "pass", "reason": "ATTESTATION_VALID", "result": attested}),
+                mock.patch.object(ael_cycle_release, "validate_readback") as readback,
                 mock.patch.object(
-                    harness_cycle_release, "validate_current_release_evidence",
+                    ael_cycle_release, "validate_current_release_evidence",
                     return_value={"decision": "pass", "reason": "RELEASE_EVIDENCE_CURRENT"},
                     create=True,
                 ),
             ):
-                harness_cycle_release.cmd_release_ready(
+                ael_cycle_release.cmd_release_ready(
                     SimpleNamespace(product_root=str(product), task_id="task-1", commit="HEAD", receipt=""),
                     refresh_assurance=mock.Mock(),
                 )
@@ -1136,7 +1136,7 @@ class ExecutableDependencyTest(unittest.TestCase):
     def test_wrapper_and_argv_file_changes_invalidate_gate_digest(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             harness = Path(tmp)
-            scripts = harness / ".harness/scripts"
+            scripts = harness / ".ael/scripts"
             scripts.mkdir(parents=True)
             wrapper = scripts / "wrapper"
             payload = scripts / "payload.data"

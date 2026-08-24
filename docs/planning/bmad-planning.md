@@ -1,12 +1,12 @@
 # BMAD Planning 与 Planning Gate
 
-> **产品规格归属**：规格不保存在 `harness-engineering/docs/`。产品规格统一写入产品侧 `harness-workspace/planning/product-specs/`；模板位于 `.harness/templates/product-spec.md`，路径由 `.harness/config.yaml` 与产品 `harness-workspace/project.yaml` 共同决定。
+> **产品规格归属**：规格不保存在 `buildrun-agent-engineering-lifecycle/docs/`。产品规格统一写入产品侧 `ael-workspace/planning/product-specs/`；模板位于 `.ael/templates/product-spec.md`，路径由 `.ael/config.yaml` 与产品 `ael-workspace/project.yaml` 共同决定。
 
-> **定位**：Agent Engineering Lifecycle 的**产品设计与任务前导闭环**，在 OpenAI 式「主执行闭环」之前运行。
-> **方法论溯源**：[BMAD Method](https://github.com/bmad-code-org/BMAD-METHOD)（BMM）的 **Analysis → Planning → Solutioning**；Agent Engineering Lifecycle 将其落地为 **BMAD Planning**，产出写入 **产品侧 `harness-workspace/planning/`**，经 `planning_gate.sh` 交接到 Lifecycle Execution。
-> **Harness 与产出分离**：`harness-engineering/` 仅含规程、脚本、模板；**不入库** PRD / exec-plan / 任务包到 Harness 目录内。
+> **定位**：BuildRun Agent Engineering Lifecycle 的**产品设计与任务前导闭环**，在 OpenAI 式「主执行闭环」之前运行。
+> **方法论溯源**：[BMAD Method](https://github.com/bmad-code-org/BMAD-METHOD)（BMM）的 **Analysis → Planning → Solutioning**；BuildRun Agent Engineering Lifecycle 将其落地为 **BMAD Planning**，产出写入 **产品侧 `ael-workspace/planning/`**，经 `planning_gate.sh` 交接到 Lifecycle Execution。
+> **AEL 与产出分离**：`buildrun-agent-engineering-lifecycle/` 仅含规程、脚本、模板；**不入库** PRD / exec-plan / 任务包到 AEL 目录内。
 > **已有项目**：先执行 [getting-started/brownfield-intake.md](../getting-started/brownfield-intake.md)，把既有代码和文档转成可 review 的项目事实，再进入 BMAD Planning。
-> **精简升级**：BMAD 的需求澄清、规划和 Solutioning 继续保留；推荐由 `harness plan` 批量生成 planning bundle，再由 `harness start` 按 planning level 与实际风险选择 execution tier。使用者不再手工编排 BMAD、Work Item、Planning Gate 和 context sync 命令链。
+> **精简升级**：BMAD 的需求澄清、规划和 Solutioning 继续保留；推荐由 `ael plan` 批量生成 planning bundle，再由 `ael start` 按 planning level 与实际风险选择 execution tier。使用者不再手工编排 BMAD、Work Item、Planning Gate 和 context sync 命令链。
 
 ---
 
@@ -26,20 +26,20 @@
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-| 维度 | BMAD Method（BMM） | Agent Engineering Lifecycle BMAD Planning（落地层） |
+| 维度 | BMAD Method（BMM） | BuildRun Agent Engineering Lifecycle BMAD Planning（落地层） |
 |------|-------------------|----------------------------------|
 | **必经能力** | Analysis → Planning → Solutioning | 按 planning level 保留；L1 用 Quick Flow，L2/L3 使用相应完整度 |
 | **Implementation** | Dev/Story/QA 循环 | **归入 Lifecycle Execution** |
-| **典型产出** | PRD、架构、就绪检查 | 映射到 **`harness-workspace/planning/product-specs`**、**`harness-workspace/planning/exec-plans`**、**`harness-workspace/planning/tasks`** |
-| **交接** | 模块内 workflow 链 | **`planning_gate.sh`** → `harness-workspace/runs/planning_gate_pass.json` |
+| **典型产出** | PRD、架构、就绪检查 | 映射到 **`ael-workspace/planning/product-specs`**、**`ael-workspace/planning/exec-plans`**、**`ael-workspace/planning/tasks`** |
+| **交接** | 模块内 workflow 链 | **`planning_gate.sh`** → `ael-workspace/runs/planning_gate_pass.json` |
 
-### 0.1 BMAD Planning 目录配置（产品 `harness-workspace/project.yaml`）
+### 0.1 BMAD Planning 目录配置（产品 `ael-workspace/project.yaml`）
 
-所有 BMAD Planning 产出路径**相对产品根**，由 harness-engineering `workspace_paths.py` 解析。产品侧真相源是 `harness-workspace/project.yaml`：
+所有 BMAD Planning 产出路径**相对产品根**，由 buildrun-agent-engineering-lifecycle `workspace_paths.py` 解析。产品侧真相源是 `ael-workspace/project.yaml`：
 
 ```yaml
 workspace:
-  root: harness-workspace
+  root: ael-workspace
   planning: planning
   runs: runs
   knowledge: knowledge
@@ -53,25 +53,25 @@ planning:
 
 bmad:
   install_root: .                 # BMAD `_bmad/` 安装于产品根
-  output_root: harness-workspace/bmad-output
-  normalized_planning_root: harness-workspace/planning
+  output_root: ael-workspace/bmad-output
+  normalized_planning_root: ael-workspace/planning
 ```
 
-`npx bmad-method install` 只接受产品根；harness-engineering 的 `harness_init.sh init --install-bmad` 会以非交互方式指定产品根、默认模块 `bmm,tea`、默认工具 `codex,cursor`，并在安装后写入 `_bmad/custom/config.toml`，把 BMAD 原生输出校准到 `harness-workspace/bmad-output/`。Harness 标准化四类原生输出：`planning-artifacts/`、`design-artifacts/`、`implementation-artifacts/`、`test-artifacts/`；其中 `design-artifacts/` 同时暴露给 `modules.bmm.design_artifacts` 与 `modules.cis.design_artifacts`，方便 BMAD 版本或团队流程启用设计模块。安装结束后若 `_bmad/` 未生成，init 必须返回 `block`；正式 PRD / 计划 / 任务包再由团队映射到 `harness-workspace/planning/`。
+`npx bmad-method install` 只接受产品根；buildrun-agent-engineering-lifecycle 的 `ael_init.sh init --install-bmad` 会以非交互方式指定产品根、默认模块 `bmm,tea`、默认工具 `codex,cursor`，并在安装后写入 `_bmad/custom/config.toml`，把 BMAD 原生输出校准到 `ael-workspace/bmad-output/`。AEL 标准化四类原生输出：`planning-artifacts/`、`design-artifacts/`、`implementation-artifacts/`、`test-artifacts/`；其中 `design-artifacts/` 同时暴露给 `modules.bmm.design_artifacts` 与 `modules.cis.design_artifacts`，方便 BMAD 版本或团队流程启用设计模块。安装结束后若 `_bmad/` 未生成，init 必须返回 `block`；正式 PRD / 计划 / 任务包再由团队映射到 `ael-workspace/planning/`。
 
-安装参数可用环境变量覆盖：`HARNESS_BMAD_MODULES`、`HARNESS_BMAD_TOOLS`、`HARNESS_BMAD_COMMUNICATION_LANGUAGE`、`HARNESS_BMAD_DOCUMENT_LANGUAGE`、`HARNESS_BMAD_USER_NAME`。
+安装参数可用环境变量覆盖：`AEL_BMAD_MODULES`、`AEL_BMAD_TOOLS`、`AEL_BMAD_COMMUNICATION_LANGUAGE`、`AEL_BMAD_DOCUMENT_LANGUAGE`、`AEL_BMAD_USER_NAME`。
 
 查看解析结果：
 
 ```bash
-cd harness-engineering
-python3 .harness/scripts/workspace_paths.py json
-python3 .harness/scripts/workspace_paths.py ensure-dirs
+cd buildrun-agent-engineering-lifecycle
+python3 .ael/scripts/workspace_paths.py json
+python3 .ael/scripts/workspace_paths.py ensure-dirs
 ```
 
-说明见产品侧 `$PRODUCT_ROOT/harness-workspace/planning/README.md`。
+说明见产品侧 `$PRODUCT_ROOT/ael-workspace/planning/README.md`。
 
-**任务卡内链接约定**（相对 `planning/` 根，非 Harness 目录）：
+**任务卡内链接约定**（相对 `planning/` 根，非 AEL 目录）：
 
 - 产品规格：`product-specs/<功能>.md`
 - 执行计划：`exec-plans/active/<功能>.md`
@@ -80,13 +80,13 @@ python3 .harness/scripts/workspace_paths.py ensure-dirs
 
 ### 0.2 BMAD Method 在产品根执行（必遵）
 
-BMAD 工具链与 Harness **分离**：在 **产品根** 安装与调用 BMAD；产出**映射入库**到 `harness-workspace/planning/`（或产品 `project.yaml` 中配置的目录）。
+BMAD 工具链与 AEL **分离**：在 **产品根** 安装与调用 BMAD；产出**映射入库**到 `ael-workspace/planning/`（或产品 `project.yaml` 中配置的目录）。
 
-**首次初始化**（推荐从 harness-engineering 执行，仅需一次）：
+**首次初始化**（推荐从 buildrun-agent-engineering-lifecycle 执行，仅需一次）：
 
 ```bash
-cd /path/to/harness-engineering
-bash .harness/scripts/harness_init.sh init \
+cd /path/to/buildrun-agent-engineering-lifecycle
+bash .ael/scripts/ael_init.sh init \
   --product-root /path/to/product \
   --product-id my-product \
   --product-name "My Product" \
@@ -94,12 +94,12 @@ bash .harness/scripts/harness_init.sh init \
   --install-bmad
 ```
 
-如未带 `--install-bmad`，init 只创建产品 workspace 并提示 `BMAD_NOT_INSTALLED`；此时可以在产品根手动执行 `npx bmad-method install` 后，再回到 harness-engineering 重新执行 init，或用 `harness_product.sh env/exec` 固定产品上下文完成输出路径校准。
+如未带 `--install-bmad`，init 只创建产品 workspace 并提示 `BMAD_NOT_INSTALLED`；此时可以在产品根手动执行 `npx bmad-method install` 后，再回到 buildrun-agent-engineering-lifecycle 重新执行 init，或用 `ael_product.sh env/exec` 固定产品上下文完成输出路径校准。
 
-多产品并行时，不要在不同终端反复执行 `harness_init.sh use`。每个终端固定自己的产品上下文：
+多产品并行时，不要在不同终端反复执行 `ael_init.sh use`。每个终端固定自己的产品上下文：
 
 ```bash
-eval "$(bash .harness/scripts/harness_product.sh env --product-id my-product)"
+eval "$(bash .ael/scripts/ael_product.sh env --product-id my-product)"
 ```
 
 **在 Cursor 中按级别选轨**：
@@ -109,46 +109,46 @@ eval "$(bash .harness/scripts/harness_product.sh env --product-id my-product)"
 | **L2/L3** | Analysis（按需）→ `bmad-create-prd` → `bmad-validate-prd` → `bmad-create-architecture`（L3）→ `bmad-check-implementation-readiness` |
 | **L1** | BMAD Quick Flow（`bmad-quick-dev` / `bmad-agent-quick-flow-solo-dev` 等） |
 
-**映射落地 + 过门禁**（在 `harness-engineering/` 执行 Harness 脚本）：
+**映射落地 + 过门禁**（在 `buildrun-agent-engineering-lifecycle/` 执行 AEL 脚本）：
 
 ```bash
-cd /path/to/harness-engineering
+cd /path/to/buildrun-agent-engineering-lifecycle
 PRODUCT_ROOT=/path/to/product
 
-# 1. 新建规格（文件落在 harness-workspace/planning/product-specs/）
-cp .harness/templates/product-spec.md "$PRODUCT_ROOT/harness-workspace/planning/product-specs/某功能.md"
+# 1. 新建规格（文件落在 ael-workspace/planning/product-specs/）
+cp .ael/templates/product-spec.md "$PRODUCT_ROOT/ael-workspace/planning/product-specs/某功能.md"
 # 编辑 front matter 与验收标准
 
 # 2. L2/L3：exec-plan + 任务目录（落在 planning/）
-cp .harness/templates/exec-plan.md "$PRODUCT_ROOT/harness-workspace/planning/exec-plans/active/某功能.md"
-TASK_DIR="$PRODUCT_ROOT/harness-workspace/planning/tasks/$(date +%Y-%m-%d)-<work-item-id>-简称"
+cp .ael/templates/exec-plan.md "$PRODUCT_ROOT/ael-workspace/planning/exec-plans/active/某功能.md"
+TASK_DIR="$PRODUCT_ROOT/ael-workspace/planning/tasks/$(date +%Y-%m-%d)-<work-item-id>-简称"
 mkdir -p "$TASK_DIR"
 cp tasks/_templates/00-任务卡.md tasks/_templates/03-实施方案.md tasks/_templates/04-实施记录.md "$TASK_DIR/"
 
 # 3. 推荐：一次生成 batch planning receipt（默认离线，不猜测外部容器）
-harness --product-root "$PRODUCT_ROOT" plan --level L2 --task-dir "$TASK_DIR"
+ael --product-root "$PRODUCT_ROOT" plan --level L2 --task-dir "$TASK_DIR"
 
 # 4. 执行闭环
-harness --product-root "$PRODUCT_ROOT" start <work-item-id>
-harness --product-root "$PRODUCT_ROOT" finish <task-id>
+ael --product-root "$PRODUCT_ROOT" start <work-item-id>
+ael --product-root "$PRODUCT_ROOT" finish <task-id>
 ```
 
-旧 `draft-spec` / `sync-spec` / `planning_gate.sh` 仍是兼容诊断入口；只有在历史任务或明确 provider 操作时才单独使用。`harness plan --provider-mode configured` 才允许走已确认的外部 provider，并将 create response、readback、项目/Tasklist 和父级 binding 写入同一 receipt；默认 offline 只建立确定性的本地任务包，不猜测 Harness 外部 Epic/Tasklist。完整 BMAD 产物仍以产品仓库 `harness-workspace/planning/` 为真相源。详见 [planning/work-item-contract.md](./work-item-contract.md)。
+旧 `draft-spec` / `sync-spec` / `planning_gate.sh` 仍是兼容诊断入口；只有在历史任务或明确 provider 操作时才单独使用。`ael plan --provider-mode configured` 才允许走已确认的外部 provider，并将 create response、readback、项目/Tasklist 和父级 binding 写入同一 receipt；默认 offline 只建立确定性的本地任务包，不猜测 AEL 外部 Epic/Tasklist。完整 BMAD 产物仍以产品仓库 `ael-workspace/planning/` 为真相源。详见 [planning/work-item-contract.md](./work-item-contract.md)。
 
-Planning Gate 通过后会自动运行 `harness_knowledge.sh sync-planning`，把 BMAD Planning 形成的产品规格、产品蓝图、架构/执行计划和任务边界写入产品侧 `harness-workspace/knowledge/CONTEXT.md` 的受管区块。全新项目的首批长期上下文应来自这里，而不是依赖聊天记忆。
+Planning Gate 通过后会自动运行 `ael_knowledge.sh sync-planning`，把 BMAD Planning 形成的产品规格、产品蓝图、架构/执行计划和任务边界写入产品侧 `ael-workspace/knowledge/CONTEXT.md` 的受管区块。全新项目的首批长期上下文应来自这里，而不是依赖聊天记忆。
 
 **机械校验**（单独诊断）：
 
 ```bash
-python3 .harness/scripts/bmad_method_gate.py \
+python3 .ael/scripts/bmad_method_gate.py \
   --level L2 \
-  --harness-root . \
-  --task-dir "$PRODUCT_ROOT/harness-workspace/planning/tasks/YYYY-MM-DD-<id>-简称"
+  --ael-root . \
+  --task-dir "$PRODUCT_ROOT/ael-workspace/planning/tasks/YYYY-MM-DD-<id>-简称"
 ```
 
-模板：`.harness/templates/product-spec.md` · 规则：`.harness/rules/bmad-entry-gate.md`
+模板：`.ael/templates/product-spec.md` · 规则：`.ael/rules/bmad-entry-gate.md`
 
-> **准入凭证**：新流程优先读取 `harness-workspace/runs/planning/<batch-id>/children/<work-item-id>.json` 中的 task-scoped planning credential；历史任务继续读取 `harness-workspace/runs/planning_gate_pass.json`（及 `harness-workspace/planning/tasks/.../planning_gate_pass.json` 副本），`phase0_pass.json` 仅作为兼容副本。
+> **准入凭证**：新流程优先读取 `ael-workspace/runs/planning/<batch-id>/children/<work-item-id>.json` 中的 task-scoped planning credential；历史任务继续读取 `ael-workspace/runs/planning_gate_pass.json`（及 `ael-workspace/planning/tasks/.../planning_gate_pass.json` 副本），`phase0_pass.json` 仅作为兼容副本。
 
 ---
 
@@ -166,8 +166,8 @@ python3 .harness/scripts/bmad_method_gate.py \
 
 | 维度 | BMAD Planning | Lifecycle Execution |
 |------|---------|---------|
-| 主要产出 | `harness-workspace/planning/product-specs/`、`harness-workspace/planning/exec-plans/`、`harness-workspace/planning/tasks/` | 业务代码、`tasks-dag.md`、QA 凭证 |
-| 运行环境 | BMAD @ 产品根 + Lifecycle 门禁脚本 | `harness-engineering/.harness/scripts/` |
+| 主要产出 | `ael-workspace/planning/product-specs/`、`ael-workspace/planning/exec-plans/`、`ael-workspace/planning/tasks/` | 业务代码、`tasks-dag.md`、QA 凭证 |
+| 运行环境 | BMAD @ 产品根 + Lifecycle 门禁脚本 | `buildrun-agent-engineering-lifecycle/.ael/scripts/` |
 
 ---
 
@@ -175,26 +175,26 @@ python3 .harness/scripts/bmad_method_gate.py \
 
 ### P1：产品规格（Planning）
 
-- 产出：`harness-workspace/planning/product-specs/<功能>.md`
+- 产出：`ael-workspace/planning/product-specs/<功能>.md`
 - front matter 须含 `bmad_method: true`、`bmad_skills`、`bmad_completed_at`
 
 ### P2：执行计划（Solutioning）
 
-- 产出：`harness-workspace/planning/exec-plans/active/<slug>.md`
+- 产出：`ael-workspace/planning/exec-plans/active/<slug>.md`
 - `linked_spec` 指向 `product-specs/<功能>.md`
 
 ### P3：任务目录（L2/L3）
 
-- 产出：`harness-workspace/planning/tasks/YYYY-MM-DD-<work-item-id>-<简称>/`
-- 模板来源：`harness-engineering/tasks/_templates/`
+- 产出：`ael-workspace/planning/tasks/YYYY-MM-DD-<work-item-id>-<简称>/`
+- 模板来源：`buildrun-agent-engineering-lifecycle/tasks/_templates/`
 - `00-任务卡.md` 中 **Gate 1 → 已确认**
 
 ### P4：Planning Gate
 
 ```bash
-cd /path/to/harness-engineering
-bash .harness/scripts/planning_gate.sh L2 "$PRODUCT_ROOT/harness-workspace/planning/tasks/YYYY-MM-DD-<id>-简称"
-bash .harness/scripts/agent_start.sh <work-item-id>
+cd /path/to/buildrun-agent-engineering-lifecycle
+bash .ael/scripts/planning_gate.sh L2 "$PRODUCT_ROOT/ael-workspace/planning/tasks/YYYY-MM-DD-<id>-简称"
+bash .ael/scripts/agent_start.sh <work-item-id>
 ```
 
 ---
@@ -203,19 +203,19 @@ bash .harness/scripts/agent_start.sh <work-item-id>
 
 以下是当前实现期检查清单；统一入口落地后由 `start/finish` 自动完成或提示缺口，不继续暴露为人工总清单。
 
-- [ ] 产品根已通过 `harness_init.sh init --install-bmad` 或手动 `npx bmad-method install` 生成 `_bmad/`
-- [ ] `harness-workspace/planning/product-specs/` 含可测试验收标准
-- [ ] L2/L3 已建 `harness-workspace/planning/tasks/<date>-<id>-<name>/`
+- [ ] 产品根已通过 `ael_init.sh init --install-bmad` 或手动 `npx bmad-method install` 生成 `_bmad/`
+- [ ] `ael-workspace/planning/product-specs/` 含可测试验收标准
+- [ ] L2/L3 已建 `ael-workspace/planning/tasks/<date>-<id>-<name>/`
 - [ ] `planning_gate.sh` 返回 `pass`
-- [ ] `harness-workspace/knowledge/CONTEXT.md` 已出现 `BMAD Planning 规划沉淀` 区块
+- [ ] `ael-workspace/knowledge/CONTEXT.md` 已出现 `BMAD Planning 规划沉淀` 区块
 - [ ] 然后才 `agent_start.sh`
 
 ---
 
 ## 4. 相关文档
 
-- `$PRODUCT_ROOT/harness-workspace/planning/README.md` — 产出目录与配置项
+- `$PRODUCT_ROOT/ael-workspace/planning/README.md` — 产出目录与配置项
 - [getting-started/cli.md](../getting-started/cli.md) — 完整命令
 - [architecture/workflow.md](../architecture/workflow.md) — 双闭环总览
-- [architecture/workspace.md](../architecture/workspace.md) — harness-engineering 产品台账与产品 `project.yaml` 分工
-- [.harness/rules/bmad-entry-gate.md](../../.harness/rules/bmad-entry-gate.md)
+- [architecture/workspace.md](../architecture/workspace.md) — buildrun-agent-engineering-lifecycle 产品台账与产品 `project.yaml` 分工
+- [.ael/rules/bmad-entry-gate.md](../../.ael/rules/bmad-entry-gate.md)

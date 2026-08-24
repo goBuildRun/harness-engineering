@@ -13,10 +13,10 @@ def main() -> int:
     parser.add_argument("--provider", required=True)
     args = parser.parse_args()
     provider = args.provider.strip().lower()
-    offline = os.environ.get("HARNESS_PROVIDER_OFFLINE_TRACE") == "1"
+    offline = os.environ.get("AEL_PROVIDER_OFFLINE_TRACE") == "1"
     env_bound = (
-        os.environ.get("HARNESS_PROVIDER_EXPECTED_SUBJECT") == args.subject
-        and os.environ.get("HARNESS_PROVIDER_NAME") == provider
+        os.environ.get("AEL_PROVIDER_EXPECTED_SUBJECT") == args.subject
+        and os.environ.get("AEL_PROVIDER_NAME") == provider
     )
     if not offline or not env_bound:
         return 2

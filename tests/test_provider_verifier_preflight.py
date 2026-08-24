@@ -10,7 +10,7 @@ from types import SimpleNamespace
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = ROOT / ".harness" / "scripts"
+SCRIPTS = ROOT / ".ael" / "scripts"
 FIXTURES = ROOT / "tests" / "fixtures"
 ADAPTER = FIXTURES / "provider_mock_adapter.py"
 sys.path.insert(0, str(SCRIPTS))

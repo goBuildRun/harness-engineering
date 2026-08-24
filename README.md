@@ -1,16 +1,16 @@
-# Agent Engineering Lifecycle
+# BuildRun Agent Engineering Lifecycle
 
-> BAEP 子产品：**Agent Engineering Lifecycle**<br>
-> 中文：**Agent 工程生命周期**<br>
-> 当前物理路径：`harness-engineering/`；历史/兼容 CLI 名称：`harness`。
+> BAEP 子产品：**BuildRun Agent Engineering Lifecycle (AEL)**<br>
+> 中文：**BuildRun Agent 工程生命周期**；允许简称：**AEL**<br>
+> 当前物理路径：`buildrun-agent-engineering-lifecycle/`；历史/兼容 CLI 名称：`harness`。
 
-面向软件产品研发团队的独立式 Agent Engineering Lifecycle。它把产品意图、任务身份、实现执行、风险匹配验证和知识沉淀连接成可审计闭环，并由一套生命周期工具服务多个产品仓库。它管理 Agent 产品如何变化，不是 Agent runtime Harness 本身。
+面向软件产品研发团队的独立式 BuildRun Agent Engineering Lifecycle（AEL）。它把产品意图、任务身份、实现执行、风险匹配验证和知识沉淀连接成可审计闭环，并由一套生命周期工具服务多个产品仓库。它管理 Agent 产品如何变化，不是 BuildRun Harness 本身。
 
-> 当前可执行命令以 [docs/getting-started/cli.md](./docs/getting-started/cli.md) 为准。标准流程是 `harness plan → start → status → finish`：`plan`、`start`、`finish` 是三个主动作，`status` 只读观察。单一 `result.json` 和 `lite/standard/strict` 已进入可执行阶段；旧脚本只保留作兼容和诊断入口，不与统一门面形成第二套完成态。
+> 当前可执行命令以 [docs/getting-started/cli.md](./docs/getting-started/cli.md) 为准。标准流程是 `ael plan → start → status → finish`：`plan`、`start`、`finish` 是三个主动作，`status` 只读观察。单一 `result.json` 和 `lite/standard/strict` 已进入可执行阶段；旧脚本只保留作兼容和诊断入口，不与统一门面形成第二套完成态。
 
 ## 核心原则
 
-> 没有与当前变更匹配的 Harness 合规结果，任务不能进入有效完成态；Harness 对合规结果零妥协，对执行成本持续最小化。
+> 没有与当前变更匹配的 AEL 合规结果，任务不能进入有效完成态；AEL 对合规结果零妥协，对执行成本持续最小化。
 
 - 所有正式迭代都有可追踪任务身份。
 - 实现前必须形成与复杂度匹配的 BMAD Planning 结果。
@@ -18,21 +18,21 @@
 - 验证深度由实际风险决定；严格执行不等于所有任务执行最长流程。
 - 本地验证只允许进入 review；合并、发布和关闭外部 Work Item 由 commit 绑定的 CI 结果决定。
 - 规则优先机械化，不能只依赖 Agent 记忆或提示词。
-- 产品经验先进入产品 workspace；跨产品规则必须经人工 review 后进入 harness-engineering。
+- 产品经验先进入产品 workspace；跨产品规则必须经人工 review 后进入 buildrun-agent-engineering-lifecycle。
 
 ## 系统边界
 
 ```text
-harness-engineering/
+buildrun-agent-engineering-lifecycle/
 ├── AGENTS.md                 Agent 最小导航
 ├── ARCHITECTURE.md           系统边界与真相源
 ├── docs/                     设计、使用、质量与协作
-├── .harness/                 scripts / rules / agents / templates
+├── .ael/                 scripts / rules / agents / templates
 └── tasks/_templates/         当前 L2/L3 任务包模板
 
 product-repo/
 ├── product code / tests / architecture
-└── harness-workspace/
+└── ael-workspace/
     ├── project.yaml          产品接入配置真相源
     ├── planning/             规格、计划、任务绑定
     ├── runs/                 本地任务状态与凭证
@@ -40,13 +40,13 @@ product-repo/
     └── evidence/             按需生成的 INTAKE / TEST / REVIEW / GROWTH
 ```
 
-harness-engineering 不保存产品 PRD、任务实例、测试报告或产品知识。产品差异由 `harness-workspace/project.yaml` 和 active profile 承载；通用 Agent 不写死任何产品路径。
+buildrun-agent-engineering-lifecycle 不保存产品 PRD、任务实例、测试报告或产品知识。产品差异由 `ael-workspace/project.yaml` 和 active profile 承载；通用 Agent 不写死任何产品路径。
 
 ## 能力来源
 
 精简升级保留经过验证的能力，不保留外部项目的命令数量和固定仪式：
 
-| 来源 | 保留能力 | Harness 中的承载方式 |
+| 来源 | 保留能力 | AEL 中的承载方式 |
 |------|----------|----------------------|
 | OpenAI Harness Engineering | 短地图、repo-local 记录、渐进披露、机械反馈、doc gardening | `AGENTS.md`、JSON gate、统一结果 |
 | [BMAD Method](https://github.com/bmad-code-org/BMAD-METHOD) | Analysis、Planning、Solutioning、可测试验收 | planning level 决定 Quick Flow 或完整规划 |
@@ -70,7 +70,7 @@ harness-engineering 不保存产品 PRD、任务实例、测试报告或产品�
 - Intake、产品知识、任务契约、DAG、结构与计划同步。
 - 受控命令、Docker 后端、QA 签章、浏览器 QA 和 CI gate。
 - 历史 workspace、Planning Gate、QA 与 evidence 的兼容读取基础。
-- `harness plan/start/finish` 统一门面、只读 `status`、原子 `result.json` 和 execution tier 分类。
+- `ael plan/start/finish` 统一门面、只读 `status`、原子 `result.json` 和 execution tier 分类。
 - 成本遥测、确定性 gate fingerprint 缓存、GC 判定与活动任务迁移审计。
 - commit/tree/task/policy/result 绑定的 Git attestation、版本化 Git hooks 和共享 verifier。
 
@@ -84,12 +84,12 @@ harness-engineering 不保存产品 PRD、任务实例、测试报告或产品�
 
 ## 最小接入
 
-以下命令在 `harness-engineering/` 根执行：
+以下命令在 `buildrun-agent-engineering-lifecycle/` 根执行：
 
 ```bash
-BIN=.harness/scripts
+BIN=.ael/scripts
 
-bash "$BIN/harness_init.sh" init \
+bash "$BIN/ael_init.sh" init \
   --product-root /path/to/product \
   --product-id my-product \
   --product-name "My Product" \
@@ -103,14 +103,14 @@ bash "$BIN/harness_init.sh" init \
 已有项目首次接入时：
 
 ```bash
-bash "$BIN/harness_intake.sh" status
-bash "$BIN/harness_intake.sh" scan
+bash "$BIN/ael_intake.sh" status
+bash "$BIN/ael_intake.sh" scan
 ```
 
 INTAKE 报告只是候选证据。完成报告中的 review 工作台后才能执行：
 
 ```bash
-bash "$BIN/harness_intake.sh" apply-review
+bash "$BIN/ael_intake.sh" apply-review
 ```
 
 若报告仍有未勾选项，`apply-review` 会返回 `INTAKE_REVIEW_PENDING`；`--allow-pending` 只用于生成草稿，不代表正式沉淀完成。完整说明见 [Brownfield Intake](./docs/getting-started/brownfield-intake.md)。
@@ -120,26 +120,26 @@ bash "$BIN/harness_intake.sh" apply-review
 正常路径是：
 
 ```bash
-harness plan --level <L1|L2|L3> --task-dir <dir>
-harness start [<task-id>] [--work-item <provider-id>]
-harness status [<task-id>]
-harness finish [<task-id>]
+ael plan --level <L1|L2|L3> --task-dir <dir>
+ael start [<task-id>] [--work-item <provider-id>]
+ael status [<task-id>]
+ael finish [<task-id>]
 ```
 
 `status` 只读；`standard/strict` 先执行 `plan`，低风险 `lite` 可直接 `start`，由 `start` 生成最小 `task.json`。旧脚本和 `stage`/`confirm` 仅用于兼容、诊断或受控编排，不是每个 Story 的额外人工步骤。
 
-入口脚本为 `.harness/scripts/harness`。旧命令链仅用于兼容和诊断，不应被照抄成每个任务的固定全链。所有任务都满足共同不变式，独立 QA、TEST/REVIEW、浏览器验证、GC 和人工 Gate 只在当前工序或实际风险要求时启用。
+入口脚本为 `.ael/scripts/ael`。旧命令链仅用于兼容和诊断，不应被照抄成每个任务的固定全链。所有任务都满足共同不变式，独立 QA、TEST/REVIEW、浏览器验证、GC 和人工 Gate 只在当前工序或实际风险要求时启用。
 
 ## 自检
 
-修改 harness-engineering 后至少运行：
+修改 buildrun-agent-engineering-lifecycle 后至少运行：
 
 ```bash
-bash .harness/scripts/validate_harness.sh
-bash .harness/scripts/doc-gardening.sh
+bash .ael/scripts/validate_ael.sh
+bash .ael/scripts/doc-gardening.sh
 ```
 
-产品任务还必须执行与实际变更匹配的质量命令和最终 gate。所有 Harness 脚本用 JSON `decision: pass|block` 表达判定；收到 `block` 时按 `reason` 修复，不通过忽略退出码或改 allowlist 绕过。
+产品任务还必须执行与实际变更匹配的质量命令和最终 gate。所有 AEL 脚本用 JSON `decision: pass|block` 表达判定；收到 `block` 时按 `reason` 修复，不通过忽略退出码或改 allowlist 绕过。
 
 ## 文档入口
 
@@ -154,6 +154,6 @@ bash .harness/scripts/doc-gardening.sh
 | [docs/getting-started/brownfield-intake.md](./docs/getting-started/brownfield-intake.md) | 已有项目接入与 review |
 | [docs/governance/quality.md](./docs/governance/quality.md) | 质量门禁与风险分层 |
 | [docs/references.md](./docs/references.md) | 参考能力与内部权威路由 |
-| [.harness/README.md](./.harness/README.md) | runtime 脚本索引 |
+| [.ael/README.md](./.ael/README.md) | runtime 脚本索引 |
 
 历史数据默认原位可读；新任务写新格式；只迁移继续执行所需的最小状态。升级不会批量移动、删除或重写产品 `planning/`、`knowledge/` 和 `evidence/`。

@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest import mock
 
 
-SCRIPTS = Path(__file__).resolve().parents[1] / ".harness" / "scripts"
+SCRIPTS = Path(__file__).resolve().parents[1] / ".ael" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 from quality_commands import command_cwd, command_env, run_builtin, run_command  # noqa: E402

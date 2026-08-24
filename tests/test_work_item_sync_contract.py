@@ -11,7 +11,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 
-SCRIPT_DIR = Path(__file__).resolve().parents[1] / ".harness" / "scripts"
+SCRIPT_DIR = Path(__file__).resolve().parents[1] / ".ael" / "scripts"
 sys.path.insert(0, str(SCRIPT_DIR))
 
 from work_item_providers import (  # noqa: E402
@@ -99,20 +99,20 @@ class WorkItemSyncContractTest(unittest.TestCase):
     def test_capabilities_command_remains_routed_after_diagnostics_split(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product = Path(tmp)
-            workspace = product / "harness-workspace"
+            workspace = product / "ael-workspace"
             workspace.mkdir()
             (workspace / "project.yaml").write_text(
-                "product:\n  id: demo\nworkspace:\n  root: harness-workspace\n"
+                "product:\n  id: demo\nworkspace:\n  root: ael-workspace\n"
                 "work_item:\n  provider: noop\n",
                 encoding="utf-8",
             )
             output = subprocess.check_output(
                 [
                     "python3", str(SCRIPT_DIR / "work_item.py"),
-                    "--harness-root", str(SCRIPT_DIR.parents[1]), "capabilities",
+                    "--ael-root", str(SCRIPT_DIR.parents[1]), "capabilities",
                 ],
                 cwd=product,
-                env={**os.environ, "HARNESS_PRODUCT_ROOT": str(product), "WORK_ITEM_PROVIDER": "noop"},
+                env={**os.environ, "AEL_PRODUCT_ROOT": str(product), "WORK_ITEM_PROVIDER": "noop"},
                 text=True,
             )
         data = json.loads(output)
@@ -123,7 +123,7 @@ class WorkItemSyncContractTest(unittest.TestCase):
         output = subprocess.check_output(
             [
                 "python3", str(SCRIPT_DIR / "work_item.py"),
-                "--harness-root", str(SCRIPT_DIR.parents[1]),
+                "--ael-root", str(SCRIPT_DIR.parents[1]),
                 "diagnose", "--parent-id", "epic_parent_123",
             ],
             text=True,
@@ -136,10 +136,10 @@ class WorkItemSyncContractTest(unittest.TestCase):
     def test_feishu_draft_rejects_untyped_l3_spec_before_confirmation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product = Path(tmp)
-            workspace = product / "harness-workspace"
+            workspace = product / "ael-workspace"
             workspace.mkdir()
             (workspace / "project.yaml").write_text(
-                "product:\n  id: demo\nworkspace:\n  root: harness-workspace\n"
+                "product:\n  id: demo\nworkspace:\n  root: ael-workspace\n"
                 "work_item:\n  provider: feishu\n",
                 encoding="utf-8",
             )
@@ -152,11 +152,11 @@ class WorkItemSyncContractTest(unittest.TestCase):
             output = subprocess.check_output(
                 [
                     "python3", str(SCRIPT_DIR / "work_item.py"),
-                    "--harness-root", str(SCRIPT_DIR.parents[1]),
+                    "--ael-root", str(SCRIPT_DIR.parents[1]),
                     "draft-spec", str(spec),
                 ],
                 cwd=product,
-                env={**os.environ, "HARNESS_PRODUCT_ROOT": str(product), "WORK_ITEM_PROVIDER": "feishu"},
+                env={**os.environ, "AEL_PRODUCT_ROOT": str(product), "WORK_ITEM_PROVIDER": "feishu"},
                 text=True,
             )
         data = json.loads(output)
@@ -177,7 +177,7 @@ class WorkItemSyncContractTest(unittest.TestCase):
     def test_update_description_cli_blocks_when_source_file_is_missing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product = Path(tmp)
-            workspace = product / "harness-workspace"
+            workspace = product / "ael-workspace"
             workspace.mkdir(parents=True)
             (workspace / "project.yaml").write_text(
                 """
@@ -186,7 +186,7 @@ product:
   name: Demo
   profile: generic
 workspace:
-  root: harness-workspace
+  root: ael-workspace
   planning: planning
   runs: runs
   knowledge: knowledge
@@ -201,7 +201,7 @@ work_item:
                 [
                     "python3",
                     str(SCRIPT_DIR / "work_item.py"),
-                    "--harness-root",
+                    "--ael-root",
                     str(SCRIPT_DIR.parents[1]),
                     "update-description",
                     "--id",
@@ -210,7 +210,7 @@ work_item:
                     str(product / "missing.md"),
                 ],
                 cwd=product,
-                env={**os.environ, "HARNESS_PRODUCT_ROOT": str(product)},
+                env={**os.environ, "AEL_PRODUCT_ROOT": str(product)},
                 text=True,
             )
 
@@ -221,7 +221,7 @@ work_item:
     def test_sync_spec_creates_structured_bmad_work_item_note(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product = Path(tmp)
-            spec = product / "harness-workspace" / "planning" / "product-specs" / "demo.md"
+            spec = product / "ael-workspace" / "planning" / "product-specs" / "demo.md"
             spec.parent.mkdir(parents=True)
             spec.write_text(
                 """
@@ -259,11 +259,11 @@ spec_level: L2
         self.assertIn("#wi_00000001", updated)
         self.assertEqual(provider.created[0]["title"], "手机号登录成功后进入首页")
         note = provider.created[0]["note"]
-        self.assertIn("## Harness Links", note)
-        self.assertIn("Product Spec: `harness-workspace/planning/product-specs/demo.md`", note)
+        self.assertIn("## AEL Links", note)
+        self.assertIn("Product Spec: `ael-workspace/planning/product-specs/demo.md`", note)
         self.assertIn("BMAD Planning: pending", note)
         self.assertIn("Planning Gate: pending", note)
-        self.assertIn("Harness Execution: not_started", note)
+        self.assertIn("AEL Execution: not_started", note)
         self.assertIn("Assignee: `ou_demo`", note)
         self.assertIn("完整 BMAD 产物以产品仓库为真相源", note)
         self.assertIn("不做第三方登录", note)
@@ -271,7 +271,7 @@ spec_level: L2
     def test_draft_spec_generates_confirmation_payload_without_modifying_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product = Path(tmp)
-            spec = product / "harness-workspace" / "planning" / "product-specs" / "demo.md"
+            spec = product / "ael-workspace" / "planning" / "product-specs" / "demo.md"
             spec.parent.mkdir(parents=True)
             original = """
 # Demo 支付
@@ -302,7 +302,7 @@ spec_level: L2
     def test_sync_spec_uses_front_matter_parent_for_subtasks(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product = Path(tmp)
-            spec = product / "harness-workspace" / "planning" / "product-specs" / "story.md"
+            spec = product / "ael-workspace" / "planning" / "product-specs" / "story.md"
             spec.parent.mkdir(parents=True)
             spec.write_text(
                 """
@@ -514,7 +514,7 @@ work_item_parent_id: epic_parent_123
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             product = root / "product"
-            workspace = product / "harness-workspace"
+            workspace = product / "ael-workspace"
             task_dir = workspace / "planning" / "tasks" / "task"
             spec = workspace / "planning" / "product-specs" / "story.md"
             task_dir.mkdir(parents=True)
@@ -528,7 +528,7 @@ work_item_parent_id: epic_parent_123
             )
             (task_dir / "00-任务卡.md").write_text(
                 "Work Item ID: task_123456\n"
-                "产品规格链接: `harness-workspace/planning/product-specs/story.md`\n",
+                "产品规格链接: `ael-workspace/planning/product-specs/story.md`\n",
                 encoding="utf-8",
             )
             provider = PlacementAwareCaptureProvider()
@@ -549,7 +549,7 @@ work_item_parent_id: epic_parent_123
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             product = root / "product"
-            workspace = product / "harness-workspace"
+            workspace = product / "ael-workspace"
             task_dir = workspace / "planning" / "tasks" / "task"
             spec = workspace / "planning" / "product-specs" / "story.md"
             task_dir.mkdir(parents=True)
@@ -575,14 +575,14 @@ work_item_parent_id: epic_parent_123
         self.assertTrue(result["ok"])
         self.assertEqual(
             result["work_item"]["product_spec"],
-            "harness-workspace/planning/product-specs/story.md",
+            "ael-workspace/planning/product-specs/story.md",
         )
 
     def test_gate_rejects_product_spec_links_outside_supported_roots(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             product = root / "product"
-            workspace = product / "harness-workspace"
+            workspace = product / "ael-workspace"
             task_dir = workspace / "planning" / "tasks" / "task"
             spec = workspace / "planning" / "product-specs" / "story.md"
             task_dir.mkdir(parents=True)
@@ -599,7 +599,7 @@ work_item_parent_id: epic_parent_123
                 "docs/product-specs/story.md",
                 "product-specs/../product-specs/story.md",
                 "product-specs-similar/story.md",
-                "harness-workspace/planning/product-specs/../../outside.md",
+                "ael-workspace/planning/product-specs/../../outside.md",
             )
             for link in invalid_links:
                 with self.subTest(link=link):
@@ -625,7 +625,7 @@ work_item_parent_id: epic_parent_123
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             product = root / "product"
-            workspace = product / "harness-workspace"
+            workspace = product / "ael-workspace"
             task_dir = workspace / "planning" / "tasks" / "task"
             specs = workspace / "planning" / "product-specs"
             outside = product / "outside.md"
@@ -683,11 +683,11 @@ work_item_parent_id: epic_parent_123
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             product = root / "product"
-            task_dir = product / "harness-workspace" / "planning" / "tasks" / "task"
+            task_dir = product / "ael-workspace" / "planning" / "tasks" / "task"
             task_dir.mkdir(parents=True)
             (task_dir / "00-任务卡.md").write_text(
                 "Work Item ID: task_123456\n"
-                "产品规格链接: `harness-workspace/planning/product-specs/missing.md`\n",
+                "产品规格链接: `ael-workspace/planning/product-specs/missing.md`\n",
                 encoding="utf-8",
             )
             provider = NoopProvider(r"^[A-Za-z0-9][A-Za-z0-9._:-]{1,127}$")
@@ -705,7 +705,7 @@ work_item_parent_id: epic_parent_123
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             product = root / "product"
-            workspace = product / "harness-workspace"
+            workspace = product / "ael-workspace"
             task_dir = workspace / "planning" / "tasks" / "task"
             spec = workspace / "planning" / "product-specs" / "wrong-level.md"
             task_dir.mkdir(parents=True)
@@ -713,7 +713,7 @@ work_item_parent_id: epic_parent_123
             spec.write_text("---\nspec_level: L2\n---\n\n# Wrong level\n", encoding="utf-8")
             (task_dir / "00-任务卡.md").write_text(
                 "Work Item ID: task_123456\n"
-                "产品规格链接: `harness-workspace/planning/product-specs/wrong-level.md`\n",
+                "产品规格链接: `ael-workspace/planning/product-specs/wrong-level.md`\n",
                 encoding="utf-8",
             )
             provider = NoopProvider(r"^[A-Za-z0-9][A-Za-z0-9._:-]{1,127}$")
@@ -731,7 +731,7 @@ work_item_parent_id: epic_parent_123
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             product = root / "product"
-            workspace = product / "harness-workspace"
+            workspace = product / "ael-workspace"
             task_dir = workspace / "planning" / "tasks" / "task"
             spec = workspace / "planning" / "product-specs" / "untyped.md"
             task_dir.mkdir(parents=True)
@@ -739,7 +739,7 @@ work_item_parent_id: epic_parent_123
             spec.write_text("---\nspec_level: L3\n---\n\n# Untyped\n", encoding="utf-8")
             (task_dir / "00-任务卡.md").write_text(
                 "Work Item ID: task_123456\n"
-                "产品规格链接: `harness-workspace/planning/product-specs/untyped.md`\n",
+                "产品规格链接: `ael-workspace/planning/product-specs/untyped.md`\n",
                 encoding="utf-8",
             )
             provider = NoopProvider(r"^[A-Za-z0-9][A-Za-z0-9._:-]{1,127}$")
@@ -757,7 +757,7 @@ work_item_parent_id: epic_parent_123
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             product = root / "product"
-            workspace = product / "harness-workspace"
+            workspace = product / "ael-workspace"
             task_dir = workspace / "planning" / "tasks" / "task"
             spec = workspace / "planning" / "product-specs" / "feature.md"
             task_dir.mkdir(parents=True)
@@ -765,7 +765,7 @@ work_item_parent_id: epic_parent_123
             spec.write_text("---\nspec_level: L2\n---\n\n# Feature\n", encoding="utf-8")
             (task_dir / "00-任务卡.md").write_text(
                 "Work Item ID: task_123456\n"
-                "产品规格链接: `harness-workspace/planning/product-specs/feature.md`\n",
+                "产品规格链接: `ael-workspace/planning/product-specs/feature.md`\n",
                 encoding="utf-8",
             )
             provider = CaptureProvider()
@@ -783,7 +783,7 @@ work_item_parent_id: epic_parent_123
     def test_close_does_not_sync_planning_context_after_status_update(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product = Path(tmp)
-            workspace = product / "harness-workspace"
+            workspace = product / "ael-workspace"
             workspace.mkdir(parents=True)
             (workspace / "project.yaml").write_text(
                 """
@@ -792,7 +792,7 @@ product:
   name: Demo
   profile: generic
 workspace:
-  root: harness-workspace
+  root: ael-workspace
   planning: planning
   runs: runs
   knowledge: knowledge
@@ -811,7 +811,7 @@ work_item:
                 [
                     "python3",
                     str(SCRIPT_DIR / "work_item.py"),
-                    "--harness-root",
+                    "--ael-root",
                     str(SCRIPT_DIR.parents[1]),
                     "close",
                     "--id",
@@ -820,7 +820,7 @@ work_item:
                     "ready_to_release",
                 ],
                 cwd=product,
-                env={**os.environ, "HARNESS_PRODUCT_ROOT": str(product)},
+                env={**os.environ, "AEL_PRODUCT_ROOT": str(product)},
                 text=True,
             )
             data = json.loads(out)

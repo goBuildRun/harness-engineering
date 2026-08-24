@@ -13,11 +13,11 @@ from pathlib import Path
 from unittest.mock import patch
 
 
-SCRIPT_DIR = Path(__file__).resolve().parents[1] / ".harness" / "scripts"
+SCRIPT_DIR = Path(__file__).resolve().parents[1] / ".ael" / "scripts"
 sys.path.insert(0, str(SCRIPT_DIR))
 
 from acceptance_trust import TerminalAuthorization  # noqa: E402
-from harness_execution_authority import AuthorityTrust  # noqa: E402
+from ael_execution_authority import AuthorityTrust  # noqa: E402
 from provider_lifecycle import sign_receipt  # noqa: E402
 from work_item_providers import FeishuProvider  # noqa: E402
 
@@ -374,6 +374,26 @@ class FeishuProviderTest(unittest.TestCase):
         self.assertIn("FEISHU_STATUS_SKIP", reason)
         self.assertEqual([call.get_method() for call in fake.calls], ["POST", "GET"])
 
+    def test_update_status_description_mode_uses_ael_identity(self) -> None:
+        fake = UrlopenRecorder(
+            [
+                {"code": 0, "tenant_access_token": "token-1", "expire": 7200},
+                {"code": 0, "data": {"task": {"guid": "task_guid_123", "summary": "任务", "status": "todo"}}},
+                {"code": 0, "data": {}},
+            ]
+        )
+        with patch.dict(os.environ, {"FEISHU_APP_ID": "app-id", "FEISHU_APP_SECRET": "app-secret"}, clear=True):
+            p = provider({"status_update_mode": "description"})
+            with patch("urllib.request.urlopen", fake):
+                ok, reason = p.update_status("task_guid_123", "in_progress", "implementation started")
+
+        self.assertTrue(ok)
+        self.assertIn("FEISHU_UPDATED", reason)
+        self.assertEqual(
+            fake.body(fake.calls[2]),
+            {"description": "[AEL] status=in_progress\nimplementation started"},
+        )
+
     def test_update_status_completed_mode_marks_task_done(self) -> None:
         fake = UrlopenRecorder(
             [
@@ -561,7 +581,7 @@ class FeishuProviderTest(unittest.TestCase):
                 {"code": 0, "data": {"task": {"guid": "task_guid_123"}}},
             ]
         )
-        description = "## Harness Links\n- Product Spec: `spec.md`\n\n## Gate\n- Planning Gate: passed"
+        description = "## AEL Links\n- Product Spec: `spec.md`\n\n## Gate\n- Planning Gate: passed"
         with patch.dict(os.environ, {"FEISHU_APP_ID": "app-id", "FEISHU_APP_SECRET": "app-secret"}, clear=True):
             p = provider({"status_update_mode": "completed"})
             with patch("urllib.request.urlopen", fake):
@@ -784,7 +804,7 @@ class FeishuProviderTest(unittest.TestCase):
     def test_list_assigned_without_tasklist_uses_bound_product_spec_ids(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product_root = Path(tmp)
-            spec = product_root / "harness-workspace" / "planning" / "product-specs" / "demo.md"
+            spec = product_root / "ael-workspace" / "planning" / "product-specs" / "demo.md"
             spec.parent.mkdir(parents=True)
             spec.write_text(
                 "# Demo\n\n## 验收标准\n\n- [ ] 接入飞书任务 #task_guid_123\n",

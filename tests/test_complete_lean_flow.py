@@ -7,11 +7,11 @@ from pathlib import Path
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = ROOT / ".harness" / "scripts"
+SCRIPTS = ROOT / ".ael" / "scripts"
 import sys
 sys.path.insert(0, str(SCRIPTS))
 
-from harness_planning import plan_batch  # noqa: E402
+from ael_planning import plan_batch  # noqa: E402
 from story_cycle_benchmark import benchmark  # noqa: E402
 from workspace_paths import load_layout  # noqa: E402
 
@@ -45,12 +45,12 @@ class FakeProvider:
 class CompleteLeanFlowTest(unittest.TestCase):
     def _product(self, root: Path, *, configured: bool = False):
         product = root / "product"
-        workspace = product / "harness-workspace"
+        workspace = product / "ael-workspace"
         task = workspace / "planning" / "tasks" / "story"
         task.mkdir(parents=True)
         (workspace / "project.yaml").write_text(
             "product:\n  id: demo\n  name: Demo\n  profile: generic\n"
-            "workspace:\n  root: harness-workspace\n  planning: planning\n"
+            "workspace:\n  root: ael-workspace\n  planning: planning\n"
             "  runs: runs\n  knowledge: knowledge\n  evidence: evidence\n"
             "planning:\n  product_specs: product-specs\n  exec_plans_active: exec-plans/active\n"
             "  exec_plans_completed: exec-plans/completed\n  tasks: tasks\n"
@@ -88,14 +88,14 @@ class CompleteLeanFlowTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             product, task = self._product(Path(tmp), configured=True)
             provider = FakeProvider()
-            with patch("harness_planning.get_provider", return_value=provider):
+            with patch("ael_planning.get_provider", return_value=provider):
                 result = plan_batch(
                     load_layout(ROOT, product), level="L3", task_dirs=[str(task)],
                     provider_mode="configured",
                 )
             self.assertEqual(result["decision"], "pass")
             self.assertEqual(provider.created, 1)
-            child = json.loads((product / "harness-workspace/runs/planning" /
+            child = json.loads((product / "ael-workspace/runs/planning" /
                                 result["batch_id"] / "children/WI-created-1.json").read_text())
             self.assertEqual(child["provider_receipt"]["action"], "create")
             self.assertEqual(child["provider_receipt"]["readback"]["decision"], "pass")

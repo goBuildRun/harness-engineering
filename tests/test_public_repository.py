@@ -91,8 +91,8 @@ class PublicRepositoryTests(unittest.TestCase):
             ".env",
             ".env.local",
             ".product-root",
-            ".harness/products/registry.yaml",
-            ".harness/products/active-product.json",
+            ".ael/products/registry.yaml",
+            ".ael/products/active-product.json",
         }
         for path in repository_files():
             rel = path.relative_to(ROOT).as_posix()

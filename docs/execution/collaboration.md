@@ -11,12 +11,12 @@
 
 | 问题 | 答案 |
 |------|------|
-| 多个 PM 同时在协同系统建任务？ | ✅ 支持，各用分支 + 独立 `harness-workspace/planning/tasks/` 目录；provider 可为 Teambition、飞书或 Jira |
+| 多个 PM 同时在协同系统建任务？ | ✅ 支持，各用分支 + 独立 `ael-workspace/planning/tasks/` 目录；provider 可为 Teambition、飞书或 Jira |
 | 已有项目首次接入由谁负责？ | 建议 Tech Lead + PM + QA 共同 review `intake-reports/`，再决定哪些事实进入知识库 |
-| 任务分给多人，每人要一套 Harness 吗？ | ❌ **共享一套 Harness 规程**；每人 **一个任务工作上下文** |
+| 任务分给多人，每人要一套 AEL 吗？ | ❌ **共享一套 AEL 规程**；每人 **一个任务工作上下文** |
 | 需要每人 clone 一个仓库吗？ | ❌ 同一 monorepo；**每人一任务一分支** |
-| 能否两人同时做两个任务？ | ✅ 可以；每个终端先固定自己的 `HARNESS_PRODUCT_ID` / `HARNESS_PRODUCT_ROOT`，产品内工作区再按 Work Item ID 隔离 |
-| 精简后是否取消角色和任务隔离？ | ❌ 不取消；只减少公开步骤，隔离和职责检查仍由 Harness 自动执行 |
+| 能否两人同时做两个任务？ | ✅ 可以；每个终端先固定自己的 `AEL_PRODUCT_ID` / `AEL_PRODUCT_ROOT`，产品内工作区再按 Work Item ID 隔离 |
+| 精简后是否取消角色和任务隔离？ | ❌ 不取消；只减少公开步骤，隔离和职责检查仍由 AEL 自动执行 |
 
 ---
 
@@ -31,11 +31,11 @@
        PM-甲        PM-乙    PM-丙     …            …
          │            │        │
          ▼            ▼        ▼
-    harness-workspace/planning/tasks/A/   harness-workspace/planning/tasks/B/  harness-workspace/planning/tasks/C/   ← Git MR 入库
+    ael-workspace/planning/tasks/A/   ael-workspace/planning/tasks/B/  ael-workspace/planning/tasks/C/   ← Git MR 入库
     phase0_pass   phase0_pass …
          │            │        │
          ▼            ▼        ▼
-       Dev-1        Dev-2    Dev-3          ← 共享 Harness，各开分支
+       Dev-1        Dev-2    Dev-3          ← 共享 AEL，各开分支
     agent_start(A) agent_start(B) …
          │            │        │
          └────────────┴────────┴──► monorepo 业务代码 MR
@@ -45,22 +45,22 @@
 
 | 层 | 隔离键 | 存储 |
 |----|--------|------|
-| 产品层 | `HARNESS_PRODUCT_ID` / `HARNESS_PRODUCT_ROOT` | 当前 shell session 或单次命令 |
+| 产品层 | `AEL_PRODUCT_ID` / `AEL_PRODUCT_ROOT` | 当前 shell session 或单次命令 |
 | 协同层 | 当前产品 Work Item ID | Teambition / 飞书任务 / Jira |
-| 规划层 | `harness-workspace/planning/tasks/<date>-<work-item-id>-<简称>/` | Git |
-| 执行层 | `harness-workspace/runs/tasks/<work-item-id>/` | 本地（gitignore） |
+| 规划层 | `ael-workspace/planning/tasks/<date>-<work-item-id>-<简称>/` | Git |
+| 执行层 | `ael-workspace/runs/tasks/<work-item-id>/` | 本地（gitignore） |
 
-多产品并行时不要在不同终端反复执行 `harness_init.sh use`。每个终端进入工作前固定一次产品上下文：
+多产品并行时不要在不同终端反复执行 `ael_init.sh use`。每个终端进入工作前固定一次产品上下文：
 
 ```bash
-eval "$(bash .harness/scripts/harness_product.sh env --product-id product-a)"
-bash .harness/scripts/agent_start.sh <work-item-id>
+eval "$(bash .ael/scripts/ael_product.sh env --product-id product-a)"
+bash .ael/scripts/agent_start.sh <work-item-id>
 ```
 
 一次性命令使用：
 
 ```bash
-bash .harness/scripts/harness_product.sh exec --product-id product-b -- bash .harness/scripts/work_item.sh list-mine
+bash .ael/scripts/ael_product.sh exec --product-id product-b -- bash .ael/scripts/work_item.sh list-mine
 ```
 
 ---
@@ -69,12 +69,12 @@ bash .harness/scripts/harness_product.sh exec --product-id product-b -- bash .ha
 
 ### 3.0 已有项目接入负责人 — Intake
 
-首次把已有产品接入 Agent Engineering Lifecycle 时，建议由 Tech Lead 运行扫描，PM/QA/架构负责人共同 review。
+首次把已有产品接入 BuildRun Agent Engineering Lifecycle 时，建议由 Tech Lead 运行扫描，PM/QA/架构负责人共同 review。
 
 ```bash
-bash .harness/scripts/harness_knowledge.sh ensure
-bash .harness/scripts/harness_intake.sh status
-bash .harness/scripts/harness_intake.sh scan
+bash .ael/scripts/ael_knowledge.sh ensure
+bash .ael/scripts/ael_intake.sh status
+bash .ael/scripts/ael_intake.sh scan
 ```
 
 协作规则：
@@ -87,27 +87,27 @@ bash .harness/scripts/harness_intake.sh scan
 
 ### 3.1 产品经理（PM）— BMAD Planning
 
-**并行规则**：每人自己的 feature 分支，不共改同一 `harness-workspace/planning/tasks/` 目录。
+**并行规则**：每人自己的 feature 分支，不共改同一 `ael-workspace/planning/tasks/` 目录。
 
 ```bash
 git checkout -b pm/kb-health-spec
 
 PRODUCT_ROOT=/path/to/product
-cp .harness/templates/product-spec.md "$PRODUCT_ROOT/harness-workspace/planning/product-specs/kb-health.md"
+cp .ael/templates/product-spec.md "$PRODUCT_ROOT/ael-workspace/planning/product-specs/kb-health.md"
 # 编辑验收标准…
 
-bash .harness/scripts/work_item.sh draft-spec "$PRODUCT_ROOT/harness-workspace/planning/product-specs/kb-health.md" --assignee <provider-user-id>
+bash .ael/scripts/work_item.sh draft-spec "$PRODUCT_ROOT/ael-workspace/planning/product-specs/kb-health.md" --assignee <provider-user-id>
 # 在 Codex 对话中确认标题、范围和负责人
-bash .harness/scripts/work_item.sh sync-spec "$PRODUCT_ROOT/harness-workspace/planning/product-specs/kb-health.md" --assignee <provider-user-id>
+bash .ael/scripts/work_item.sh sync-spec "$PRODUCT_ROOT/ael-workspace/planning/product-specs/kb-health.md" --assignee <provider-user-id>
 # → 当前产品 provider 创建任务，设置负责人，回写 #<work-item-id>
 
-TASK_DIR="$PRODUCT_ROOT/harness-workspace/planning/tasks/$(date +%Y-%m-%d)-<work-item-id>-kb-health"
+TASK_DIR="$PRODUCT_ROOT/ael-workspace/planning/tasks/$(date +%Y-%m-%d)-<work-item-id>-kb-health"
 mkdir -p "$TASK_DIR"
 cp tasks/_templates/00-任务卡.md tasks/_templates/03-实施方案.md tasks/_templates/04-实施记录.md "$TASK_DIR/"
 # 编辑 00：Gate 1 已确认、任务编号=<work-item-id>、产品规格链接
 
-bash .harness/scripts/planning_gate.sh L2 "$TASK_DIR"
-git -C "$PRODUCT_ROOT" add harness-workspace/planning/product-specs harness-workspace/planning/tasks/
+bash .ael/scripts/planning_gate.sh L2 "$TASK_DIR"
+git -C "$PRODUCT_ROOT" add ael-workspace/planning/product-specs ael-workspace/planning/tasks/
 git commit -m "spec: kb-health BMAD Planning"
 git push -u origin pm/kb-health-spec
 # → 开 MR，合并后 Dev 可认领
@@ -116,30 +116,30 @@ git push -u origin pm/kb-health-spec
 **PM 注意**：
 
 - `draft-spec` 只生成待确认草稿，不写 Teambition / 飞书 / Jira
-- `sync-spec --assignee` 会按产品侧 `harness-workspace/project.yaml` 的 provider 建任务并设置负责人
-- 所有 provider 的 L3 Product Spec 都必须声明 `work_item_type`；`story`/`task` 必须在 front matter 声明 `work_item_parent_id`，或向 `draft-spec` / `sync-spec` 传 `--parent-id`，`epic` 必须为顶层。Harness 会在写回 ID 前验证产品容器和父级落点；当前飞书支持精确远端校验，`noop` 仅提供本地 `guarded` 语义，无法提供 placement-aware `verify_binding` 的 provider 会 guarded block，不会静默降级
-- `sync-spec` 使用 `bmad-work-item-v1`，只同步摘要、负责人、状态和 Harness Links；完整 BMAD 产物仍在 `harness-workspace/planning/`
+- `sync-spec --assignee` 会按产品侧 `ael-workspace/project.yaml` 的 provider 建任务并设置负责人
+- 所有 provider 的 L3 Product Spec 都必须声明 `work_item_type`；`story`/`task` 必须在 front matter 声明 `work_item_parent_id`，或向 `draft-spec` / `sync-spec` 传 `--parent-id`，`epic` 必须为顶层。AEL 会在写回 ID 前验证产品容器和父级落点；当前飞书支持精确远端校验，`noop` 仅提供本地 `guarded` 语义，无法提供 placement-aware `verify_binding` 的 provider 会 guarded block，不会静默降级
+- `sync-spec` 使用 `bmad-work-item-v1`，只同步摘要、负责人、状态和 AEL Links；完整 BMAD 产物仍在 `ael-workspace/planning/`
 - 不同产品线可选择不同 provider：Teambition 项目、飞书任务清单或 Jira project
 - 验收标准须可测试、可勾选
 
 ### 3.2 开发工程师 — Lifecycle Execution
 
-**不需要**单独部署 Harness；**需要**认领 Work Item ID 并激活工作区。
+**不需要**单独部署 AEL；**需要**认领 Work Item ID 并激活工作区。
 
 ```bash
 git checkout main && git pull
 git checkout -b feature/wi-<work-item-id>
 
 # 推荐：一次生成 batch receipt，再启动任务（无需手拷或逐项 verify/pull）
-harness --product-root "$PRODUCT_ROOT" plan --level L3 \
-  --task-dir "$PRODUCT_ROOT/harness-workspace/planning/tasks/<task-dir>"
-harness --product-root "$PRODUCT_ROOT" start <work-item-id>
+ael --product-root "$PRODUCT_ROOT" plan --level L3 \
+  --task-dir "$PRODUCT_ROOT/ael-workspace/planning/tasks/<task-dir>"
+ael --product-root "$PRODUCT_ROOT" start <work-item-id>
 
 # 查看当前激活任务
-bash .harness/scripts/task_workspace.sh show-active
+bash .ael/scripts/task_workspace.sh show-active
 
 # 查看当前 provider 分给我的任务（Teambition/Jira 支持；飞书待租户搜索接口增强）
-bash .harness/scripts/work_item.sh list-mine
+bash .ael/scripts/work_item.sh list-mine
 
 # … Lifecycle Execution：tasks-dag → TDD → 风险匹配验证 → check → MR …
 ```
@@ -150,12 +150,12 @@ bash .harness/scripts/work_item.sh list-mine
 
 - Teambition 产品：`.env` 中 `DINGTALK_OPERATOR_USER_ID` 建议填 **本人** 钉钉 userId（审计与 list-mine）
 - 飞书/Jira 产品：按 `.env.example` 填飞书应用或 Jira API token
-- MR 必须包含 `harness-workspace/planning/tasks/<id>/planning_gate_pass.json` 及业务变更
+- MR 必须包含 `ael-workspace/planning/tasks/<id>/planning_gate_pass.json` 及业务变更
 
 ### 3.3 Lead / QA
 
 - **Lead**：不写业务代码；拆 `tasks-dag.md`，跑 `feedback_planner`
-- **QA**：当前工序或 execution tier 要求独立验收时执行 `qa_sign_off`；凭证写入 `harness-workspace/runs/tasks/<work-item-id>/qa_approved_Tn.json`
+- **QA**：当前工序或 execution tier 要求独立验收时执行 `qa_sign_off`；凭证写入 `ael-workspace/runs/tasks/<work-item-id>/qa_approved_Tn.json`
 
 ---
 
@@ -164,7 +164,7 @@ bash .harness/scripts/work_item.sh list-mine
 ### 4.1 目录结构
 
 ```
-harness-workspace/runs/
+ael-workspace/runs/
 ├── active_task.json              # 兼容：旧流程的当前激活指针，新流程不写入
 ├── planning_gate_pass.json              # 兼容：当前激活的 phase0 副本
 ├── context.md                    # 兼容：当前 context 副本
@@ -175,14 +175,14 @@ harness-workspace/runs/
         └── qa_approved_T1.json
 ```
 
-Git 权威：`harness-workspace/planning/tasks/<date>-<work-item-id>-简称>/planning_gate_pass.json`（**须随 MR 提交**）。
-本地执行缓存：`harness-workspace/runs/tasks/<work-item-id>/`（Planning Gate、context、QA 凭证）。
+Git 权威：`ael-workspace/planning/tasks/<date>-<work-item-id>-简称>/planning_gate_pass.json`（**须随 MR 提交**）。
+本地执行缓存：`ael-workspace/runs/tasks/<work-item-id>/`（Planning Gate、context、QA 凭证）。
 
 ### 4.2 命令
 
 | 命令 | 作用 |
 |------|------|
-| `task_workspace.sh activate <work-item-id>` | 从 `harness-workspace/planning/tasks/` 恢复 Planning Gate 并激活 |
+| `task_workspace.sh activate <work-item-id>` | 从 `ael-workspace/planning/tasks/` 恢复 Planning Gate 并激活 |
 | `task_workspace.sh show-active` | 查看当前 Work Item ID |
 | `task_workspace.sh infer-mr` | CI/MR：从 git diff 推断任务目录 |
 | `task_workspace.sh qa-path <Tn>` | 查找 QA 凭证路径（排障） |
@@ -193,7 +193,7 @@ Git 权威：`harness-workspace/planning/tasks/<date>-<work-item-id>-简称>/pla
 完成 MR 后做下一任务：
 
 ```bash
-bash .harness/scripts/agent_start.sh <新work-item-id>
+bash .ael/scripts/agent_start.sh <新work-item-id>
 ```
 
 新流程不会切换共享 `active_task.json`；每个任务使用 `runs/tasks/<work-item-id>/`，因此多个任务不会互相覆盖。旧兼容命令仍可写 active pointer，**无需**删除旧目录。
@@ -204,8 +204,8 @@ bash .harness/scripts/agent_start.sh <新work-item-id>
 
 ### 场景 A：两 PM 同时写不同规格 — ✅
 
-- PM-甲：`harness-workspace/planning/product-specs/feature-a.md` + `harness-workspace/planning/tasks/...-taskA/`
-- PM-乙：`harness-workspace/planning/product-specs/feature-b.md` + `harness-workspace/planning/tasks/...-taskB/`
+- PM-甲：`ael-workspace/planning/product-specs/feature-a.md` + `ael-workspace/planning/tasks/...-taskA/`
+- PM-乙：`ael-workspace/planning/product-specs/feature-b.md` + `ael-workspace/planning/tasks/...-taskB/`
 - 各开分支 MR，Git 冲突概率低
 
 ### 场景 B：两开发同时做不同任务 — ✅
@@ -220,14 +220,14 @@ bash .harness/scripts/agent_start.sh <新work-item-id>
 
 ### 场景 D：多 MR 并行 — ✅（须遵守）
 
-- 每个 MR **只变更一个** `harness-workspace/planning/tasks/<id>/` 目录（或使用 `HARNESS_TASK_DIR`）
+- 每个 MR **只变更一个** `ael-workspace/planning/tasks/<id>/` 目录（或使用 `AEL_TASK_DIR`）
 - CI 已 **移除**「取最新 tasks 目录」的危险兜底
 
 ### 场景 E：已有项目首次接入 — ✅（须 review）
 
-- 先运行 `harness_intake.sh scan` 生成 `harness-workspace/evidence/intake-reports/<date>-INTAKE.md`
+- 先运行 `ael_intake.sh scan` 生成 `ael-workspace/evidence/intake-reports/<date>-INTAKE.md`
 - 再由 Tech Lead / PM / QA 按职责 review
-- 最后运行 `harness_intake.sh apply-review`，把已确认事实自动写入 `CONTEXT.md`、`LESSONS.md`、`REFERENCE_SYSTEMS.md`；架构文档或技术债 Work Item 仍由负责人确认后单独落地
+- 最后运行 `ael_intake.sh apply-review`，把已确认事实自动写入 `CONTEXT.md`、`LESSONS.md`、`REFERENCE_SYSTEMS.md`；架构文档或技术债 Work Item 仍由负责人确认后单独落地
 - 未 review 的 INTAKE 报告不得作为 Agent 实现依据
 
 ---
@@ -236,7 +236,7 @@ bash .harness/scripts/agent_start.sh <新work-item-id>
 
 | 配置 | 位置 | 说明 |
 |------|------|------|
-| `work_item.provider` | 产品侧 `harness-workspace/project.yaml` | 长期 provider 选择 |
+| `work_item.provider` | 产品侧 `ael-workspace/project.yaml` | 长期 provider 选择 |
 | `providers.teambition.project_id` | 产品侧 `project.yaml` | 同一钉钉项目，非密钥 |
 | `providers.feishu.tasklist_guid` | 产品侧 `project.yaml` | 飞书任务清单/容器，非密钥 |
 | `providers.feishu.list_tasks_path/list_query` | 产品侧 `project.yaml` | 飞书 `list-mine` 使用的任务列表或搜索参数 |
@@ -263,14 +263,14 @@ bash .harness/scripts/agent_start.sh <新work-item-id>
 
 ### 7.1 MR 必须包含
 
-- `harness-workspace/planning/tasks/<id>/planning_gate_pass.json`
-- 对应 `harness-workspace/planning/tasks/<id>/` 内文档变更（若改方案）
+- `ael-workspace/planning/tasks/<id>/planning_gate_pass.json`
+- 对应 `ael-workspace/planning/tasks/<id>/` 内文档变更（若改方案）
 - 业务代码变更
 
 ### 7.2 CI 推断任务目录
 
-1. 若 MR diff **仅涉及一个** `harness-workspace/planning/tasks/<id>/` → 自动用该目录 phase0
-2. 否则设置 CI 变量 `HARNESS_TASK_DIR=harness-workspace/planning/tasks/...`（相对产品根）
+1. 若 MR diff **仅涉及一个** `ael-workspace/planning/tasks/<id>/` → 自动用该目录 phase0
+2. 否则设置 CI 变量 `AEL_TASK_DIR=ael-workspace/planning/tasks/...`（相对产品根）
 
 ### 7.3 不再支持
 
@@ -282,11 +282,11 @@ bash .harness/scripts/agent_start.sh <新work-item-id>
 
 | 现象 | 原因 | 处理 |
 |------|------|------|
-| `PLANNING_GATE_NOT_FOUND` | 未 MR 合并 harness-workspace/planning/tasks/ 或未 pull | `git pull` 后 `agent_start <work-item-id>` |
+| `PLANNING_GATE_NOT_FOUND` | 未 MR 合并 ael-workspace/planning/tasks/ 或未 pull | `git pull` 后 `agent_start <work-item-id>` |
 | `WORK_ITEM_MISMATCH` | 参数 ID ≠ 00-任务卡 | 核对当前 provider 的 Work Item ID |
 | 两人改同一文件冲突 | 正常 Git | Lead 拆任务避免路径重叠 |
 | `list-mine` 为空 | 任务未指派给当前账号，或 provider 配置不完整 | 检查 Teambition/Jira 指派；飞书检查 `tasklist_guid` / `list_query` 与 `FEISHU_ASSIGNEE_ID` |
-| MR CI phase0 失败 | MR 改了多个 harness-workspace/planning/tasks 目录 | 一 MR 一任务，或设 `HARNESS_TASK_DIR` |
+| MR CI phase0 失败 | MR 改了多个 ael-workspace/planning/tasks 目录 | 一 MR 一任务，或设 `AEL_TASK_DIR` |
 
 ---
 

@@ -15,11 +15,11 @@ from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = ROOT / ".harness" / "scripts"
+SCRIPTS = ROOT / ".ael" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
-from harness_runtime import atomic_write_result, canonical_digest, default_result  # noqa: E402
-from harness_execution_authority import (  # noqa: E402
+from ael_runtime import atomic_write_result, canonical_digest, default_result  # noqa: E402
+from ael_execution_authority import (  # noqa: E402
     AuthorityTrust, build_receipt, sign_receipt,
 )
 from qa_evidence_binding import prepare_bundle, receipt_binding  # noqa: E402
@@ -98,7 +98,7 @@ class QaEvidenceBindingTest(unittest.TestCase):
     def receipt_binding(self, product: Path, paths: list[str], session: str = "reviewer"):
         identity, trust = self.reviewer_identity(product, session)
         with mock.patch.dict(os.environ, {
-            "HARNESS_QA_REVIEWER_IDENTITY_RECEIPT": str(identity),
+            "AEL_QA_REVIEWER_IDENTITY_RECEIPT": str(identity),
         }), mock.patch("qa_evidence_check.trust_from_installation", return_value=trust):
             return receipt_binding(ROOT, product, "WI-42", "T1", paths)
 
@@ -111,20 +111,20 @@ class QaEvidenceBindingTest(unittest.TestCase):
 
     def fixture(self, root: Path):
         product = root / "product"
-        workspace = product / "harness-workspace"
+        workspace = product / "ael-workspace"
         task = workspace / "planning/tasks/demo"
         runs = workspace / "runs"
         task.mkdir(parents=True)
         runs.mkdir(parents=True)
         (workspace / "project.yaml").write_text(
-            "product:\n  id: demo\n  name: Demo\nworkspace:\n  root: harness-workspace\n  planning: planning\n  runs: runs\n  evidence: evidence\nwork_item:\n  provider: noop\n",
+            "product:\n  id: demo\n  name: Demo\nworkspace:\n  root: ael-workspace\n  planning: planning\n  runs: runs\n  evidence: evidence\nwork_item:\n  provider: noop\n",
             encoding="utf-8",
         )
         subprocess.run(["git", "init", "-q"], cwd=product, check=True)
         subprocess.run(["git", "config", "user.email", "harness@example.invalid"], cwd=product, check=True)
         subprocess.run(["git", "config", "user.name", "Harness Test"], cwd=product, check=True)
         (product / "source.py").write_text("before\n")
-        (product / ".gitignore").write_text("harness-workspace/runs/\n")
+        (product / ".gitignore").write_text("ael-workspace/runs/\n")
         subprocess.run(["git", "add", "."], cwd=product, check=True)
         subprocess.run(["git", "commit", "-qm", "base"], cwd=product, check=True)
         (runs / "active_task.json").write_text(json.dumps({"task_id": "WI-42"}))

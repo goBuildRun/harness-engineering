@@ -1,17 +1,17 @@
 # 已有项目接入（Brownfield Intake）
 
-> 本文是 Agent Engineering Lifecycle 支持已有产品项目的权威说明。操作细节见 [getting-started/cli.md](./cli.md)，产品 workspace 结构见 [architecture/workspace.md](../architecture/workspace.md)。
+> 本文是 BuildRun Agent Engineering Lifecycle 支持已有产品项目的权威说明。操作细节见 [getting-started/cli.md](./cli.md)，产品 workspace 结构见 [architecture/workspace.md](../architecture/workspace.md)。
 > Intake 能力在精简方案中继续保留，但只在首次接入、上游版本显著变化或项目事实漂移时运行，不进入每个任务的固定路径。
 
 ## 1. 定位
 
-已有项目接入是 **BMAD Planning 之前的事实建档步骤**。它解决的问题不是“立刻让 Agent 写代码”，而是先让 Harness 对产品仓库的既有代码、文档、测试、技术栈和模块边界形成可 review 的事实视图。
+已有项目接入是 **BMAD Planning 之前的事实建档步骤**。它解决的问题不是“立刻让 Agent 写代码”，而是先让 AEL 对产品仓库的既有代码、文档、测试、技术栈和模块边界形成可 review 的事实视图。
 
 它适用于：
 
 - 已经有代码和架构文档的产品仓库。
-- 需要把历史文档、服务目录、测试与 CI 纳入 Harness 体系的团队。
-- 需要从“聊天记忆/个人经验”迁移到 `harness-workspace/knowledge/` 的产品。
+- 需要把历史文档、服务目录、测试与 CI 纳入 AEL 体系的团队。
+- 需要从“聊天记忆/个人经验”迁移到 `ael-workspace/knowledge/` 的产品。
 - 需要让后续 BMAD Planning 和 Agent 执行建立在真实项目上下文上的场景。
 - 需要长期复用 DeerFlow、OpenViking 等重度依赖，不希望每次任务都重新解读上游代码的场景。
 
@@ -19,7 +19,7 @@
 
 - 不自动改写产品代码。
 - 不自动修改 `CONTEXT.md` / `LESSONS.md`。
-- 不自动修改 harness-engineering 全局规则。
+- 不自动修改 buildrun-agent-engineering-lifecycle 全局规则。
 - 不把扫描报告直接当成长期知识。
 
 ## 2. 设计原则
@@ -29,9 +29,9 @@
 | 事实优先 | 先列出已有文档、代码目录、技术栈、测试与 CI 信号 |
 | 入口优先 | 对代码不只数文件，还提名 agent、factory、middleware、service、retriever、router 等关键入口 |
 | 候选而非结论 | 报告只输出候选项，是否沉淀由人 review |
-| 产品侧归属 | 报告保存在产品仓库 `harness-workspace/evidence/intake-reports/` |
-| 不污染 runtime | harness-engineering 不保存某个产品的接入报告 |
-| 安全默认 | 跳过 `.env`、依赖缓存、BMAD 输出、Harness workspace 与本地 Agent 缓存 |
+| 产品侧归属 | 报告保存在产品仓库 `ael-workspace/evidence/intake-reports/` |
+| 不污染 runtime | buildrun-agent-engineering-lifecycle 不保存某个产品的接入报告 |
+| 安全默认 | 跳过 `.env`、依赖缓存、BMAD 输出、AEL workspace 与本地 Agent 缓存 |
 | 可重复 | 可以多次扫描，报告作为产品接入历史证据保留 |
 
 ## 3. 信息流
@@ -40,7 +40,7 @@
 flowchart TD
   P["已有产品仓库"]
   C["代码 / 文档 / 测试 / CI / 技术栈"]
-  S["harness_intake.sh scan"]
+  S["ael_intake.sh scan"]
   R["INTAKE 报告"]
   H["人工 review"]
   K["CONTEXT / LESSONS"]
@@ -56,7 +56,7 @@ flowchart TD
 ## 4. 产物位置
 
 ```text
-<product-root>/harness-workspace/
+<product-root>/ael-workspace/
 ├── project.yaml
 ├── knowledge/
 │   ├── CONTEXT.md
@@ -67,7 +67,7 @@ flowchart TD
         └── YYYY-MM-DD-INTAKE.md
 ```
 
-`intake-reports/` 是证据目录，不是长期知识目录。长期稳定内容必须先由人或 Agent review；review 通过后运行 `harness_intake.sh apply-review`，由 Harness 把受管区块写入 `knowledge/CONTEXT.md`、`knowledge/LESSONS.md` 与 `knowledge/REFERENCE_SYSTEMS.md`，不需要人工复制粘贴。
+`intake-reports/` 是证据目录，不是长期知识目录。长期稳定内容必须先由人或 Agent review；review 通过后运行 `ael_intake.sh apply-review`，由 AEL 把受管区块写入 `knowledge/CONTEXT.md`、`knowledge/LESSONS.md` 与 `knowledge/REFERENCE_SYSTEMS.md`，不需要人工复制粘贴。
 
 需要注意：`apply-review` 写入的是证据索引和候选入口，不会凭空完成语义理解。对 DeerFlow、OpenViking 这类重度依赖，Agent/架构负责人必须基于报告中的“关键代码入口候选”深读源码和文档，再把核心逻辑、主流程、扩展点、禁改边界写入 `REFERENCE_SYSTEMS.md` 的人工维护区。产品架构文档和 Work Item 仍由负责人确认后再落地。
 
@@ -75,30 +75,30 @@ flowchart TD
 
 以下命令是当前实现入口；目标状态由产品接入或 `start` 的事实新鲜度检查按需调用，不要求日常任务重复执行。
 
-在 harness-engineering 根目录执行：
+在 buildrun-agent-engineering-lifecycle 根目录执行：
 
 ```bash
-eval "$(bash .harness/scripts/harness_product.sh env --product-id <product-id>)"
-bash .harness/scripts/harness_knowledge.sh ensure
-bash .harness/scripts/harness_intake.sh status
-bash .harness/scripts/harness_intake.sh scan
-bash .harness/scripts/harness_intake.sh review-status
-bash .harness/scripts/harness_intake.sh apply-review
+eval "$(bash .ael/scripts/ael_product.sh env --product-id <product-id>)"
+bash .ael/scripts/ael_knowledge.sh ensure
+bash .ael/scripts/ael_intake.sh status
+bash .ael/scripts/ael_intake.sh scan
+bash .ael/scripts/ael_intake.sh review-status
+bash .ael/scripts/ael_intake.sh apply-review
 ```
 
 可选指定产品根：
 
 ```bash
-HARNESS_PRODUCT_ROOT=/path/to/product \
-bash .harness/scripts/harness_intake.sh scan
+AEL_PRODUCT_ROOT=/path/to/product \
+bash .ael/scripts/ael_intake.sh scan
 ```
 
-`harness_init.sh use --product-id <product-id>` 仍可设置默认 fallback；多产品并行时优先使用 `harness_product.sh env` 或 `HARNESS_PRODUCT_ROOT/HARNESS_PRODUCT_ID`，避免不同终端互相切换默认产品。
+`ael_init.sh use --product-id <product-id>` 仍可设置默认 fallback；多产品并行时优先使用 `ael_product.sh env` 或 `AEL_PRODUCT_ROOT/AEL_PRODUCT_ID`，避免不同终端互相切换默认产品。
 
 典型输出：
 
 ```json
-{"decision":"pass","reason":"INTAKE_REPORT_READY: harness-workspace/evidence/intake-reports/2026-06-20-INTAKE.md"}
+{"decision":"pass","reason":"INTAKE_REPORT_READY: ael-workspace/evidence/intake-reports/2026-06-20-INTAKE.md"}
 ```
 
 ## 6. 报告内容
@@ -130,7 +130,7 @@ INTAKE 报告包含：
 
 ### 7.1 归属策略
 
-如果产品仓库里混有上游官方代码、vendor 代码、fork 代码和自研代码，必须先在产品侧 `harness-workspace/project.yaml` 配置 `intake.scopes`。Intake 会按**最长路径优先**匹配，因此可以表达“整个 `deer-flow/` 是上游参考，但 `deer-flow/mobile/` 是本产品 iOS App”。
+如果产品仓库里混有上游官方代码、vendor 代码、fork 代码和自研代码，必须先在产品侧 `ael-workspace/project.yaml` 配置 `intake.scopes`。Intake 会按**最长路径优先**匹配，因此可以表达“整个 `deer-flow/` 是上游参考，但 `deer-flow/mobile/` 是本产品 iOS App”。
 
 ```yaml
 intake:
@@ -170,10 +170,10 @@ intake:
 
 已有项目接入不替代 BMAD Planning。正确顺序是：
 
-1. `harness_init.sh init/use` 绑定产品。
-2. `harness_intake.sh scan` 生成已有项目事实报告。
+1. `ael_init.sh init/use` 绑定产品。
+2. `ael_intake.sh scan` 生成已有项目事实报告。
 3. 人工或 Agent review 报告 `## 0. Review 工作台（先处理）`，并深读关键代码入口，完成长期知识摘要。
-4. 用 `harness_intake.sh review-status` 确认可处理项，再运行 `harness_intake.sh apply-review` 自动沉淀受管证据区块到产品知识系统。
+4. 用 `ael_intake.sh review-status` 确认可处理项，再运行 `ael_intake.sh apply-review` 自动沉淀受管证据区块到产品知识系统。
 5. 进入 BMAD Planning，创建规格、执行计划与任务包。
 6. 通过 Entry Gate 后进入 Lifecycle Execution。
 
@@ -183,7 +183,7 @@ intake:
 
 扫描默认排除：
 
-- `harness-workspace/` 与 `harness-workspace*` 备份。
+- `ael-workspace/` 与 `ael-workspace*` 备份。
 - `_bmad/`、`_bmad-output/`、`bmad-output/`。
 - `.env`、`.env.*`、私钥/证书类文件。
 - `node_modules/`、`.venv/`、`__pycache__/`、构建产物和缓存。

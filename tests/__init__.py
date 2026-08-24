@@ -1,1 +1,1 @@
-"""Harness self-test package."""
+"""Agent Engineering Lifecycle self-test package."""

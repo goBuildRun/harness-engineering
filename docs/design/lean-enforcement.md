@@ -1,20 +1,20 @@
-# Harness 精简强制执行设计
+# AEL 精简强制执行设计
 
 > 状态：Git-native core、受控 bare Git enforcement 与独立 authority GC receipt 已完成机械验证
 > 日期：2026-08-11
-> 适用范围：所有通过 harness-engineering 接入的产品迭代
+> 适用范围：所有通过 buildrun-agent-engineering-lifecycle 接入的产品迭代
 > 当前命令实态仍以 [getting-started/cli.md](../getting-started/cli.md) 为准。
 
 ## 1. 目标
 
-Harness 同时满足两个要求：
+AEL 同时满足两个要求：
 
-1. **严格执行**：接入产品的正式迭代不能绕过 Harness 成为有效交付。
+1. **严格执行**：接入产品的正式迭代不能绕过 AEL 成为有效交付。
 2. **保持精简**：治理强度与风险匹配，不用重复命令、重复证据和重复上下文换取安全感。
 
 最高原则：
 
-> 没有与当前变更匹配的 Harness 合规结果，任务不能进入有效完成态；Harness 对合规结果零妥协，对执行成本持续最小化。
+> 没有与当前变更匹配的 AEL 合规结果，任务不能进入有效完成态；AEL 对合规结果零妥协，对执行成本持续最小化。
 
 严格执行不等于所有任务运行同一条最长流程。严格的含义是：每个任务都完整执行其风险层级要求，缺少信息时不能自行降级。
 
@@ -41,10 +41,10 @@ Harness 同时满足两个要求：
 目标状态只向人类和 Agent 暴露三个主动作（`status` 仅观察）：
 
 ```bash
-harness plan --level <L1|L2|L3> --task-dir <dir> [--task-dir <dir>...]
-harness start <work-item-id>
-harness finish [<task-id>]
-harness status [<task-id>]  # 只读观察
+ael plan --level <L1|L2|L3> --task-dir <dir> [--task-dir <dir>...]
+ael start <work-item-id>
+ael finish [<task-id>]
+ael status [<task-id>]  # 只读观察
 ```
 
 - `plan`：一次执行共享前置检查、BMAD/Architecture/Readiness digest、批量 Work Item binding receipt、task-scoped Planning Gate 和 knowledge digest cache。
@@ -52,22 +52,22 @@ harness status [<task-id>]  # 只读观察
 - `status`：默认读取当前任务，显示范围、当前有效 execution tier、成本、已通过检查和阻塞项。
 - `finish`：重新判定最终 execution tier，执行或复用必要检查，生成本地合规结果；`pass` 只表示可进入提交/合并验证，不直接关闭外部 Work Item。
 
-任务身份与外部协同 ID 分离：Harness 始终拥有稳定 `task-id`，`standard` / `strict` 另绑定产品 Work Item。历史任务可继续让两者取相同值。任务推断存在歧义时必须 `block` 并列出候选，不能静默选择“最近任务”。新 batch receipt 保留每个 child 的独立 ID、owner、scope、依赖和 binding receipt。
+任务身份与外部协同 ID 分离：AEL 始终拥有稳定 `task-id`，`standard` / `strict` 另绑定产品 Work Item。历史任务可继续让两者取相同值。任务推断存在歧义时必须 `block` 并列出候选，不能静默选择“最近任务”。新 batch receipt 保留每个 child 的独立 ID、owner、scope、依赖和 binding receipt。
 
 CI 可见的任务绑定不能只存在于 gitignored 的 `runs/`：
 
-- 新 `lite` 任务由 `start` 自动生成可提交的最小 `planning/tasks/<task-id>/task.json`，只含任务 ID、声明范围、execution tier 下限和可选 Work Item；它替代 L1 完整任务包，不新增 TEST/REVIEW/SUMMARY。Harness 不自动创建 Git commit。
-- `standard` / `strict` 复用现有任务包中的 `Harness Task ID`、兼容 `任务编号`（Work Item ID）、provider、planning level、execution tier 下限和显式升级原因，不再复制一份绑定文件。现有脚本在过渡期继续解析 `任务编号`。
+- 新 `lite` 任务由 `start` 自动生成可提交的最小 `planning/tasks/<task-id>/task.json`，只含任务 ID、声明范围、execution tier 下限和可选 Work Item；它替代 L1 完整任务包，不新增 TEST/REVIEW/SUMMARY。AEL 不自动创建 Git commit。
+- `standard` / `strict` 复用现有任务包中的 `AEL Task ID`、兼容 `任务编号`（Work Item ID）、provider、planning level、execution tier 下限和显式升级原因，不再复制一份绑定文件。稳定字段 `harness_task_id` 和现有脚本解析的 `任务编号` 在过渡期继续保留。
 - CI 必须从变更中解析出唯一绑定并校验其 scope；零个或多个候选都 `block`。
 
-现有 `planning_gate.sh`、`agent_start.sh`、`qa_sign_off.sh`、`subagent-pr-gate.sh`、`qa_evidence_check.sh`、`harness_growth.sh`、`check.sh` 和 provider 命令在实现期继续可用，但应逐步收敛为上述入口的内部能力，不再要求 Agent 手工编排完整命令链。
+现有 `planning_gate.sh`、`agent_start.sh`、`qa_sign_off.sh`、`subagent-pr-gate.sh`、`qa_evidence_check.sh`、`ael_growth.sh`、`check.sh` 和 provider 命令在实现期继续可用，但应逐步收敛为上述入口的内部能力，不再要求 Agent 手工编排完整命令链。
 
 ## 3. 单一权威结果
 
 每个任务只保留一个机器可读的本地状态快照：
 
 ```text
-harness-workspace/runs/tasks/<task-id>/result.json
+ael-workspace/runs/tasks/<task-id>/result.json
 ```
 
 最小字段：
@@ -106,19 +106,19 @@ harness-workspace/runs/tasks/<task-id>/result.json
 }
 ```
 
-每个 `checks.<name>` 最少记录 `decision`、`fingerprint`、`subject_digest`、`source: executed|cache`、完成时间和必要 evidence 引用；人工 Gate 另记录可信 reviewer identity。`cost` 至少区分产品实现成本和 Harness 固定开销，记录输入/输出 Token、上下文字符数、Agent 调用数、gate 耗时、重跑次数与完整性，不保存 prompt 正文、secret 或完整命令输出。字段拿不到精确值时写 `unknown`；只有确认没有发生该项活动时才能写 `0`，禁止估算后伪装成精确遥测。
+每个 `checks.<name>` 最少记录 `decision`、`fingerprint`、`subject_digest`、`source: executed|cache`、完成时间和必要 evidence 引用；人工 Gate 另记录可信 reviewer identity。`cost` 至少区分产品实现成本和 AEL 固定开销，记录输入/输出 Token、上下文字符数、Agent 调用数、gate 耗时、重跑次数与完整性，不保存 prompt 正文、secret 或完整命令输出。字段拿不到精确值时写 `unknown`；只有确认没有发生该项活动时才能写 `0`，禁止估算后伪装成精确遥测。
 
 `status` 默认展示两类成本及可计算的合计；只有相关字段都为数值时才输出合计值，否则显示 `unknown` 并把 `telemetry_complete` 置为 `false`。不得再为成本跟踪新增一套 Markdown 报告或独立状态协议。
 
-外部 Agent/provider 通过 `HARNESS_USAGE_RECEIPT` 注入成本时，receipt 必须同时绑定 `task_id`、`subject_digest` 和 `policy_digest`，声明非空 `provider`、`model`，并分别提供 implementation/harness 的 Token、上下文字符数和 Agent 调用数。缺失遥测保持 `unknown`；已提供但绑定错误或来源身份缺失的 receipt 必须 block，不能跨任务、diff 或策略复用。
+外部 Agent/provider 通过 `AEL_USAGE_RECEIPT` 注入成本时，receipt 必须同时绑定 `task_id`、`subject_digest` 和 `policy_digest`，声明非空 `provider`、`model`，并分别提供 implementation/harness 的 Token、上下文字符数和 Agent 调用数。缺失遥测保持 `unknown`；已提供但绑定错误或来源身份缺失的 receipt 必须 block，不能跨任务、diff 或策略复用。
 
 `result.json` 使用任务级单写锁和“临时文件 + 原子替换”更新；中断后可恢复，多个 Agent 不得并发覆盖。它是当前任务的物化状态，不是可由开发者提交后让接受端盲信的证明。
 
 Lifecycle core 的唯一事实源是 Git 对象库。`finish` 先验证工作区并生成 validated result；commit 后由 hook 将 canonical result 写成 Git blob，再生成绑定 `commit SHA + tree SHA + task_id + policy_digest + result object/digest + decision` 的 attestation，并原子写入 `refs/harness/attestations/<commit>` 与 `refs/harness/results/<commit>`。后者只保证 result blob 可被 Git 传输，不是平行完成态。`status` 和接受端 verifier 从 Git object/ref 读取并重算绑定关系；工作区 `result.json` 只是可恢复的物化视图。
 
-代码托管和 CI 不参与 Harness 生命周期。它们可以运行或展示 verifier，但接受真相始终是“目标 Git commit 拥有由相应权限边界生成的有效 attestation”；任何展示层都不得引入第二个状态机。
+代码托管和 CI 不参与 AEL 生命周期。它们可以运行或展示 verifier，但接受真相始终是“目标 Git commit 拥有由相应权限边界生成的有效 attestation”；任何展示层都不得引入第二个状态机。
 
-代码、计划、测试输入、相关配置、工具版本或 Harness policy 改变后，依赖旧 fingerprint 的结果自动失效。Markdown 只承担必要的人类摘要，不再默认按每个 T 复制 TEST、REVIEW、SUMMARY 和 QA 结论。
+代码、计划、测试输入、相关配置、工具版本或 AEL policy 改变后，依赖旧 fingerprint 的结果自动失效。Markdown 只承担必要的人类摘要，不再默认按每个 T 复制 TEST、REVIEW、SUMMARY 和 QA 结论。
 
 ## 4. 风险分层
 
@@ -135,14 +135,14 @@ Lifecycle core 的唯一事实源是 Git 对象库。`finish` 先验证工作区
 - Agent 或人类可以升级 execution tier，不能在缺少证据时自行降级。
 - 无法可靠分类时使用 `standard`；命中高风险因素时强制 `strict`。
 - BMAD 的 L1/L2/L3 规划复杂度与 execution tier 相关但不等同，最终 tier 由实际风险决定。
-- policy 继续写入现有 Harness 配置与产品 `project.yaml`，不为每个 tier 新增一套配置文件；结果必须记录 `policy_digest` 以便复现判定。
+- policy 继续写入现有 AEL 配置与产品 `project.yaml`，不为每个 tier 新增一套配置文件；结果必须记录 `policy_digest` 以便复现判定。
 - 人工或 Agent 显式升级必须写入可提交任务绑定的 `Execution tier 下限` / `Tier 显式升级` 字段，CI 不信任只存在于本地 `result.json` 的升级声明。
 
 ## 5. 四个不可省略的不变式
 
 任何 execution tier 都必须证明：
 
-1. 正式迭代绑定一个可追踪任务身份；`standard` / `strict` 使用产品 Work Item，`lite` 可使用 Harness 生成的本地任务 ID，不得无 ID 执行。
+1. 正式迭代绑定一个可追踪任务身份；`standard` / `strict` 使用产品 Work Item，`lite` 可使用 AEL 生成的本地任务 ID，不得无 ID 执行。
 2. 实际改动没有越过声明的产品和任务范围。
 3. 已运行与实际风险匹配的验证。
 4. `finish` 必须生成有效 result，commit 后必须生成对应 attestation；受控接收或发布入口重验并签名后才能关闭外部 Work Item。
@@ -192,7 +192,7 @@ Lifecycle core 的唯一事实源是 Git 对象库。`finish` 先验证工作区
 
 “已安装”不等于 `enforced`。只有当受控 Git remote 的 `pre-receive` 或发布入口对所有进入正式 ref/制品的 commit 重跑 verifier/gates，使用独立密钥签发 acceptance receipt，且 provider `done` 校验该签名时，产品才可标记 `assurance.level: enforced`。单用户完全控制的本地仓库最多是 `guarded`。
 
-仓库管理员仍可能使用平台级紧急 bypass；该动作位于 Harness 本身权限边界之外，必须由平台审计记录并被视为显式例外，不能生成有效 Harness `pass`。
+仓库管理员仍可能使用平台级紧急 bypass；该动作位于 AEL 本身权限边界之外，必须由平台审计记录并被视为显式例外，不能生成有效 AEL `pass`。
 
 ## 7. 成本控制不变式
 
@@ -237,7 +237,7 @@ Lifecycle core 的唯一事实源是 Git 对象库。`finish` 先验证工作区
 
 ## 10. 历史数据与兼容升级
 
-升级 Lifecycle runtime 不应要求产品全量重写 `harness-workspace/`。默认策略是：
+升级 Lifecycle runtime 不应要求产品全量重写 `ael-workspace/`。默认策略是：
 
 > 历史数据原位可读，新任务写新格式；只迁移继续执行所必需的最小状态。
 
@@ -264,8 +264,8 @@ Lifecycle core 的唯一事实源是 Git 对象库。`finish` 先验证工作区
 目标迁移命令：
 
 ```bash
-harness workspace audit
-harness migrate-task <task-id>
+ael workspace audit
+ael migrate-task <task-id>
 ```
 
 - `workspace audit` 只报告新格式任务、legacy 已完成任务、需要迁移的进行中任务和缺失关键凭证的任务，不修改数据。
@@ -276,15 +276,15 @@ harness migrate-task <task-id>
 
 ## 11. 成功判定
 
-当前实施按 [Git-native Harness Upgrade](../plans/active/git-native-harness-upgrade.md) 的 Epic/Story 顺序推进。bare receive verifier、SSH acceptance receipt、受控安装与 audit 已用真实 Git push 验证拒绝、接受、签发和 provider 消费。receive authority 会重跑 gates，不信任客户端自报的独立 GC 结果；触发 Agent GC 时，必须提供 `harness-gc-review` namespace 签名、commit/task/policy/context/triggers/telemetry 完整绑定且 Agent 调用次数为一的 receipt。GC 与 acceptance 共用 allowed-signers trust root，但可使用独立私钥。
+当前实施按 [Git-native AEL Upgrade](../plans/active/git-native-ael-upgrade.md) 的 Epic/Story 顺序推进。bare receive verifier、SSH acceptance receipt、受控安装与 audit 已用真实 Git push 验证拒绝、接受、签发和 provider 消费。receive authority 会重跑 gates，不信任客户端自报的独立 GC 结果；触发 Agent GC 时，必须提供 `harness-gc-review` namespace 签名、commit/task/policy/context/triggers/telemetry 完整绑定且 Agent 调用次数为一的 receipt。GC 与 acceptance 共用 allowed-signers trust root，但可使用独立私钥。
 
-- 未经过 Harness 的变更无法获得有效 attestation、关闭 Work Item 或进入正式 ref/制品。
+- 未经过 AEL 的变更无法获得有效 attestation、关闭 Work Item 或进入正式 ref/制品。
 - 本地伪造、复制或提交 `result.json` 不能让其他 commit 通过 verifier。
 - `lite` 任务不再承担 `strict` 的证据数量和命令链。
 - 相同输入的 gate 不重复运行。
-- 单任务可以区分实现成本与 Harness 固定成本。
+- 单任务可以区分实现成本与 AEL 固定成本。
 - 接入产品只需学习 `plan/start/finish`、只读 `status` 和一个结果文件。
 - 旧脚本数量可以逐步减少，而不是继续增长。
 - 已接入产品无需全量迁移，活动任务可最小升级，历史审计链保持可读。
 
-首批产品灰度退出条件：绕过接受测试和 stale-cache 接受测试必须 100% 阻断；`lite` 相比当前 L2 路径的中位 Harness 上下文与证据数量至少降低 40%，中位门禁耗时至少降低 30%；execution tier 误降级为 0，非风险性误阻断率不高于 5%。未达到这些指标时不扩大 rollout。
+首批产品灰度退出条件：绕过接受测试和 stale-cache 接受测试必须 100% 阻断；`lite` 相比当前 L2 路径的中位 AEL 上下文与证据数量至少降低 40%，中位门禁耗时至少降低 30%；execution tier 误降级为 0，非风险性误阻断率不高于 5%。未达到这些指标时不扩大 rollout。

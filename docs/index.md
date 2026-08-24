@@ -1,4 +1,4 @@
-# Harness 文档地图
+# AEL 文档地图
 
 这份地图按读者任务组织文档。每个主题只保留一个操作或设计真相源；历史执行包保留事实，不参与日常操作路径。
 
@@ -16,7 +16,7 @@
 | 系统边界、闭环、能力来源 | [architecture/overview.md](./architecture/overview.md) |
 | 通用产品研发模型与角色 | [architecture/team-model.md](./architecture/team-model.md) |
 | 从 Intake 到交付的阶段流 | [architecture/workflow.md](./architecture/workflow.md) |
-| Harness 与 product workspace 分层 | [architecture/workspace.md](./architecture/workspace.md) |
+| AEL 与 product workspace 分层 | [architecture/workspace.md](./architecture/workspace.md) |
 | 核心原则与取舍 | [architecture/principles.md](./architecture/principles.md) |
 
 ## 规划与执行

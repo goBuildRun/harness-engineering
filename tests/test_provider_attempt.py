@@ -15,13 +15,13 @@ from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = ROOT / ".harness" / "scripts"
+SCRIPTS = ROOT / ".ael" / "scripts"
 FIXTURES = ROOT / "tests" / "fixtures"
 ADAPTER = FIXTURES / "provider_mock_adapter.py"
 sys.path.insert(0, str(SCRIPTS))
 
 import provider_attempt  # noqa: E402
-import harness_provider_postcondition  # noqa: E402
+import ael_provider_postcondition  # noqa: E402
 
 from provider_attempt import (  # noqa: E402
     EVIDENCE_SCHEMA,
@@ -30,7 +30,7 @@ from provider_attempt import (  # noqa: E402
     run_once,
     validate_receipt,
 )
-from harness_provider_preflight import execute_preflight  # noqa: E402
+from ael_provider_preflight import execute_preflight  # noqa: E402
 
 
 class ProviderAttemptTest(unittest.TestCase):
@@ -66,8 +66,8 @@ class ProviderAttemptTest(unittest.TestCase):
             preflight = self.preflight()
 
             def runner(_command, **_kwargs):
-                self.assertNotIn("HARNESS_PROVIDER_OFFLINE_TRACE", _kwargs["env"])
-                self.assertEqual(_kwargs["env"]["HARNESS_PROVIDER_EXECUTION_MODE"], "real")
+                self.assertNotIn("AEL_PROVIDER_OFFLINE_TRACE", _kwargs["env"])
+                self.assertEqual(_kwargs["env"]["AEL_PROVIDER_EXECUTION_MODE"], "real")
                 evidence.write_text(json.dumps(self.evidence()))
                 return SimpleNamespace(returncode=0)
 
@@ -233,27 +233,27 @@ class ProviderAttemptTest(unittest.TestCase):
             },
         }
         with (
-            mock.patch.object(harness_provider_postcondition, "load_result", return_value=result),
+            mock.patch.object(ael_provider_postcondition, "load_result", return_value=result),
             mock.patch.object(
-                harness_provider_postcondition, "load_candidate_snapshot",
+                ael_provider_postcondition, "load_candidate_snapshot",
                 return_value={"snapshot": True},
             ),
             mock.patch.object(
-                harness_provider_postcondition, "changed_since_baseline", return_value=[],
+                ael_provider_postcondition, "changed_since_baseline", return_value=[],
             ),
             mock.patch.object(
-                harness_provider_postcondition, "bound_candidate",
+                ael_provider_postcondition, "bound_candidate",
                 return_value={"decision": "pass", "candidate_digest": "subject"},
             ),
             mock.patch.object(
-                harness_provider_postcondition, "budget_status", return_value={"decision": "pass"},
+                ael_provider_postcondition, "budget_status", return_value={"decision": "pass"},
             ),
             mock.patch.object(
-                harness_provider_postcondition, "stage_budget_status",
+                ael_provider_postcondition, "stage_budget_status",
                 return_value={"decision": "pass"},
             ),
         ):
-            outcome = harness_provider_postcondition.validate(
+            outcome = ael_provider_postcondition.validate(
                 Path("/product"), Path("/result"), Path("/baseline"), "subject",
                 expected_result_digest="different",
             )
@@ -281,30 +281,30 @@ class ProviderAttemptTest(unittest.TestCase):
             "total_budget_ms": 3_600_000,
             "stage_budgets_ms": {"deploy_provider": 3_600_000},
         })
-        expected = harness_provider_postcondition.authorization_digest(original)
+        expected = ael_provider_postcondition.authorization_digest(original)
         with (
             mock.patch.object(
-                harness_provider_postcondition, "load_result", return_value=mutated,
+                ael_provider_postcondition, "load_result", return_value=mutated,
             ),
             mock.patch.object(
-                harness_provider_postcondition, "load_candidate_snapshot", return_value={},
+                ael_provider_postcondition, "load_candidate_snapshot", return_value={},
             ),
             mock.patch.object(
-                harness_provider_postcondition, "changed_since_baseline", return_value=[],
+                ael_provider_postcondition, "changed_since_baseline", return_value=[],
             ),
             mock.patch.object(
-                harness_provider_postcondition, "bound_candidate",
+                ael_provider_postcondition, "bound_candidate",
                 return_value={"decision": "pass", "candidate_digest": "subject"},
             ),
             mock.patch.object(
-                harness_provider_postcondition, "budget_status", return_value={"decision": "pass"},
+                ael_provider_postcondition, "budget_status", return_value={"decision": "pass"},
             ),
             mock.patch.object(
-                harness_provider_postcondition, "stage_budget_status",
+                ael_provider_postcondition, "stage_budget_status",
                 return_value={"decision": "pass"},
             ),
         ):
-            outcome = harness_provider_postcondition.validate(
+            outcome = ael_provider_postcondition.validate(
                 Path("/product"), Path("/result"), Path("/baseline"), "subject",
                 expected_result_digest=expected,
             )
@@ -363,11 +363,11 @@ class ProviderAttemptTest(unittest.TestCase):
         }
         with (
             mock.patch(
-                "harness_provider_postcondition.budget_status",
+                "ael_provider_postcondition.budget_status",
                 return_value={"decision": "pass"},
             ),
             mock.patch(
-                "harness_provider_postcondition.stage_budget_status",
+                "ael_provider_postcondition.stage_budget_status",
                 return_value={"decision": "pass"},
             ),
         ):

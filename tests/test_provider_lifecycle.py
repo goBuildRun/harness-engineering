@@ -13,11 +13,11 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-SCRIPTS = Path(__file__).resolve().parents[1] / ".harness" / "scripts"
+SCRIPTS = Path(__file__).resolve().parents[1] / ".ael" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
-from harness_attestation import create_attestation  # noqa: E402
-from harness_runtime import default_result  # noqa: E402
+from ael_attestation import create_attestation  # noqa: E402
+from ael_runtime import default_result  # noqa: E402
 from acceptance_authority import authorize_provider_transition  # noqa: E402
 import acceptance_trust  # noqa: E402
 from acceptance_trust import TrustPolicy, terminal_authorization_matches  # noqa: E402
@@ -441,7 +441,7 @@ class ProviderLifecycleTest(unittest.TestCase):
                 "已发布",
             ):
                 args = SimpleNamespace(
-                    harness_root=str(root), id="WI-42", status=status, note="",
+                    ael_root=str(root), id="WI-42", status=status, note="",
                     lifecycle_receipt=str(receipt), accepted_ref="refs/heads/main",
                     accepted_commit="0" * 40,
                 )

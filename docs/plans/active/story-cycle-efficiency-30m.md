@@ -2,7 +2,7 @@
 title: Story Cycle Efficiency Under 30 Minutes
 status: implementation-complete-offline
 updated: 2026-08-23
-owner: harness-engineering
+owner: buildrun-agent-engineering-lifecycle
 baseline_commit: 2ea2c8e3148e767718aa66c7a8f0ae850a5201cc
 independent_qa: pass
 live_strict_trial: pending
@@ -34,16 +34,16 @@ Audit and benchmark: [Story 43.5 efficiency audit](./story-43-5-efficiency-audit
 
 ## Readiness
 
-- Harness 外部 tasklist/Epic 身份无法从版本化配置证明，因此本迭代只进入 Harness 唯一本地 backlog，`provider: noop`，禁止外部同步。
+- AEL 外部 tasklist/Epic 身份无法从版本化配置证明，因此本迭代只进入 AEL 唯一本地 backlog，`provider: noop`，禁止外部同步。
 - 小张罗 Story 43.5 的产品提交、DeerFlow 提交、生产证据和飞书状态只读；不重新部署、不调用 Provider/Judge、不关闭任务。
-- 审计源 Story 的 Harness input/output Token 保持 `unknown`，Harness telemetry 保持 `partial`，L3 保持 `live_validation_pending`；不得用 Codex 或 Provider 数据补齐。
-- `products/zhangluo/harness-workspace/knowledge/LESSONS.md` 与 12 个历史未跟踪文件是受保护基线。
+- 审计源 Story 的 AEL input/output Token 保持 `unknown`，AEL telemetry 保持 `partial`，L3 保持 `live_validation_pending`；不得用 Codex 或 Provider 数据补齐。
+- `products/zhangluo/ael-workspace/knowledge/LESSONS.md` 与 12 个历史未跟踪文件是受保护基线。
 - 当前工作树中的 provider lifecycle 安全改动属于另一项工作，不纳入本 Story 的提交。
 
 ## Acceptance Criteria
 
 1. Given 一个 Story 在用户确认时开始，when 各阶段写入无正文的开始/结束事件，then root wall-clock、阶段 wall、工具等待、重试、超时和 unknown active 可机械重建，平行 span 不重复相加。
-2. Given 默认 strict 预算，when 任一阶段或总预算耗尽，then Harness 在新 gate/Provider 副作用前停止，并返回阶段、预算、已用时间、attempt 和 remediation；同一输入的 `finish` 最多自动尝试两次。
+2. Given 默认 strict 预算，when 任一阶段或总预算耗尽，then AEL 在新 gate/Provider 副作用前停止，并返回阶段、预算、已用时间、attempt 和 remediation；同一输入的 `finish` 最多自动尝试两次。
 3. Given knowledge/Growth 陈旧，when `finish` 验证，then 产品树保持 byte-for-byte 不变并返回显式 remediation，不在 gate 内 autosync 后制造 `INPUT_CHANGED`。
 4. Given 多个无共享写状态 gate，when 执行 gate plan，then 它们并行且结果顺序稳定；产品 lint/test、浏览器、部署、Provider 和有依赖 gate 保持串行。
 5. Given只变化 Growth、说明或无关证据，when 再次 `finish`，then gate-specific input digest 允许确定性检查复用并重新绑定当前 subject；源码、工具、policy 或真实依赖变化时对应检查 miss。
@@ -75,17 +75,17 @@ Total ceiling: `30m`; the operating target is lower and must be revised downward
 | T3 | QA evidence scripts | QA bundle/check | shared mechanical bundle + independent receipts | stale/self-sign fixtures | digest-bound independent sign-off |
 | T4 | production/lifecycle contracts | offline preflight + start receipt | preflight before side effect and early capability discovery | offline provider fixtures | no network, fail closed |
 | T5 | Story 43.5 metadata-only evidence | audit + benchmark report | timeline, Pareto, flow/value classification, before/after | arithmetic/fixture tests | 9:34:36.120 closes; unknown explicit |
-| T-GC | all E4-S1 changes | no business behavior | independent review and regression scan | full Harness test suite | no L0/L1 weakening |
+| T-GC | all E4-S1 changes | no business behavior | independent review and regression scan | full AEL test suite | no L0/L1 weakening |
 
 ## Non-goals And Deferred Risks
 
-- 不把小张罗 route、call 名或飞书容器 ID硬编码为 Harness 通用规则。
+- 不把小张罗 route、call 名或飞书容器 ID硬编码为 AEL 通用规则。
 - 不重跑生产 Provider/Judge，不把离线 benchmark 冒充生产 P95。
 - 全局 JSON decision/exit-code 迁移若无法一次更新所有 shell/hook 调用者，只交付版本化 contract checker 与迁移清单，不做破坏性半切换。
-- 阶段状态机可在每次受控 transition、gate 和 Provider side effect 前停止，但不能中断未通过 Harness 入口运行的 host 推理；assurance 因此保持 `guarded` / `bypassable: true`。
-- Codex host 长会话的 2.52 亿 input Token 不能仅靠当前 5.4k 字符的 Harness context excerpt 解释；本轮提供 digest/index 与阶段遥测，host 侧阶段新会话/摘要协议留待实测。Harness input/output Token 仍为 `unknown`，telemetry 仍为 `partial`，L3 仍为 `live_validation_pending`。
-- real Provider 的权威响应、真正的离线网络隔离和外部 lifecycle readback 仍需要新的可信执行边界；在该边界存在前，Harness 保持 fail-closed，不接受 adapter 或 caller 自签替代。
-- CI planning credential 已按 `runs/ci/<task-id>/` 隔离，并由 `HARNESS_CI_TASK_ID` 绑定；当前风险转为对各产品 CI 配置的真实接入验证，不再使用共享 active workspace。
+- 阶段状态机可在每次受控 transition、gate 和 Provider side effect 前停止，但不能中断未通过 AEL 入口运行的 host 推理；assurance 因此保持 `guarded` / `bypassable: true`。
+- Codex host 长会话的 2.52 亿 input Token 不能仅靠当前 5.4k 字符的 AEL context excerpt 解释；本轮提供 digest/index 与阶段遥测，host 侧阶段新会话/摘要协议留待实测。AEL input/output Token 仍为 `unknown`，telemetry 仍为 `partial`，L3 仍为 `live_validation_pending`。
+- real Provider 的权威响应、真正的离线网络隔离和外部 lifecycle readback 仍需要新的可信执行边界；在该边界存在前，AEL 保持 fail-closed，不接受 adapter 或 caller 自签替代。
+- CI planning credential 已按 `runs/ci/<task-id>/` 隔离，并由 `AEL_CI_TASK_ID` 绑定；当前风险转为对各产品 CI 配置的真实接入验证，不再使用共享 active workspace。
 
 ## Verification
 
@@ -94,7 +94,7 @@ Total ceiling: `30m`; the operating target is lower and must be revised downward
 - Independent QA: `PASS`, with no P0/P1/P2 remaining; focused suites passed `93/93`, E4 hardening/integrity passed `37/37`, and the full suite passed `573/573` across non-overlapping batches.
 - A separate single-process full-suite run reported one host `EPERM` during timed-out process-group cleanup (`572/573`); the exact test immediately passed `1/1`, consistent with the independent full-suite result.
 - Historical candidate counts above are retained for auditability. Current HEAD `fd7b66e2b737b1944de35af47e571d6f35c5bcc1` passed the complete suite `622/622` on 2026-08-23; this review also passed manifest, doc gardening, compile and offline benchmark checks.
-- Manifest and smoke validation: `HARNESS_VALID`; Python compile, Bash syntax, module-boundary and `git diff --check` checks passed.
+- Manifest and smoke validation: `AEL_VALID`; Python compile, Bash syntax, module-boundary and `git diff --check` checks passed.
 - Offline benchmark: gate validation `431ms -> 136ms` and unrelated-evidence rerun `133ms` with `4` precise cache hits (`68.45%` and `69.14%` reductions in this run); complete six-stage fixture `831ms -> 476ms`, with QA fan-out reducing the QA stage from `80ms` serial to `20ms` bounded parallel. This is an offline orchestration benchmark, not production P95.
 - Production P95, Judge usage and the next live strict/L3 Story result remain `unknown`/`pending`.
 - Provider calls and deployments in the offline benchmark are `0`; real Provider/Judge and lifecycle readback remain pending until the next explicitly authorized strict/L3 trial.
@@ -104,46 +104,46 @@ Total ceiling: `30m`; the operating target is lower and must be revised downward
 **Lifecycle and wall clock**
 
 - Start with enforced stage order, bounded retries, and canonical-only root closure.
-  [`harness_cycle_stages.py:41`](../../../.harness/scripts/harness_cycle_stages.py#L41)
+  [`ael_cycle_stages.py:41`](../../../.ael/scripts/ael_cycle_stages.py#L41)
 
 - Confirm finish computes gates before closing a successful Story exactly once.
-  [`harness_finish.py:30`](../../../.harness/scripts/harness_finish.py#L30)
+  [`ael_finish.py:30`](../../../.ael/scripts/ael_finish.py#L30)
 
 - Verify budgets stop serial and parallel work before another side effect.
-  [`harness_gate_execution.py:117`](../../../.harness/scripts/harness_gate_execution.py#L117)
+  [`ael_gate_execution.py:117`](../../../.ael/scripts/ael_gate_execution.py#L117)
 
 **Provider truth and lifecycle capability**
 
 - Inspect one-shot claims and fresh evidence SHA-256 binding.
-  [`provider_attempt.py:115`](../../../.harness/scripts/provider_attempt.py#L115)
+  [`provider_attempt.py:115`](../../../.ael/scripts/provider_attempt.py#L115)
 
 - Check strict evidence resolves and hashes actual product-tree artifacts and the Provider chain in the gate adapter.
-  [`harness_strict_gate.py:58`](../../../.harness/scripts/harness_strict_gate.py#L58)
+  [`ael_strict_gate.py:58`](../../../.ael/scripts/ael_strict_gate.py#L58)
 
 - Check the offline adapter execution binds provider, subject, adapter and canonical argv before any real attempt.
-  [`harness_provider_preflight.py:183`](../../../.harness/scripts/harness_provider_preflight.py#L183)
+  [`ael_provider_preflight.py:183`](../../../.ael/scripts/ael_provider_preflight.py#L183)
 
 - Review offline lifecycle discovery before strict implementation begins.
-  [`harness_lifecycle_preflight.py:35`](../../../.harness/scripts/harness_lifecycle_preflight.py#L35)
+  [`ael_lifecycle_preflight.py:35`](../../../.ael/scripts/ael_lifecycle_preflight.py#L35)
 
 **Caching, QA, and context**
 
 - Trace dependency-specific digests that drive precise cache invalidation.
-  [`harness_gate_inputs.py:176`](../../../.harness/scripts/harness_gate_inputs.py#L176)
+  [`ael_gate_inputs.py:176`](../../../.ael/scripts/ael_gate_inputs.py#L176)
 
 - Confirm shared mechanical QA still requires independent per-task receipts.
-  [`harness_cycle_stage_commands.py:147`](../../../.harness/scripts/harness_cycle_stage_commands.py#L147)
+  [`ael_cycle_stage_commands.py:147`](../../../.ael/scripts/ael_cycle_stage_commands.py#L147)
 
 - Review summary/digest/index context injection rather than full artifact replay.
-  [`harness_context_index.py:39`](../../../.harness/scripts/harness_context_index.py#L39)
+  [`ael_context_index.py:39`](../../../.ael/scripts/ael_context_index.py#L39)
 
 **Regression evidence**
 
 - Follow the Story stage/root and legacy compatibility regression.
-  [`test_harness_timing.py:35`](../../../tests/test_harness_timing.py#L35)
+  [`test_ael_timing.py:35`](../../../tests/test_ael_timing.py#L35)
 
 - Follow stale evidence and post-attempt tamper rejection.
   [`test_provider_attempt.py:379`](../../../tests/test_provider_attempt.py#L379)
 
 - Confirm standalone block decisions return nonzero exit status.
-  [`test_harness_cli_exit_contract.py:28`](../../../tests/test_harness_cli_exit_contract.py#L28)
+  [`test_ael_cli_exit_contract.py:28`](../../../tests/test_ael_cli_exit_contract.py#L28)

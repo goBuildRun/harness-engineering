@@ -10,20 +10,20 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT_DIR = ROOT / ".harness" / "scripts"
+SCRIPT_DIR = ROOT / ".ael" / "scripts"
 
 
 class AgentStartTest(unittest.TestCase):
     def test_agent_start_rejects_invalid_identity_before_legacy_gate_fallback(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product = Path(tmp) / "product"
-            workspace = product / "harness-workspace"
+            workspace = product / "ael-workspace"
             task_dir = workspace / "planning/tasks/existing"
             runs = workspace / "runs"
             task_dir.mkdir(parents=True)
             runs.mkdir()
             (workspace / "project.yaml").write_text(
-                "product:\n  id: demo\nworkspace:\n  root: harness-workspace\n  planning: planning\n  runs: runs\n",
+                "product:\n  id: demo\nworkspace:\n  root: ael-workspace\n  planning: planning\n  runs: runs\n",
                 encoding="utf-8",
             )
             (runs / "planning_gate_pass.json").write_text(json.dumps({
@@ -31,7 +31,7 @@ class AgentStartTest(unittest.TestCase):
             }))
             completed = subprocess.run(
                 ["bash", str(SCRIPT_DIR / "agent_start.sh"), "../../escape"],
-                cwd=ROOT, env={**os.environ, "HARNESS_PRODUCT_ROOT": str(product)},
+                cwd=ROOT, env={**os.environ, "AEL_PRODUCT_ROOT": str(product)},
                 text=True, capture_output=True, check=True,
             )
 
@@ -41,13 +41,13 @@ class AgentStartTest(unittest.TestCase):
     def test_agent_start_rejects_stale_l1_gate_bound_to_another_task(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product = Path(tmp) / "product"
-            workspace = product / "harness-workspace"
+            workspace = product / "ael-workspace"
             task_dir = workspace / "planning/tasks/existing"
             runs = workspace / "runs"
             task_dir.mkdir(parents=True)
             runs.mkdir()
             (workspace / "project.yaml").write_text(
-                "product:\n  id: demo\nworkspace:\n  root: harness-workspace\n  planning: planning\n  runs: runs\n",
+                "product:\n  id: demo\nworkspace:\n  root: ael-workspace\n  planning: planning\n  runs: runs\n",
                 encoding="utf-8",
             )
             (runs / "planning_gate_pass.json").write_text(json.dumps({
@@ -56,7 +56,7 @@ class AgentStartTest(unittest.TestCase):
             }))
             completed = subprocess.run(
                 ["bash", str(SCRIPT_DIR / "agent_start.sh"), "local-new"],
-                cwd=ROOT, env={**os.environ, "HARNESS_PRODUCT_ROOT": str(product)},
+                cwd=ROOT, env={**os.environ, "AEL_PRODUCT_ROOT": str(product)},
                 text=True, capture_output=True, check=True,
             )
 
@@ -67,12 +67,12 @@ class AgentStartTest(unittest.TestCase):
     def test_l3_agent_start_requests_strict_tier_and_planned_write_scope(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product = Path(tmp)
-            workspace = product / "harness-workspace"
+            workspace = product / "ael-workspace"
             task_dir = workspace / "planning" / "tasks" / "2026-06-22-local1234-demo"
             task_dir.mkdir(parents=True)
             (workspace / "project.yaml").write_text(
                 "product:\n  id: demo\n  name: Demo\n  profile: generic\n"
-                "workspace:\n  root: harness-workspace\n  planning: planning\n  runs: runs\n"
+                "workspace:\n  root: ael-workspace\n  planning: planning\n  runs: runs\n"
                 "  knowledge: knowledge\n  evidence: evidence\nwork_item:\n  provider: noop\n",
                 encoding="utf-8",
             )
@@ -87,7 +87,7 @@ class AgentStartTest(unittest.TestCase):
                 "decision": "pass", "level": "L3", "task_dir": str(task_dir),
                 "work_item": {"id": "local1234", "provider": "noop"},
             }), encoding="utf-8")
-            env = {**os.environ, "HARNESS_PRODUCT_ROOT": str(product), "WORK_ITEM_PROVIDER": "noop"}
+            env = {**os.environ, "AEL_PRODUCT_ROOT": str(product), "WORK_ITEM_PROVIDER": "noop"}
             harness = [
                 str(SCRIPT_DIR / "harness"), "--product-root", str(product),
             ]
@@ -116,14 +116,14 @@ class AgentStartTest(unittest.TestCase):
         self.assertEqual(result["tier"]["initial"], "strict")
         self.assertIn("services/replay.py", result["task"]["scope"])
         self.assertIn(
-            "harness-workspace/planning/tasks/2026-06-22-local1234-demo",
+            "ael-workspace/planning/tasks/2026-06-22-local1234-demo",
             result["task"]["scope"],
         )
 
     def test_agent_start_injects_product_knowledge(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product = Path(tmp)
-            workspace = product / "harness-workspace"
+            workspace = product / "ael-workspace"
             task_dir = workspace / "planning" / "tasks" / "2026-06-22-local1234-demo"
             knowledge = workspace / "knowledge"
             task_dir.mkdir(parents=True)
@@ -136,7 +136,7 @@ product:
   name: Demo
   profile: generic
 workspace:
-  root: harness-workspace
+  root: ael-workspace
   planning: planning
   runs: runs
   knowledge: knowledge
@@ -168,7 +168,7 @@ work_item:
 
             env = {
                 **os.environ,
-                "HARNESS_PRODUCT_ROOT": str(product),
+                "AEL_PRODUCT_ROOT": str(product),
                 "WORK_ITEM_PROVIDER": "noop",
             }
             out = subprocess.check_output(
@@ -206,18 +206,18 @@ work_item:
     def test_agent_start_resume_preserves_runtime_and_worktree_baseline(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             product = Path(tmp)
-            workspace = product / "harness-workspace"
+            workspace = product / "ael-workspace"
             task_dir = workspace / "planning" / "tasks" / "2026-06-22-local1234-demo"
             task_dir.mkdir(parents=True)
             (workspace / "project.yaml").write_text(
-                "product:\n  id: demo\n  name: Demo\nworkspace:\n  root: harness-workspace\n  planning: planning\n  runs: runs\n  knowledge: knowledge\n  evidence: evidence\nwork_item:\n  provider: noop\n",
+                "product:\n  id: demo\n  name: Demo\nworkspace:\n  root: ael-workspace\n  planning: planning\n  runs: runs\n  knowledge: knowledge\n  evidence: evidence\nwork_item:\n  provider: noop\n",
                 encoding="utf-8",
             )
             (task_dir / "planning_gate_pass.json").write_text(json.dumps({
                 "decision": "pass", "level": "L1", "task_dir": str(task_dir),
                 "work_item": {"id": "local1234", "provider": "noop"},
             }), encoding="utf-8")
-            env = {**os.environ, "HARNESS_PRODUCT_ROOT": str(product), "WORK_ITEM_PROVIDER": "noop"}
+            env = {**os.environ, "AEL_PRODUCT_ROOT": str(product), "WORK_ITEM_PROVIDER": "noop"}
             argv = ["bash", str(SCRIPT_DIR / "agent_start.sh"), "local1234"]
             subprocess.check_output(argv, cwd=ROOT, env=env, text=True, stderr=subprocess.DEVNULL)
             baseline_path = workspace / "runs/tasks/local1234/worktree_baseline.json"

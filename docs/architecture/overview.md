@@ -1,14 +1,14 @@
-# Harness 架构总览
+# AEL 架构总览
 
-> 文档定位：解释 Agent Engineering Lifecycle 的设计背景、系统模型、能力来源和演进边界。本文不维护命令、provider 配置、实时成熟度或技术债状态。
+> 文档定位：解释 BuildRun Agent Engineering Lifecycle 的设计背景、系统模型、能力来源和演进边界。本文不维护命令、provider 配置、实时成熟度或技术债状态。
 >
 > 当前使用以 [getting-started/cli.md](../getting-started/cli.md) 为准；精简执行目标以 [lean-enforcement.md](../design/lean-enforcement.md) 为准；当前成熟度以 [operations/maturity.md](../operations/maturity.md) 为准。
 
-## 1. 为什么需要 Harness
+## 1. 为什么需要 AEL
 
 AI Agent 参与产品研发时，常见失控不是“不会写代码”，而是缺少完整工程环境：
 
-| 失控模式 | 结果 | Harness 对策 |
+| 失控模式 | 结果 | AEL 对策 |
 |----------|------|--------------|
 | 没有形成可测试规格就实现 | 做错需求、反复返工 | BMAD Planning + Planning Gate |
 | 计划、代码和协同任务彼此脱节 | 范围漂移、状态失真 | 任务身份 + Work Item adapter + scope gate |
@@ -17,11 +17,11 @@ AI Agent 参与产品研发时，常见失控不是“不会写代码”，而�
 | 经验只停留在对话 | 下一次重复踩坑 | 产品知识与候选 review 闭环 |
 | 规范只写在说明中 | Agent 遗漏后仍能合并 | CLI、状态和 CI 机械强制 |
 
-Harness 的目标不是增加流程，而是让必要流程无法遗漏，让不必要流程不再发生。
+AEL 的目标不是增加流程，而是让必要流程无法遗漏，让不必要流程不再发生。
 
 ## 2. 核心模型
 
-Agent Engineering Lifecycle 把研发组织为一个事实前导和两个闭环：
+BuildRun Agent Engineering Lifecycle 把研发组织为一个事实前导和两个闭环：
 
 ```mermaid
 flowchart LR
@@ -44,13 +44,13 @@ flowchart LR
 
 最高原则是：
 
-> 没有与当前变更匹配的 Harness 合规结果，任务不能进入有效完成态；Harness 对合规结果零妥协，对执行成本持续最小化。
+> 没有与当前变更匹配的 AEL 合规结果，任务不能进入有效完成态；AEL 对合规结果零妥协，对执行成本持续最小化。
 
 ## 3. 分层与所有权
 
 ### 3.1 Lifecycle runtime
 
-`harness-engineering/` 负责 Agent 产品的生命周期执行：
+`buildrun-agent-engineering-lifecycle/` 负责 Agent 产品的生命周期执行：
 
 - Agent 角色、通用规则和任务模板。
 - 质量、安全、结构、证据和协同 adapter。
@@ -61,7 +61,7 @@ flowchart LR
 
 ### 3.2 Product workspace
 
-产品仓库拥有自己的 `harness-workspace/`：
+产品仓库拥有自己的 `ael-workspace/`：
 
 | 目录 | 责任 |
 |------|------|
@@ -77,13 +77,13 @@ flowchart LR
 
 | 事实 | 权威来源 |
 |------|----------|
-| Harness 管理哪些产品 | 本机 `.harness/products/registry.yaml` |
+| AEL 管理哪些产品 | 本机 `.ael/products/registry.yaml` |
 | 当前终端作用于哪个产品 | 显式参数或 session context；active product 仅兜底 |
-| 产品 workspace 如何组织 | 产品 `harness-workspace/project.yaml` |
-| 产品规格和任务范围 | 产品 `harness-workspace/planning/` |
+| 产品 workspace 如何组织 | 产品 `ael-workspace/project.yaml` |
+| 产品规格和任务范围 | 产品 `ael-workspace/planning/` |
 | 本地任务状态 | 目标 `runs/tasks/<task-id>/result.json` |
 | 某个 commit 是否允许接收/发布 | 受控 Git authority 对 attestation/result refs 和目标 commit 的重验结果；客户端 attestation 不能单独决定接受 |
-| 产品长期知识 | 产品 `harness-workspace/knowledge/` |
+| 产品长期知识 | 产品 `ael-workspace/knowledge/` |
 
 本地 `finish pass` 只代表可以进入 review，不能直接关闭外部 Work Item。
 
@@ -117,7 +117,7 @@ L1/L2/L3 不是执行风险等级。模板中的历史 `风险等级` 只是当�
 
 任何 execution tier 都必须证明：
 
-1. 正式迭代绑定了唯一、可追踪的 Harness Task ID。
+1. 正式迭代绑定了唯一、可追踪的 AEL Task ID。
 2. 实际变更没有越过产品、profile 和任务范围。
 3. 已运行与实际风险匹配的验证。
 4. 本地结果、目标 commit attestation 和受控接受点签名都有效，才能发布或关闭外部 Work Item。
@@ -138,14 +138,14 @@ L1/L2/L3 不是执行风险等级。模板中的历史 `风险等级` 只是当�
 
 ## 7. 参考项目能力保留
 
-Harness 的能力来自多个成熟项目和方法，但这些来源不形成需要逐套执行的并行工作流：
+AEL 的能力来自多个成熟项目和方法，但这些来源不形成需要逐套执行的并行工作流：
 
 | 来源 | 保留内容 | 不保留内容 |
 |------|----------|------------|
 | OpenAI Harness Engineering | 短地图、渐进披露、仓库记录、机械反馈、文档园艺 | 把所有实现细节暴露给 Agent |
 | BMAD Method | Analysis、Planning、Solutioning、可测试验收和实现就绪 | 所有任务固定运行完整方法链 |
 | Flow-X | 产品知识、恢复记录、测试/审查/成长证据语义 | 每任务固定生成所有报告 |
-| Superpowers | 规格先行、TDD、系统调试和完成前验证 | 与 Harness 重复的第二套入口 |
+| Superpowers | 规格先行、TDD、系统调试和完成前验证 | 与 AEL 重复的第二套入口 |
 | GStack | 真实环境调查、浏览器 QA 和审查视角 | 所有任务固定浏览器取证 |
 | planning level | planning level、任务模板和 Entry Gate | 用 L1/L2/L3 代替执行风险 |
 | Ralph / Agent Review | Agent 审 Agent和失败修复 | 不受预算和风险约束的循环 |
@@ -156,7 +156,7 @@ Harness 的能力来自多个成熟项目和方法，但这些来源不形成需
 
 ## 8. Profile 隔离
 
-通用 Harness 不写死产品目录、语言或领域模型。active profile 可以提供：
+通用 AEL 不写死产品目录、语言或领域模型。active profile 可以提供：
 
 - package allowlist 和 protected 路径。
 - 产品架构不变式和领域参考。
@@ -180,7 +180,7 @@ Agent 的通用代码放置规则始终先解析产品 `project.yaml` 和 active
 
 ### 成本属于正确性
 
-目标结果统一记录实现成本与 Harness 固定开销，包括 Token、上下文字符数、Agent 调用、gate 耗时和重跑。无法精确获得的数据写 `unknown`，不能用 `0` 伪装完整遥测，也不能另建一套成本 Markdown 报告。
+目标结果统一记录实现成本与 AEL 固定开销，包括 Token、上下文字符数、Agent 调用、gate 耗时和重跑。无法精确获得的数据写 `unknown`，不能用 `0` 伪装完整遥测，也不能另建一套成本 Markdown 报告。
 
 ## 10. 强制执行边界
 
@@ -200,7 +200,7 @@ Agent 的通用代码放置规则始终先解析产品 `project.yaml` 和 active
 > 历史数据原位可读，新任务写新格式；只迁移继续执行所必需的最小状态。
 
 - 已完成任务、历史 evidence 和产品知识不批量迁移。
-- 进行中或重开的任务补 Harness Task ID、execution tier、baseline 和初始 `result.json`。
+- 进行中或重开的任务补 AEL Task ID、execution tier、baseline 和初始 `result.json`。
 - 旧 Planning Gate、QA 凭证和 Work Item ID 继续兼容读取。
 - 缺失历史 baseline 时记录 migration baseline，并至少执行一次完整 `standard` 验证。
 - 迁移不移动、不删除、不批量改写 `planning/`、`knowledge/` 或 `evidence/`。

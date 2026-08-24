@@ -12,17 +12,17 @@ from pathlib import Path
 from unittest import mock
 
 
-SCRIPTS = Path(__file__).resolve().parents[1] / ".harness" / "scripts"
+SCRIPTS = Path(__file__).resolve().parents[1] / ".ael" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
-from harness_execution_authority import (  # noqa: E402
+from ael_execution_authority import (  # noqa: E402
     AuthorityTrust,
     build_receipt,
     sign_receipt,
     trust_from_installation,
     validate_receipt,
 )
-from harness_provider_authority import (  # noqa: E402
+from ael_provider_authority import (  # noqa: E402
     SANDBOX_CLAIMS,
     build_binding,
     provider_input_digest,
@@ -30,8 +30,8 @@ from harness_provider_authority import (  # noqa: E402
     wait_for_receipt,
     validate_binding,
 )
-from harness_release_readback import validate as validate_lifecycle_readback  # noqa: E402
-from harness_runtime import canonical_digest  # noqa: E402
+from ael_release_readback import validate as validate_lifecycle_readback  # noqa: E402
+from ael_runtime import canonical_digest  # noqa: E402
 
 
 class ExecutionAuthorityTest(unittest.TestCase):
@@ -148,10 +148,10 @@ class ExecutionAuthorityTest(unittest.TestCase):
             root = Path(tmp)
             _key, self_selected = self.keys(root / "caller", "harness-network-sandbox")
             with mock.patch.dict(os.environ, {
-                "HARNESS_SANDBOX_AUTHORITY_ALLOWED_SIGNERS": str(
+                "AEL_SANDBOX_AUTHORITY_ALLOWED_SIGNERS": str(
                     self_selected.allowed_signers
                 ),
-                "HARNESS_SANDBOX_AUTHORITY_SIGNER_FINGERPRINT": (
+                "AEL_SANDBOX_AUTHORITY_SIGNER_FINGERPRINT": (
                     self_selected.signer_fingerprint
                 ),
             }):
@@ -166,15 +166,15 @@ class ExecutionAuthorityTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             _key, expected = self.keys(
-                root / ".harness/trust/network", "harness-network-sandbox",
+                root / ".ael/trust/network", "harness-network-sandbox",
             )
-            policy = root / ".harness/authority-trust.json"
+            policy = root / ".ael/authority-trust.json"
             policy.write_text(json.dumps({
                 "schema": "harness-authority-trust-v1",
                 "authorities": {
                     "network-sandbox": {
                         "principal": "harness-network-sandbox",
-                        "allowed_signers": ".harness/trust/network/allowed_signers",
+                        "allowed_signers": ".ael/trust/network/allowed_signers",
                         "signer_fingerprint": expected.signer_fingerprint,
                     },
                 },

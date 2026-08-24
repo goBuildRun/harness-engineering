@@ -1,0 +1,165 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import sys
+import tempfile
+import unittest
+from types import SimpleNamespace
+from pathlib import Path
+from unittest import mock
+
+
+SCRIPTS = Path(__file__).resolve().parents[1] / ".ael" / "scripts"
+sys.path.insert(0, str(SCRIPTS))
+
+from ael_migration import audit_workspace, migration_eligibility  # noqa: E402
+import ael_migration_commands  # noqa: E402
+
+
+class HarnessMigrationTest(unittest.TestCase):
+    def test_completed_legacy_task_is_not_selected_for_migration(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            task = product / "ael-workspace/planning/tasks/done-task"
+            task.mkdir(parents=True)
+            (task / "00-任务卡.md").write_text("- 当前状态：已完成\n")
+            (task / "planning_gate_pass.json").write_text('{"decision":"pass"}')
+            report = audit_workspace(product)
+            self.assertEqual(report["legacy"], ["done-task"])
+            self.assertEqual(report["needs_migration"], [])
+
+    def test_active_credentialed_task_requires_migration(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            task = product / "ael-workspace/planning/tasks/active-task"
+            task.mkdir(parents=True)
+            (task / "00-任务卡.md").write_text("- 当前状态：进行中\n")
+            (task / "planning_gate_pass.json").write_text('{"decision":"pass"}')
+            self.assertEqual(audit_workspace(product)["needs_migration"], ["active-task"])
+            self.assertEqual(
+                migration_eligibility(product, "active-task"),
+                (True, "TASK_MIGRATION_ELIGIBLE"),
+            )
+
+    def test_prefixed_task_directory_matches_stable_result_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            task = product / "ael-workspace/planning/tasks/2026-08-07-task-123-title"
+            task.mkdir(parents=True)
+            (task / "00-任务卡.md").write_text(
+                "- 任务编号：task-123\n- 当前状态：实施中\n"
+            )
+            result = product / "ael-workspace/runs/tasks/task-123/result.json"
+            result.parent.mkdir(parents=True)
+            result.write_text("{}")
+            report = audit_workspace(product)
+            self.assertEqual(report["new_format"], ["task-123"])
+            self.assertEqual(report["needs_migration"], [])
+
+    def test_backlog_or_ambiguous_history_stays_legacy_until_activated(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            tasks = product / "ael-workspace/planning/tasks"
+            for task_id, status in (("backlog", "backlog"), ("paused", "paused-by-owner")):
+                task = tasks / task_id
+                task.mkdir(parents=True)
+                (task / "00-任务卡.md").write_text(f"- 当前状态：{status}\n")
+                (task / "planning_gate_pass.json").write_text('{"decision":"pass"}')
+            report = audit_workspace(product)
+            self.assertEqual(report["legacy"], ["backlog", "paused"])
+            self.assertEqual(report["needs_migration"], [])
+
+    def test_only_active_credentialed_tasks_are_migration_eligible(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            tasks = product / "ael-workspace/planning/tasks"
+            done = tasks / "done-task"
+            done.mkdir(parents=True)
+            (done / "00-任务卡.md").write_text("- 当前状态：已完成\n")
+            (done / "planning_gate_pass.json").write_text('{"decision":"pass"}')
+            missing = tasks / "missing-credential"
+            missing.mkdir()
+            (missing / "00-任务卡.md").write_text("- 当前状态：进行中\n")
+            self.assertEqual(
+                migration_eligibility(product, "done-task")[1],
+                "COMPLETED_LEGACY_MIGRATION_FORBIDDEN",
+            )
+            self.assertEqual(
+                migration_eligibility(product, "missing-credential")[1],
+                "MIGRATION_CREDENTIAL_MISSING",
+            )
+            self.assertEqual(
+                migration_eligibility(product, "absent")[1],
+                "MIGRATION_TASK_NOT_FOUND",
+            )
+
+    def test_malformed_or_failed_credentials_are_not_migration_eligible(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            tasks = product / "ael-workspace/planning/tasks"
+            for task_id, payload in (("malformed", "{"), ("failed", '{"decision":"block"}')):
+                task = tasks / task_id
+                task.mkdir(parents=True)
+                (task / "00-任务卡.md").write_text("- 当前状态：进行中\n")
+                (task / "planning_gate_pass.json").write_text(payload)
+                self.assertEqual(
+                    migration_eligibility(product, task_id)[1],
+                    "MIGRATION_CREDENTIAL_MISSING",
+                )
+
+    def test_migrate_command_rejects_ineligible_task_without_workspace_write(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            task = product / "ael-workspace/planning/tasks/done-task"
+            task.mkdir(parents=True)
+            (task / "00-任务卡.md").write_text("- 当前状态：已完成\n")
+            (task / "planning_gate_pass.json").write_text('{"decision":"pass"}')
+            captured = []
+            with mock.patch.object(ael_migration_commands, "dump_json", side_effect=captured.append):
+                ael_migration_commands.cmd_migrate(SimpleNamespace(
+                    product_root=str(product), ael_root=str(Path(__file__).resolve().parents[1]),
+                    task_id="done-task", reason="should not migrate",
+                ))
+            self.assertEqual(captured[-1]["decision"], "block")
+            self.assertFalse((product / "ael-workspace/runs/tasks/done-task").exists())
+
+    def test_migrate_rejects_task_card_path_traversal_without_workspace_write(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp) / "product"
+            task = product / "ael-workspace/planning/tasks/unsafe-card"
+            task.mkdir(parents=True)
+            (task / "00-任务卡.md").write_text(
+                "- 任务编号：../../escape\n- 当前状态：进行中\n"
+            )
+            (task / "planning_gate_pass.json").write_text('{"decision":"pass"}')
+            report = audit_workspace(product)
+            self.assertEqual(report["invalid_task_ids"], ["../../escape"])
+            self.assertEqual(report["needs_migration"], [])
+
+            captured = []
+            with mock.patch.object(ael_migration_commands, "dump_json", side_effect=captured.append):
+                ael_migration_commands.cmd_migrate(SimpleNamespace(
+                    product_root=str(product), ael_root=str(SCRIPTS.parents[1]),
+                    task_id="../../escape", reason="must remain contained",
+                ))
+            self.assertEqual(captured[-1]["reason"], "TASK_ID_INVALID")
+            self.assertFalse((product / "ael-workspace/runs").exists())
+            self.assertFalse((product / "ael-workspace/escape").exists())
+
+    def test_workspace_audit_is_read_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            product = Path(tmp)
+            task = product / "ael-workspace/planning/tasks/active-task"
+            task.mkdir(parents=True)
+            (task / "00-任务卡.md").write_text("- 当前状态：进行中\n")
+            (task / "planning_gate_pass.json").write_text('{"decision":"pass"}')
+            before = sorted(str(path.relative_to(product)) for path in product.rglob("*"))
+            report = audit_workspace(product)
+            after = sorted(str(path.relative_to(product)) for path in product.rglob("*"))
+            self.assertEqual(report["needs_migration"], ["active-task"])
+            self.assertEqual(after, before)
+            self.assertFalse((product / "ael-workspace/runs").exists())
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -1,0 +1,352 @@
+#!/usr/bin/env python3
+"""Lean AEL state, tier, fingerprint, code-health, and CLI orchestration."""
+from __future__ import annotations
+
+import ast
+from contextlib import contextmanager
+import fcntl
+import hashlib
+import io
+import json
+import os
+import re
+import subprocess
+import tempfile
+import tokenize
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+from ael_schema import assert_result
+from ael_assurance import snapshot as assurance_snapshot
+from ael_gc_contract import telemetry_add_gc, valid_gc_result
+from ael_tier import TIERS, classify_tier, task_kind_tier
+from ael_task_resolution import resolve_task_id, valid_task_id
+from ael_timing import STAGE_BUDGETS_MS, initialize_cycle
+
+SCHEMA_VERSION = 1
+UNKNOWN = "unknown"
+CODE_SUFFIXES = {".py", ".js", ".jsx", ".ts", ".tsx", ".go", ".java", ".rs"}
+DEBUG_RE = re.compile(r"console\.log\s*\(|println!\s*\(|^\s*print\s*\(", re.MULTILINE)
+PROCESS_RE = re.compile(r"TODO:\s*AI|FIXME:\s*agent|AI fixed", re.IGNORECASE)
+DEAD_RE = re.compile(r"\b(?:def|function)\s+(?:unused|dead|obsolete)[A-Za-z0-9_]*\b", re.IGNORECASE)
+IMPORT_RE = re.compile(r"^(?:from\s+([\w.]+)\s+import|import\s+([\w.]+)|.*from\s+['\"]([^'\"]+)['\"])", re.MULTILINE)
+
+
+def now() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def canonical_digest(value: Any) -> str:
+    raw = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def fingerprint(gate: str, subject_digest: str, policy_digest: str, *inputs: Any) -> str:
+    return canonical_digest(
+        {"schema": SCHEMA_VERSION, "gate": gate, "subject": subject_digest,
+         "policy": policy_digest, "inputs": inputs}
+    )
+
+
+def default_result(task_id: str, *, initial_tier: str = "standard", work_item: Any = None) -> dict[str, Any]:
+    if initial_tier not in TIERS:
+        initial_tier = "standard"
+    result = {
+        "schema_version": SCHEMA_VERSION,
+        "task_id": task_id,
+        "work_item": work_item,
+        "state": "active",
+        "enforcement": "shadow",
+        "assurance": assurance_snapshot("local"),
+        "tier": {"initial": initial_tier, "effective": initial_tier},
+        "binding_digest": "",
+        "baseline": {"digest": "", "source": "start"},
+        "subject": {"kind": "worktree", "digest": ""},
+        "policy_digest": "",
+        "invariants": {
+            "task_identity": "pending", "scope": "pending",
+            "risk_validation": "pending", "final_result": "pending",
+        },
+        "checks": {},
+        "cost": {
+            "implementation": {
+                "input_tokens": UNKNOWN, "output_tokens": UNKNOWN,
+                "context_chars": UNKNOWN, "agent_calls": UNKNOWN,
+            },
+            "harness": {
+                "input_tokens": UNKNOWN, "output_tokens": UNKNOWN,
+                "context_chars": 0, "agent_calls": 0,
+                "gate_duration_ms": 0, "reruns": 0,
+                "cache_hits": 0,
+            },
+            "telemetry_complete": False,
+        },
+        "blockers": [],
+        "decision": "block",
+        "updated_at": now(),
+    }
+    initialize_cycle(result)
+    return result
+
+
+def atomic_write_result(path: Path, result: dict[str, Any]) -> None:
+    assert_result(result)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = path.with_suffix(path.suffix + ".lock")
+    with lock_path.open("a+", encoding="utf-8") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        result["updated_at"] = now()
+        fd, name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                json.dump(result, stream, ensure_ascii=False, indent=2, sort_keys=True)
+                stream.write("\n")
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(name, path)
+        finally:
+            if os.path.exists(name):
+                os.unlink(name)
+        fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+
+
+@contextmanager
+def task_operation_lock(path: Path):
+    """Serialize a complete task transition, not only its final file replace."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = path.with_suffix(path.suffix + ".operation.lock")
+    with lock_path.open("a+", encoding="utf-8") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+
+
+def load_result(path: Path) -> dict[str, Any]:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if "assurance" not in data:
+        data["assurance"] = assurance_snapshot(
+            "enforced" if data.get("enforcement") == "enforced" else "local"
+        )
+    assert_result(data)
+    return data
+
+
+def _module_roots(paths: list[str]) -> set[str]:
+    return {Path(path).parts[0] for path in paths if len(Path(path).parts) > 1}
+
+
+def has_process_comment(text: str, suffix: str) -> bool:
+    if suffix != ".py":
+        return bool(PROCESS_RE.search(text))
+    comments = (token.string for token in tokenize.generate_tokens(io.StringIO(text).readline)
+                if token.type == tokenize.COMMENT)
+    return any(PROCESS_RE.search(comment) for comment in comments)
+
+
+def mechanical_code_health(repo: Path, changed_files: list[str], *, tier: str) -> dict[str, Any]:
+    findings: list[dict[str, str]] = []
+    triggers: set[str] = set()
+    code_files = [path for path in changed_files if Path(path).suffix in CODE_SUFFIXES]
+    if len(_module_roots(code_files)) > 1:
+        triggers.add("cross_module")
+    normalized = {path.replace("\\", "/") for path in changed_files}
+    for rel in code_files:
+        path = repo / rel
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        if has_process_comment(text, path.suffix):
+            triggers.add("process_comment")
+            findings.append({"severity": "block", "kind": "process_comment", "path": rel})
+        if "/test" not in f"/{rel.lower()}" and DEBUG_RE.search(text):
+            triggers.add("debug_output")
+            findings.append({"severity": "block", "kind": "debug_output", "path": rel})
+        if DEAD_RE.search(text):
+            triggers.add("dead_code")
+            findings.append({"severity": "review", "kind": "dead_code", "path": rel})
+        if path.suffix == ".py":
+            try:
+                tree = ast.parse(text)
+                imported: dict[str, int] = {}
+                used = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.Import):
+                        imported.update({(alias.asname or alias.name.split(".")[0]): node.lineno for alias in node.names})
+                    elif isinstance(node, ast.ImportFrom) and node.module != "__future__":
+                        imported.update({(alias.asname or alias.name): node.lineno for alias in node.names if alias.name != "*"})
+                for name, line in imported.items():
+                    if name not in used:
+                        triggers.add("unused_import")
+                        findings.append({"severity": "review", "kind": "unused_import", "path": f"{rel}:{line}"})
+            except SyntaxError:
+                pass
+        if len(text.splitlines()) > 400:
+            triggers.add("large_file")
+            findings.append({"severity": "review", "kind": "large_file", "path": rel})
+        for match in IMPORT_RE.finditer(text):
+            imported = next((value for value in match.groups() if value), "")
+            local = imported.replace(".", "/").lstrip("./")
+            if local and any(other.startswith(local + ".") for other in normalized):
+                triggers.add("direct_dependency_changed")
+    agent_required = tier == "strict" or (tier == "standard" and bool(triggers))
+    decision = "block" if any(item["severity"] == "block" for item in findings) else "pass"
+    subject_digest = subject_for(repo, changed_files)
+    return {
+        "decision": decision,
+        "mode": "mechanical",
+        "triggers": sorted(triggers),
+        "findings": len(findings),
+        "finding_details": findings,
+        "remediated": 0,
+        "deferred_work_items": [],
+        "subject_digest": subject_digest,
+        "fingerprint": "",
+        "source": "executed",
+        "agent_required": agent_required,
+        "completed_at": now(),
+    }
+
+
+def subject_for(repo: Path, changed_files: list[str]) -> str:
+    entries = []
+    for rel in sorted(set(changed_files)):
+        path = repo / rel
+        entries.append((rel, hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else "absent"))
+    return canonical_digest(entries)
+
+
+def cache_matches(check: dict[str, Any], expected_fingerprint: str,
+                  subject_digest: str, policy_digest: str) -> bool:
+    return (
+        check.get("source") in {None, "executed", "cache"}
+        and check.get("fingerprint") == expected_fingerprint
+        and check.get("subject_digest") == subject_digest
+        and check.get("policy_digest", policy_digest) == policy_digest
+    )
+
+
+def apply_code_health(result: dict[str, Any], mechanical: dict[str, Any], *,
+                      gc_result: dict[str, Any] | None,
+                      subject_digest: str = "", policy_digest: str = "") -> None:
+    subject_digest = subject_digest or mechanical.get("subject_digest", "")
+    required = bool(mechanical.get("agent_required"))
+    combined = {key: value for key, value in mechanical.items() if key not in {"agent_required", "finding_details"}}
+    combined["mode"] = "mechanical+agent" if required else "mechanical"
+    combined["policy_digest"] = policy_digest
+    if required:
+        combined["mechanical_decision"] = mechanical.get("decision", "block")
+        valid = valid_gc_result(
+            gc_result, result, subject_digest, policy_digest, mechanical=mechanical,
+        )
+        if not valid:
+            combined["decision"] = "block"
+            result["blockers"] = sorted(set(result.get("blockers", [])) | {"GC_REQUIRED"})
+        else:
+            deferred = gc_result.get("deferred_work_items", [])
+            if gc_result.get("deferred_findings", 0) and not deferred:
+                combined["decision"] = "block"
+                result["blockers"] = sorted(
+                    set(result.get("blockers", [])) | {"DEFERRED_WORK_ITEM_REQUIRED"}
+                )
+            combined.update({
+                "findings": gc_result.get("findings", combined.get("findings", 0)),
+                "remediated": gc_result.get("remediated", 0),
+                "deferred_work_items": deferred,
+                "agent_result_digest": canonical_digest(gc_result),
+            })
+            combined["fingerprint"] = fingerprint(
+                "code_health", subject_digest, policy_digest,
+                mechanical.get("fingerprint", ""), combined["agent_result_digest"],
+            )
+            if "DEFERRED_WORK_ITEM_REQUIRED" not in result.get("blockers", []):
+                # The mechanical scan intentionally over-approximates. Once an independent,
+                # subject-bound GC review passes, its adjudication is the final local verdict.
+                combined["decision"] = "pass"
+    result.setdefault("checks", {})["code_health"] = combined
+
+
+def finish_decision(result: dict[str, Any]) -> str:
+    invariant_pass = all(value == "pass" for value in result.get("invariants", {}).values())
+    checks_pass = all(check.get("decision") == "pass" for check in result.get("checks", {}).values())
+    cycle = result.get("cycle") or {}
+    stages = cycle.get("stages", {})
+    finalize_status = (stages.get("finalize") or {}).get("status")
+    cycle_pass = not cycle.get("stage_enforced") or (
+        all(
+            (cycle.get("stages", {}).get(stage) or {}).get("status") == "pass"
+            for stage in tuple(STAGE_BUDGETS_MS)[:-1]
+        )
+        and finalize_status in {"active", "pass"}
+        and cycle.get("current_stage") in {"finalize", ""}
+    )
+    decision = (
+        "pass" if invariant_pass and checks_pass and cycle_pass and not result.get("blockers")
+        else "block"
+    )
+    result["decision"] = decision
+    result["state"] = "validated" if decision == "pass" else "blocked"
+    return decision
+
+
+def git_changed(repo: Path, commit: str = "") -> list[str]:
+    commands = []
+    if commit:
+        try:
+            parent = subprocess.check_output(
+                ["git", "rev-parse", f"{commit}^1"], cwd=repo, text=True,
+                stderr=subprocess.DEVNULL,
+            ).strip()
+            commands.append(["git", "diff", "--name-only", "-z", parent, commit])
+        except (FileNotFoundError, subprocess.CalledProcessError):
+            commands.append([
+                "git", "diff-tree", "--root", "--no-commit-id", "--name-only", "-z", "-r", commit,
+            ])
+    else:
+        commands.extend((
+            ["git", "diff", "--name-only", "-z", "HEAD"],
+            ["git", "ls-files", "--others", "--exclude-standard", "-z"],
+        ))
+    found: list[str] = []
+    for command in commands:
+        try:
+            output = subprocess.check_output(command, cwd=repo, text=True, stderr=subprocess.DEVNULL)
+            found.extend(path for path in output.split("\0") if path)
+        except (FileNotFoundError, subprocess.CalledProcessError):
+            pass
+    return list(dict.fromkeys(found))
+
+
+def workspace_root(product: Path) -> Path:
+    return product / "ael-workspace"
+
+
+def result_path(product: Path, task_id: str) -> Path:
+    if not valid_task_id(task_id):
+        raise ValueError("TASK_ID_INVALID")
+    return workspace_root(product) / "runs" / "tasks" / task_id / "result.json"
+
+
+def active_task_path(product: Path) -> Path:
+    return workspace_root(product) / "runs" / "active_task.json"
+
+
+def policy_for(harness: Path, product: Path) -> str:
+    paths = [harness / ".ael" / "config.yaml", product / "ael-workspace" / "project.yaml",
+             harness / ".ael" / "rules" / "gc-golden-principles.md"]
+    return canonical_digest([(str(path.relative_to(harness) if path.is_relative_to(harness) else path.name),
+                              hashlib.sha256(path.read_bytes()).hexdigest()) for path in paths if path.is_file()])
+
+
+from ael_gc_runner import invoke_gc_once  # noqa: E402  compatibility re-export
+
+
+def main() -> int:
+    from ael_cli import main as commands_main
+
+    return commands_main()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

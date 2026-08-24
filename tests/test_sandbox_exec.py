@@ -10,7 +10,7 @@ from unittest.mock import patch
 from pathlib import Path
 
 
-SCRIPTS = Path(__file__).resolve().parents[1] / ".harness" / "scripts"
+SCRIPTS = Path(__file__).resolve().parents[1] / ".ael" / "scripts"
 ROOT = SCRIPTS.parents[1]
 sys.path.insert(0, str(SCRIPTS))
 
@@ -59,10 +59,10 @@ class SandboxExecTest(unittest.TestCase):
 
     def remote_env(self) -> dict[str, str]:
         return {
-            "HARNESS_SANDBOX_REMOTE_URL": "https://executor.example.invalid/v1/run",
-            "HARNESS_SANDBOX_WORKSPACE_REF": "repo@commit",
-            "HARNESS_SANDBOX_REMOTE_TOKEN": "secret",
-            "HARNESS_SANDBOX_SUBJECT_DIGEST": "abc123",
+            "AEL_SANDBOX_REMOTE_URL": "https://executor.example.invalid/v1/run",
+            "AEL_SANDBOX_WORKSPACE_REF": "repo@commit",
+            "AEL_SANDBOX_REMOTE_TOKEN": "secret",
+            "AEL_SANDBOX_SUBJECT_DIGEST": "abc123",
         }
 
     def test_remote_backend_sends_structured_argv_and_binds_subject(self) -> None:
@@ -124,7 +124,7 @@ class SandboxExecTest(unittest.TestCase):
 
     def test_invalid_timeout_emits_block_and_nonzero_exit(self) -> None:
         emitted = []
-        with patch.dict(os.environ, {"HARNESS_SANDBOX_TIMEOUT_SECONDS": "abc"}), patch(
+        with patch.dict(os.environ, {"AEL_SANDBOX_TIMEOUT_SECONDS": "abc"}), patch(
             "sandbox_exec.emit", side_effect=lambda decision, reason, **extra: emitted.append({
                 "decision": decision, "reason": reason, **extra,
             }),
@@ -137,7 +137,7 @@ class SandboxExecTest(unittest.TestCase):
 
     def test_shell_wrapper_without_command_returns_nonzero_block(self) -> None:
         completed = subprocess.run(
-            ["bash", str(ROOT / ".harness/scripts/run_in_sandbox.sh")],
+            ["bash", str(ROOT / ".ael/scripts/run_in_sandbox.sh")],
             cwd=ROOT, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         )
         self.assertEqual(completed.returncode, 1)

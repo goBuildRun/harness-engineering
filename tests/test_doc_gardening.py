@@ -6,11 +6,11 @@ import unittest
 from pathlib import Path
 
 
-SCRIPTS_DIR = Path(__file__).resolve().parents[1] / ".harness" / "scripts"
+SCRIPTS_DIR = Path(__file__).resolve().parents[1] / ".ael" / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 from doc_gardening_check import check_legacy_link_labels, check_links, github_anchor  # noqa: E402
-from harness_timing import FINISH_RETRY_LIMIT, STAGE_BUDGETS_MS, STAGE_RETRY_LIMIT  # noqa: E402
+from ael_timing import FINISH_RETRY_LIMIT, STAGE_BUDGETS_MS, STAGE_RETRY_LIMIT  # noqa: E402
 
 
 class DocGardeningAnchorTests(unittest.TestCase):
@@ -73,7 +73,7 @@ class DocGardeningAnchorTests(unittest.TestCase):
             self.assertIn("status", text, path)
             self.assertIn("finish", text, path)
             self.assertNotIn("`start/status/finish`", text, path)
-            self.assertNotIn("harness start/status/finish", text, path)
+            self.assertNotIn("ael start/status/finish", text, path)
 
     def test_documented_story_budget_matches_runtime_contract(self) -> None:
         root = Path(__file__).resolve().parents[1]

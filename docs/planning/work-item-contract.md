@@ -1,6 +1,6 @@
 # BMAD 到 Work Item 的同步契约
 
-本文定义 Agent Engineering Lifecycle 如何把 BMAD Planning 产物连接到 Teambition、飞书任务、Jira 等 Work Item 系统。
+本文定义 BuildRun Agent Engineering Lifecycle 如何把 BMAD Planning 产物连接到 Teambition、飞书任务、Jira 等 Work Item 系统。
 
 > 多 provider 协同能力在精简方案中继续保留。目标状态由 `start/finish` 调用 adapter：本地 `finish pass` 最多同步到 ready/review，只有绑定 commit 的 CI 合并或发布成功后才能写入 `Done`。
 
@@ -10,14 +10,14 @@
 
 | 内容 | 真相源 | Work Item 上的角色 |
 |------|--------|--------------------|
-| 产品规格、PRD、验收标准 | `harness-workspace/planning/product-specs/` | 摘要和链接 |
-| 架构、执行计划、就绪检查 | `harness-workspace/planning/exec-plans/` | 风险和方案链接 |
-| 任务包 `00-06`、DAG | `harness-workspace/planning/tasks/` | 任务目录链接和 Gate 状态 |
+| 产品规格、PRD、验收标准 | `ael-workspace/planning/product-specs/` | 摘要和链接 |
+| 架构、执行计划、就绪检查 | `ael-workspace/planning/exec-plans/` | 风险和方案链接 |
+| 任务包 `00-06`、DAG | `ael-workspace/planning/tasks/` | 任务目录链接和 Gate 状态 |
 | Planning Gate 凭证 | `planning_gate_pass.json` | 状态记录 |
-| QA、TEST、REVIEW、GROWTH | `harness-workspace/evidence/` | 关键结论和链接 |
+| QA、TEST、REVIEW、GROWTH | `ael-workspace/evidence/` | 关键结论和链接 |
 | 负责人、排期、看板状态、讨论 | Teambition / 飞书 / Jira | 协同真相源 |
 
-外部任务系统只承载：负责人、状态、讨论、轻量摘要和 Harness Links。完整 BMAD 文档必须留在产品仓库中，避免出现两个真相源。
+外部任务系统只承载：负责人、状态、讨论、轻量摘要和 AEL Links。完整 BMAD 文档必须留在产品仓库中，避免出现两个真相源。
 
 ## 2. 推荐粒度
 
@@ -34,8 +34,8 @@ L3 即使在 Teambition/飞书/Jira 拆了子任务，执行真相仍以 `03-实
 产品设计、产品经理或架构师在 Codex 中完成 BMAD Planning 后，不应马上把所有验收项写入外部任务系统。推荐流程是：
 
 ```bash
-bash .harness/scripts/work_item.sh draft-spec \
-  "$PRODUCT_ROOT/harness-workspace/planning/product-specs/某功能.md" \
+bash .ael/scripts/work_item.sh draft-spec \
+  "$PRODUCT_ROOT/ael-workspace/planning/product-specs/某功能.md" \
   --assignee <provider-user-id>
 ```
 
@@ -49,8 +49,8 @@ bash .harness/scripts/work_item.sh draft-spec \
 确认后再执行真实同步：
 
 ```bash
-bash .harness/scripts/work_item.sh sync-spec \
-  "$PRODUCT_ROOT/harness-workspace/planning/product-specs/某功能.md" \
+bash .ael/scripts/work_item.sh sync-spec \
+  "$PRODUCT_ROOT/ael-workspace/planning/product-specs/某功能.md" \
   --assignee <provider-user-id>
 ```
 
@@ -67,15 +67,15 @@ work_item_parent_id: <epic-work-item-id>
 ```
 
 ```bash
-bash .harness/scripts/work_item.sh sync-spec \
-  "$PRODUCT_ROOT/harness-workspace/planning/product-specs/某-story.md" \
+bash .ael/scripts/work_item.sh sync-spec \
+  "$PRODUCT_ROOT/ael-workspace/planning/product-specs/某-story.md" \
   --parent-id <epic-work-item-id>
 ```
 
 Planning Gate、Lifecycle Execution 或 QA 状态变化后，使用显式描述文件同步既有任务，不创建重复 Work Item：
 
 ```bash
-bash .harness/scripts/work_item.sh update-description \
+bash .ael/scripts/work_item.sh update-description \
   --id <work-item-id> \
   --file <description.md>
 ```
@@ -91,14 +91,14 @@ bash .harness/scripts/work_item.sh update-description \
 来自 Product Spec 的目标摘要。
 
 ## 范围
-- In scope: `harness-workspace/planning/product-specs/xxx.md`
+- In scope: `ael-workspace/planning/product-specs/xxx.md`
 - Out of scope: Product Spec 中的非目标摘要
 
-## Harness Links
-- Product Spec: `harness-workspace/planning/product-specs/xxx.md`
-- Exec Plan: `harness-workspace/planning/exec-plans/active/<待补>`
-- Task Package: `harness-workspace/planning/tasks/<待 Planning Gate 后回填>`
-- Context: `harness-workspace/knowledge/CONTEXT.md`
+## AEL Links
+- Product Spec: `ael-workspace/planning/product-specs/xxx.md`
+- Exec Plan: `ael-workspace/planning/exec-plans/active/<待补>`
+- Task Package: `ael-workspace/planning/tasks/<待 Planning Gate 后回填>`
+- Context: `ael-workspace/knowledge/CONTEXT.md`
 
 ## Gate
 - BMAD Planning: pending
@@ -159,9 +159,9 @@ growth-review-required
 - 一个 L2 Work Item 对应一个产品规格验收项或一个标准功能。
 - 用 Teambition 任务描述保留 `bmad-work-item-v1` 摘要和链接。
 - `--assignee`、`TEAMBITION_ASSIGNEE_ID` 或产品侧 `providers.teambition.assignee_id` 可设置默认执行人。配置 `assignee_id` 后，Work Item Gate 会校验 Teambition raw `executorId == assignee_id`；只有执行者是当前 owner 的任务才能进入 Lifecycle Execution，参与人不算。
-- 如果项目区分“需求 / 任务 / 缺陷”等类型，产品侧必须配置“任务”类型的 `scenariofieldconfig_id`；Harness 的 `sync-spec/create` 会把它写入创建 payload，避免新 Work Item 落入“需求”工作流。可用 `work_item.sh scenario-configs --keyword 任务` 通过 Teambition v3 `scenariofieldconfig/search` 查询类型 ID；该查询需要 `Authorization: Bearer <appAccessToken>`、企业 ID `X-Tenant-Id` 和 `X-Tenant-Type: organization`。`appAccessToken` 可直接配置，也可由 Open App 的 App ID/Secret 按官方 JWT 规则本地签发。
+- 如果项目区分“需求 / 任务 / 缺陷”等类型，产品侧必须配置“任务”类型的 `scenariofieldconfig_id`；AEL 的 `sync-spec/create` 会把它写入创建 payload，避免新 Work Item 落入“需求”工作流。可用 `work_item.sh scenario-configs --keyword 任务` 通过 Teambition v3 `scenariofieldconfig/search` 查询类型 ID；该查询需要 `Authorization: Bearer <appAccessToken>`、企业 ID `X-Tenant-Id` 和 `X-Tenant-Type: organization`。`appAccessToken` 可直接配置，也可由 Open App 的 App ID/Secret 按官方 JWT 规则本地签发。
 - 产品侧推荐 `providers.teambition.status_update_mode: taskflowstatus`，`close` 会调用 Teambition Open API v3：先 `GET /api/v3/task/{taskId}/tfs` 查询任务所在工作流状态，再 `PUT /api/v3/task/{taskId}/taskflowstatus` 更新真实任务状态。可配置 `taskflowstatus_id_map` 或 `taskflowstatus_name_map` 显式指定状态。
-- 兼容模式 `providers.teambition.status_update_mode: stage` 与 `stage_id_map` 仍可把 Harness 状态映射到 Teambition 看板阶段；`close` 会调用 `/v1.0/project/users/{uid}/tasks/{taskId}/stages`。
+- 兼容模式 `providers.teambition.status_update_mode: stage` 与 `stage_id_map` 仍可把 AEL 状态映射到 Teambition 看板阶段；`close` 会调用 `/v1.0/project/users/{uid}/tasks/{taskId}/stages`。
 - `stage_id_map` / `taskflowstatus_id_map` 推荐 key：`pending`、`design`、`in_progress`、`testing`、`ready_to_release`、`done`、`implemented`、`cancelled`，分别对应“待处理 / 设计中 / 开发中 / 测试中 / 待发布 / 已完成 / 已实现 / 已取消”。
 - 用任务评论记录 Planning Gate、QA、MR 的关键结论；评论不是状态流转的替代。
 - Teambition 的 taskId 是 24 位十六进制 ID，必须填回 `00-任务卡.md`。
@@ -169,11 +169,11 @@ growth-review-required
 ## 7. 飞书任务管理建议
 
 - 产品侧 `project.yaml` 配置 `providers.feishu.tasklist_guid`，把任务创建到固定任务清单。
-- 产品配置的 `tasklist_guid` 优先于兼容变量 `FEISHU_TASKLIST_GUID`；只有显式 `FEISHU_TASKLIST_GUID_OVERRIDE` 才能临时覆盖产品配置，避免通用 Harness 清单污染产品任务。
-- L3 Story 声明 `work_item_type: story`，并使用 `work_item_parent_id` 或 `sync-spec --parent-id` 创建子任务；Epic 声明 `work_item_type: epic` 且不得有父级。飞书子任务自身可以没有 `tasklists` 字段，Harness 会精确校验 `parent_task_guid`，并证明父任务直接属于产品清单。即使子任务已直接加入正确清单，也不会跳过父 Epic 的清单验证。
+- 产品配置的 `tasklist_guid` 优先于兼容变量 `FEISHU_TASKLIST_GUID`；只有显式 `FEISHU_TASKLIST_GUID_OVERRIDE` 才能临时覆盖产品配置，避免通用 AEL 清单污染产品任务。
+- L3 Story 声明 `work_item_type: story`，并使用 `work_item_parent_id` 或 `sync-spec --parent-id` 创建子任务；Epic 声明 `work_item_type: epic` 且不得有父级。飞书子任务自身可以没有 `tasklists` 字段，AEL 会精确校验 `parent_task_guid`，并证明父任务直接属于产品清单。即使子任务已直接加入正确清单，也不会跳过父 Epic 的清单验证。
 - 如租户任务列表接口不同，可配置 `providers.feishu.list_tasks_path` 与 `providers.feishu.list_query`，`list-mine` 会拉取后按负责人本地过滤。
 - `providers.feishu.assignee_id` 可配置产品默认负责人；个人本地覆盖用 `FEISHU_ASSIGNEE_ID`。
-- 普通 `work_item close` 不得直接写 `done/closed/mr_merged`；这些终态固定要求受控 authority service。服务必须用部署侧固定的 policy ID/digest 和两层 signer 指纹构造 `TrustPolicy`，验证 exact ref tip、receipt、provider binding 与 `closure_order` 后才调用 Feishu provider；Jira/Teambition 终态写入不在当前受控范围。`providers.feishu.status_update_mode: completed` 的非终态 `in_progress/todo/ready_to_release` 会把 `completed_at` 清为 `"0"`；飞书没有独立“待发布”状态，因此 Harness 保留 requested status 并把真实 provider status 回读为 `todo/open`，不会提前标记完成。
+- 普通 `work_item close` 不得直接写 `done/closed/mr_merged`；这些终态固定要求受控 authority service。服务必须用部署侧固定的 policy ID/digest 和两层 signer 指纹构造 `TrustPolicy`，验证 exact ref tip、receipt、provider binding 与 `closure_order` 后才调用 Feishu provider；Jira/Teambition 终态写入不在当前受控范围。`providers.feishu.status_update_mode: completed` 的非终态 `in_progress/todo/ready_to_release` 会把 `completed_at` 清为 `"0"`；飞书没有独立“待发布”状态，因此 AEL 保留 requested status 并把真实 provider status 回读为 `todo/open`，不会提前标记完成。
 - 飞书任务描述里只放摘要和链接，不复制完整 PRD。
 - Webhook 需要按租户继续增强；短期用 `diagnose --id [--parent-id]` 校验清单和父级绑定，用 `verify` / `pull` 做存在性与原始数据排障。
 
@@ -181,7 +181,7 @@ growth-review-required
 
 - 一个 Jira Issue 对应 L2 Work Item；L3 可用 Epic/Parent Issue 管总目标。
 - `project_key`、`issue_type`、`assignee_id` 放产品侧 `project.yaml`；密钥放 `.env`。
-- 状态流转依赖 Jira transition id，未配置前 `close` 只做 Harness 侧通过记录。
+- 状态流转依赖 Jira transition id，未配置前 `close` 只做 AEL 侧通过记录。
 
 ## 9. 禁止事项
 

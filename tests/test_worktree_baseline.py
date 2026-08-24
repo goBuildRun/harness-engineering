@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT_DIR = ROOT / ".harness" / "scripts"
+SCRIPT_DIR = ROOT / ".ael" / "scripts"
 sys.path.insert(0, str(SCRIPT_DIR))
 
 from worktree_baseline import capture_baseline, changed_since_baseline  # noqa: E402
